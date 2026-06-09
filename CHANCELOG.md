@@ -13,3 +13,13 @@
 - Stack definido: React + Vite + Tailwind / FastAPI / SQLite→PostgreSQL / SQLAlchemy + Alembic
 - Estructura de carpetas definida (frontend/ + backend/)
 - Despliegue futuro: Vercel (frontend) + Railway/Render (backend) + Supabase (PostgreSQL)
+
+## Sesión 3 — 2026-06-09
+### Configuración inicial del proyecto
+- Node.js v24 instalado
+- Frontend: React + Vite + Tailwind CSS corriendo en localhost:5173
+- Backend: FastAPI + uvicorn corriendo en 127.0.0.1:8000
+- Estructura de carpetas backend creada (app, api, models, schemas)
+- .gitignore configurado
+- Proyecto movido a C:\Users\luisa\Documents\proyectos\presupuestos (fuera de OneDrive)
+- Aprendizaje: OneDrive interfiere con servidores locales en Windows
