@@ -37,3 +37,16 @@
 ### Pendiente sesión 5
 - Agregar presupuestos.db y bd_recursos.xlsx al .gitignore
 - Pantalla React CRUD Recursos (listar, buscar, crear, editar, desactivar)
+
+## Sesión 5 — 2026-06-09
+
+### Frontend Recursos
+- Creada pantalla React Recursos (src/pages/Recursos.jsx)
+- Tabla con campos: Código, Nombre, Unidad, Tipo, Precio
+- Buscador por nombre y categoría
+- Conexión con API backend funcionando
+- 432 recursos cargando correctamente
+
+### Pendiente sesión 6
+- Agregar presupuestos.db y bd_recursos.xlsx al .gitignore
+- Botones Crear, Editar y Desactivar recursos
