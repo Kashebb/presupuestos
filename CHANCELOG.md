@@ -50,3 +50,17 @@
 ### Pendiente sesión 6
 - Agregar presupuestos.db y bd_recursos.xlsx al .gitignore
 - Botones Crear, Editar y Desactivar recursos
+
+## Sesión 6 — 2026-06-09
+
+### CRUD Recursos
+- Agregado .gitignore para *.db y bd_recursos.xlsx
+- Botón + Nuevo recurso con modal de creación
+- Botón Editar por fila con modal precargado
+- Botón Desactivar por fila con confirmación
+- Validaciones en formulario (nombre, unidad, precio)
+
+### Pendiente sesión 7
+- Filtro por tipo de recurso (mano_de_obra, material, equipo...)
+- Paginación o scroll virtual para 432 recursos
+- Feedback visual al guardar/desactivar (mensaje de éxito)
