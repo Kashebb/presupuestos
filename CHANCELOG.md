@@ -25,7 +25,6 @@
 - Aprendizaje: OneDrive interfiere con servidores locales en Windows
 
 ## Sesión 4 — 2026-06-09
-
 ### Backend CRUD Recursos
 - Creado modelo SQLAlchemy Recurso con 12 columnas basadas en bd_recursos.xlsx
 - Creado schema Pydantic (RecursoBase, RecursoCreate, RecursoUpdate, RecursoOut)
