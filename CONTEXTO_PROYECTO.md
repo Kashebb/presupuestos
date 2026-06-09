@@ -4,10 +4,11 @@
 App web local para gestión de presupuestos de construcción civil (edificios, casas).
 Tipo de proyecto de referencia: S10, Interpro, Proexcel, Presto.
 
-## Stack (por definir)
-- Frontend: por definir
-- Backend: por definir
-- Base de datos: por definir
+## Stack
+- Frontend: React + Vite + Tailwind CSS
+- Backend: FastAPI (Python)
+- Base de datos: SQLite (desarrollo) → PostgreSQL (producción)
+- ORM: SQLAlchemy + Alembic
 
 ## Módulos (orden de desarrollo)
 1. Recursos
