@@ -1,5 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.db import Base, engine
+from app.models import recurso
+from app.api import recursos
+
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="App Presupuestos", version="0.1.0")
 
@@ -10,6 +15,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(recursos.router)
 
 @app.get("/")
 def root():
