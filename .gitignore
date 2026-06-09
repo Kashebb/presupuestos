@@ -11,3 +11,9 @@ frontend/dist/
 
 # VS Code
 .vscode/
+
+# Base de datos local
+*.db
+
+# Archivo Excel de recursos
+bd_recursos.xlsx
