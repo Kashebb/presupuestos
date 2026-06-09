@@ -23,3 +23,18 @@
 - .gitignore configurado
 - Proyecto movido a C:\Users\luisa\Documents\proyectos\presupuestos (fuera de OneDrive)
 - Aprendizaje: OneDrive interfiere con servidores locales en Windows
+
+## Sesión 4 — 2026-06-09
+
+### Backend CRUD Recursos
+- Creado modelo SQLAlchemy Recurso con 12 columnas basadas en bd_recursos.xlsx
+- Creado schema Pydantic (RecursoBase, RecursoCreate, RecursoUpdate, RecursoOut)
+- Implementados 5 endpoints CRUD en /recursos/
+- Configurada ruta absoluta en db.py con pathlib para evitar conflictos de rutas
+- Creado script seed_recursos.py para importación desde Excel
+- Importados 432 recursos activos desde bd_recursos.xlsx
+- API verificada y funcionando en http://127.0.0.1:8000
+
+### Pendiente sesión 5
+- Agregar presupuestos.db y bd_recursos.xlsx al .gitignore
+- Pantalla React CRUD Recursos (listar, buscar, crear, editar, desactivar)
