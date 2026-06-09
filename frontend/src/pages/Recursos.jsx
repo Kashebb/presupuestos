@@ -4,19 +4,56 @@ const API = 'http://127.0.0.1:8000'
 
 const CATEGORIAS = ['mano_de_obra', 'material', 'equipo', 'transporte', 'otros']
 
+const ETIQUETAS = {
+  mano_de_obra: 'Mano de Obra',
+  material: 'Material',
+  equipo: 'Equipo',
+  transporte: 'Transporte',
+  otros: 'Otros'
+}
+
 const vacío = { codigo: '', descripcion: '', unidad: '', categoria: 'material', precio_unitario: '' }
+
+// ── Toast simple ──────────────────────────────────────────────────────────────
+function Toast({ toasts }) {
+  return (
+    <div style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 2000, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      {toasts.map(t => (
+        <div key={t.id} style={{
+          padding: '12px 18px',
+          borderRadius: '6px',
+          fontSize: '14px',
+          color: 'white',
+          background: t.tipo === 'exito' ? '#16a34a' : t.tipo === 'alerta' ? '#d97706' : '#dc2626',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+          minWidth: '240px'
+        }}>
+          {t.tipo === 'exito' ? '✓ ' : t.tipo === 'alerta' ? '⚠ ' : '✕ '}{t.mensaje}
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export default function Recursos() {
   const [recursos, setRecursos] = useState([])
   const [busqueda, setBusqueda] = useState('')
+  const [filtroCategoria, setFiltroCategoria] = useState('todos')
   const [cargando, setCargando] = useState(true)
   const [modal, setModal] = useState(false)
   const [form, setForm] = useState(vacío)
   const [editandoId, setEditandoId] = useState(null)
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState('')
+  const [toasts, setToasts] = useState([])
 
   useEffect(() => { fetchRecursos() }, [])
+
+  function mostrarToast(mensaje, tipo = 'exito') {
+    const id = Date.now()
+    setToasts(prev => [...prev, { id, mensaje, tipo }])
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500)
+  }
 
   async function fetchRecursos() {
     setCargando(true)
@@ -69,6 +106,7 @@ export default function Recursos() {
     if (res.ok) {
       setModal(false)
       fetchRecursos()
+      mostrarToast(editandoId ? 'Recurso actualizado correctamente.' : 'Recurso creado correctamente.')
     } else {
       const err = await res.json()
       setError(err.detail || 'Error al guardar.')
@@ -77,18 +115,26 @@ export default function Recursos() {
 
   async function desactivar(r) {
     if (!confirm(`¿Desactivar "${r.descripcion}"?`)) return
-    await fetch(`${API}/recursos/${r.id}`, {
+    const res = await fetch(`${API}/recursos/${r.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...r, activo: false })
     })
-    fetchRecursos()
+    if (res.ok) {
+      fetchRecursos()
+      mostrarToast(`"${r.descripcion}" desactivado.`, 'alerta')
+    } else {
+      mostrarToast('Error al desactivar el recurso.', 'error')
+    }
   }
 
-  const filtrados = recursos.filter(r =>
-    (r.descripcion || '').toLowerCase().includes(busqueda.toLowerCase()) ||
-    (r.categoria || '').toLowerCase().includes(busqueda.toLowerCase())
-  )
+  const filtrados = recursos.filter(r => {
+    const coincideBusqueda =
+      (r.descripcion || '').toLowerCase().includes(busqueda.toLowerCase()) ||
+      (r.codigo || '').toLowerCase().includes(busqueda.toLowerCase())
+    const coincideCategoria = filtroCategoria === 'todos' || r.categoria === filtroCategoria
+    return coincideBusqueda && coincideCategoria
+  })
 
   return (
     <div style={{ padding: '24px' }}>
@@ -97,13 +143,38 @@ export default function Recursos() {
         <button onClick={abrirCrear} style={btnPrimario}>+ Nuevo recurso</button>
       </div>
 
-      <input
-        type="text"
-        placeholder="Buscar por nombre o tipo..."
-        value={busqueda}
-        onChange={e => setBusqueda(e.target.value)}
-        style={{ padding: '8px 12px', width: '300px', border: '1px solid #ccc', borderRadius: '4px', marginBottom: '16px', fontSize: '14px' }}
-      />
+      {/* Barra de búsqueda + filtros */}
+      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap' }}>
+        <input
+          type="text"
+          placeholder="Buscar por nombre o código..."
+          value={busqueda}
+          onChange={e => setBusqueda(e.target.value)}
+          style={{ padding: '8px 12px', width: '260px', border: '1px solid #ccc', borderRadius: '4px', fontSize: '14px' }}
+        />
+
+        {/* Botones de filtro */}
+        {['todos', ...CATEGORIAS].map(cat => (
+          <button
+            key={cat}
+            onClick={() => setFiltroCategoria(cat)}
+            style={{
+              padding: '6px 14px',
+              fontSize: '13px',
+              borderRadius: '20px',
+              border: '1px solid',
+              cursor: 'pointer',
+              borderColor: filtroCategoria === cat ? '#2563eb' : '#d1d5db',
+              background: filtroCategoria === cat ? '#2563eb' : 'white',
+              color: filtroCategoria === cat ? 'white' : '#374151',
+              fontWeight: filtroCategoria === cat ? '600' : '400',
+              transition: 'all 0.15s'
+            }}
+          >
+            {cat === 'todos' ? 'Todos' : ETIQUETAS[cat]}
+          </button>
+        ))}
+      </div>
 
       {cargando ? <p>Cargando...</p> : (
         <table style={{ width: '100%', borderCollapse: 'collapse', background: 'white' }}>
@@ -123,7 +194,17 @@ export default function Recursos() {
                 <td style={td}>{r.codigo}</td>
                 <td style={td}>{r.descripcion}</td>
                 <td style={td}>{r.unidad}</td>
-                <td style={td}>{r.categoria}</td>
+                <td style={td}>
+                  <span style={{
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    fontSize: '12px',
+                    background: COLORES_CAT[r.categoria]?.bg || '#f3f4f6',
+                    color: COLORES_CAT[r.categoria]?.text || '#374151'
+                  }}>
+                    {ETIQUETAS[r.categoria] || r.categoria}
+                  </span>
+                </td>
                 <td style={td}>${Number(r.precio_unitario).toFixed(2)}</td>
                 <td style={td}>
                   <button onClick={() => abrirEditar(r)} style={btnEditar}>Editar</button>
@@ -131,12 +212,19 @@ export default function Recursos() {
                 </td>
               </tr>
             ))}
+            {filtrados.length === 0 && (
+              <tr>
+                <td colSpan={6} style={{ ...td, textAlign: 'center', color: '#888', padding: '24px' }}>
+                  No se encontraron recursos.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       )}
 
       <p style={{ marginTop: '12px', fontSize: '13px', color: '#888' }}>
-        {filtrados.length} recursos encontrados
+        {filtrados.length} recurso{filtrados.length !== 1 ? 's' : ''} encontrado{filtrados.length !== 1 ? 's' : ''}
       </p>
 
       {/* MODAL */}
@@ -147,22 +235,22 @@ export default function Recursos() {
               {editandoId ? 'Editar recurso' : 'Nuevo recurso'}
             </h2>
 
-            <label style={label}>Código</label>
-            <input style={input} value={form.codigo} onChange={e => setForm({ ...form, codigo: e.target.value })} placeholder="Ej: MO-001" />
+            <label style={labelStyle}>Código</label>
+            <input style={inputStyle} value={form.codigo} onChange={e => setForm({ ...form, codigo: e.target.value })} placeholder="Ej: MO-001" />
 
-            <label style={label}>Nombre *</label>
-            <input style={input} value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} placeholder="Nombre del recurso" />
+            <label style={labelStyle}>Nombre *</label>
+            <input style={inputStyle} value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} placeholder="Nombre del recurso" />
 
-            <label style={label}>Unidad *</label>
-            <input style={input} value={form.unidad} onChange={e => setForm({ ...form, unidad: e.target.value })} placeholder="Ej: m3, kg, gl, u" />
+            <label style={labelStyle}>Unidad *</label>
+            <input style={inputStyle} value={form.unidad} onChange={e => setForm({ ...form, unidad: e.target.value })} placeholder="Ej: m3, kg, gl, u" />
 
-            <label style={label}>Tipo *</label>
-            <select style={input} value={form.categoria} onChange={e => setForm({ ...form, categoria: e.target.value })}>
-              {CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
+            <label style={labelStyle}>Tipo *</label>
+            <select style={inputStyle} value={form.categoria} onChange={e => setForm({ ...form, categoria: e.target.value })}>
+              {CATEGORIAS.map(c => <option key={c} value={c}>{ETIQUETAS[c]}</option>)}
             </select>
 
-            <label style={label}>Precio unitario *</label>
-            <input style={input} type="number" step="0.01" value={form.precio_unitario} onChange={e => setForm({ ...form, precio_unitario: e.target.value })} placeholder="0.00" />
+            <label style={labelStyle}>Precio unitario *</label>
+            <input style={inputStyle} type="number" step="0.01" value={form.precio_unitario} onChange={e => setForm({ ...form, precio_unitario: e.target.value })} placeholder="0.00" />
 
             {error && <p style={{ color: 'red', fontSize: '13px', margin: '8px 0 0' }}>{error}</p>}
 
@@ -175,14 +263,24 @@ export default function Recursos() {
           </div>
         </div>
       )}
+
+      <Toast toasts={toasts} />
     </div>
   )
 }
 
+const COLORES_CAT = {
+  mano_de_obra: { bg: '#dbeafe', text: '#1d4ed8' },
+  material:     { bg: '#dcfce7', text: '#15803d' },
+  equipo:       { bg: '#fef9c3', text: '#a16207' },
+  transporte:   { bg: '#ede9fe', text: '#6d28d9' },
+  otros:        { bg: '#f3f4f6', text: '#374151' }
+}
+
 const th = { padding: '10px 12px', textAlign: 'left', fontSize: '13px', fontWeight: '600', borderBottom: '2px solid #ddd' }
 const td = { padding: '8px 12px', fontSize: '13px' }
-const label = { display: 'block', fontSize: '13px', fontWeight: '600', marginBottom: '4px', marginTop: '12px' }
-const input = { width: '100%', padding: '8px 10px', border: '1px solid #ccc', borderRadius: '4px', fontSize: '14px', boxSizing: 'border-box' }
+const labelStyle = { display: 'block', fontSize: '13px', fontWeight: '600', marginBottom: '4px', marginTop: '12px' }
+const inputStyle = { width: '100%', padding: '8px 10px', border: '1px solid #ccc', borderRadius: '4px', fontSize: '14px', boxSizing: 'border-box' }
 const overlay = { position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }
 const modalBox = { background: 'white', borderRadius: '8px', padding: '28px', width: '420px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 4px 24px rgba(0,0,0,0.15)' }
 const btnPrimario = { padding: '8px 16px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '14px' }
