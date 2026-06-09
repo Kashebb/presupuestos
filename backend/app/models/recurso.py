@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, Float, Boolean, Date
-from app.db import Base
+from app.models.base import Base
 
 class Recurso(Base):
     __tablename__ = "recursos"
