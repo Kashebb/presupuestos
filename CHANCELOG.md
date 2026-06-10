@@ -64,3 +64,20 @@
 - Filtro por tipo de recurso (mano_de_obra, material, equipo...)
 - Paginación o scroll virtual para 432 recursos
 - Feedback visual al guardar/desactivar (mensaje de éxito)
+
+## Sesión 8 — 2026-06-09
+### Backend APUs
+- Modelos SQLAlchemy: APU y APUItem en app/models/apu.py
+- base.py unificado en app/models/base.py
+- Migración Alembic: tablas apu y apu_items
+- Endpoints CRUD FastAPI en app/api/apus.py (/apus/)
+- Schemas Pydantic en app/schemas/apu.py
+
+## Sesión 9 — 2026-06-09
+### Frontend APUs
+- Pantalla APUs con tabla (código, nombre, unidad, rendimiento, categoría, estado)
+- Buscador por nombre y código
+- Modal crear/editar con todos los campos de cabecera
+- Botón Desactivar por fila
+- Navegación por tabs (Recursos / APUs) en App.jsx
+- Fix: migración Alembic apuntaba a DB diferente que el servidor (alineado alembic.ini con ruta absoluta)
