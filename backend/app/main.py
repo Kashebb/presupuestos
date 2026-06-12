@@ -2,7 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.db import Base, engine
 from app.models import recurso, apu
+from app.models import presupuesto
 from app.api import recursos, apus
+from app.api.presupuestos import router as presupuestos_router
 
 Base.metadata.create_all(bind=engine)
 
@@ -18,6 +20,7 @@ app.add_middleware(
 
 app.include_router(recursos.router)
 app.include_router(apus.router)
+app.include_router(presupuestos_router)
 
 @app.get("/")
 def root():

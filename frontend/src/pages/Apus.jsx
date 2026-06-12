@@ -11,7 +11,7 @@ const modalBase = {
   estado: "en_revision", observacion: ""
 };
 
-export default function Apus() {
+export default function Apus(props) {
   const [apus, setApus] = useState([]);
   const [buscar, setBuscar] = useState("");
   const [modalAbierto, setModalAbierto] = useState(false);
@@ -129,6 +129,7 @@ export default function Apus() {
                 <td className="px-3 py-2 border">{apu.categoria || "—"}</td>
                 <td className="px-3 py-2 border">{estadoBadge(apu.estado)}</td>
                 <td className="px-3 py-2 border">
+                  <button onClick={() => props.onVerDetalle(apu)} className="text-green-600 hover:underline text-xs mr-3">Ver</button>
                   <button onClick={() => abrirEditar(apu)} className="text-blue-600 hover:underline text-xs mr-3">Editar</button>
                   {apu.estado !== "inactivo" && (
                     <button onClick={() => desactivar(apu.id)} className="text-red-500 hover:underline text-xs">Desactivar</button>
