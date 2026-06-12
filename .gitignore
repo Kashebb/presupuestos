@@ -19,3 +19,6 @@ frontend/dist/
 
 # Archivo Excel de recursos
 bd_recursos.xlsx
+
+# Reportes locales de auditoria/importacion
+reports/
