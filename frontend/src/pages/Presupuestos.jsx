@@ -352,6 +352,8 @@ export default function Presupuestos() {
     cargarNodos(proyectoActual);
   };
 
+  const marcarSinApu = async (nodo) => { registrarAccion({tipo:"marcar_sin_apu",nodoId:nodo.id,apuId:nodo.apu_id}); await fetch(`${API}/presupuestos/nodos/${nodo.id}/marcar-sin-apu`,{method:"PATCH"}); cargarNodos(proyectoActual); };
+  const desmarcarSinApu = async (nodo) => { registrarAccion({tipo:"desmarcar_sin_apu",nodoId:nodo.id}); await fetch(`${API}/presupuestos/nodos/${nodo.id}/desmarcar-sin-apu`,{method:"PATCH"}); cargarNodos(proyectoActual); };
   const mostrarExito = (msg) => { setMsgExito(msg); setTimeout(()=>setMsgExito(""),4000); };
   const toggleColapsar = (id) => setColapsados(p=>({...p,[id]:!p[id]}));
   const toggleGrupo = (k) => setGruposExp(p=>({...p,[k]:!p[k]}));
@@ -643,9 +645,16 @@ export default function Presupuestos() {
                             <td style={{ padding:"5px 4px", textAlign:"right" }}>{esR?fmtM((n.metrado||0)*(n.precio_unitario_ref||0)):""}</td>
                             <td style={{ padding:"5px 4px", textAlign:"center" }}>{badge&&<span style={{ background:badge.bg, color:badge.text, borderRadius:"4px", padding:"2px 6px", fontSize:"9px", fontWeight:"600" }}>{badge.label}</span>}</td>
                             <td style={{ padding:"5px 8px", textAlign:"center" }}>
-                              {esR&&!sinApu&&(n.tipo_rubro==="VINCULADO"
-                                ?<button onClick={()=>desvincularApu(n)} style={{ fontSize:"10px", color:"#dc2626", background:"none", border:"none", cursor:"pointer" }}>Desvincular</button>
-                                :<button onClick={()=>abrirVincular(n,false)} style={{ fontSize:"10px", background:"#2563eb", color:"#fff", border:"none", borderRadius:"4px", padding:"2px 7px", cursor:"pointer" }}>Vincular APU</button>)}
+                              {esR&&(
+                                n.tipo_rubro==="VINCULADO"
+                                  ? <button onClick={()=>desvincularApu(n)} style={{ fontSize:"10px", color:"#dc2626", background:"none", border:"none", cursor:"pointer" }}>Desvincular</button>
+                                  : sinApu
+                                    ? <button onClick={()=>desmarcarSinApu(n)} style={{ fontSize:"10px", color:"#16a34a", background:"none", border:"1px solid #86efac", borderRadius:"4px", padding:"2px 6px", cursor:"pointer" }}>✓ Tiene APU</button>
+                                    : <div style={{ display:"flex", gap:"3px", justifyContent:"center" }}>
+                                        <button onClick={()=>abrirVincular(n,false)} style={{ fontSize:"10px", background:"#2563eb", color:"#fff", border:"none", borderRadius:"4px", padding:"2px 6px", cursor:"pointer" }}>Vincular APU</button>
+                                        <button onClick={()=>marcarSinApu(n)} style={{ fontSize:"10px", color:"#6b7280", background:"none", border:"1px solid #d1d5db", borderRadius:"4px", padding:"2px 6px", cursor:"pointer" }}>Sin APU</button>
+                                      </div>
+                              )}
                             </td>
                           </tr>
                         );

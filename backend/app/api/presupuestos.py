@@ -454,3 +454,32 @@ def reagrupar_nodo(nodo_id: int, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(nodo)
     return nodo
+
+@router.patch("/nodos/{nodo_id}/marcar-sin-apu", response_model=NodoOut)
+def marcar_sin_apu(nodo_id: int, db: Session = Depends(get_db)):
+    """Marca un rubro como Sin APU manualmente."""
+    nodo = db.query(NodoPresupuesto).filter(NodoPresupuesto.id == nodo_id).first()
+    if not nodo:
+        raise HTTPException(status_code=404, detail="Nodo no encontrado")
+    if nodo.tipo != "RUBRO":
+        raise HTTPException(status_code=400, detail="Solo se pueden marcar nodos tipo RUBRO")
+    # Si tenía APU vinculado, lo quitamos
+    nodo.apu_id = None
+    nodo.tipo_rubro = "PENDIENTE"
+    nodo.observaciones = "SIN_APU"
+    db.commit()
+    db.refresh(nodo)
+    return nodo
+
+
+@router.patch("/nodos/{nodo_id}/desmarcar-sin-apu", response_model=NodoOut)
+def desmarcar_sin_apu(nodo_id: int, db: Session = Depends(get_db)):
+    """Quita la marca Sin APU — el rubro vuelve a estado Pendiente."""
+    nodo = db.query(NodoPresupuesto).filter(NodoPresupuesto.id == nodo_id).first()
+    if not nodo:
+        raise HTTPException(status_code=404, detail="Nodo no encontrado")
+    nodo.observaciones = None
+    nodo.tipo_rubro = "PENDIENTE"
+    db.commit()
+    db.refresh(nodo)
+    return nodo
