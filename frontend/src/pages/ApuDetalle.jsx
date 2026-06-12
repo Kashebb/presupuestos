@@ -79,12 +79,13 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
     return usaR ? C * r : C;
   };
 
+  const itemsCosto          = items.filter(i => !i.es_herramienta_menor);
   const R                   = apu.rendimiento;
-  const subtotalMO          = items.filter(i => i.categoria === "mano_de_obra").reduce((a, i) => a + costoItem(i, R), 0);
+  const subtotalMO          = itemsCosto.filter(i => i.categoria === "mano_de_obra").reduce((a, i) => a + costoItem(i, R), 0);
   const herramientasMenores = subtotalMO * 0.05;
-  const subtotalEquipos     = items.filter(i => i.categoria === "equipo").reduce((a, i) => a + costoItem(i, R), 0) + herramientasMenores;
-  const subtotalMateriales  = items.filter(i => i.categoria === "material").reduce((a, i) => a + costoItem(i, R), 0);
-  const subtotalTransporte  = items.filter(i => i.categoria === "transporte").reduce((a, i) => a + costoItem(i, R), 0);
+  const subtotalEquipos     = itemsCosto.filter(i => i.categoria === "equipo").reduce((a, i) => a + costoItem(i, R), 0) + herramientasMenores;
+  const subtotalMateriales  = itemsCosto.filter(i => i.categoria === "material").reduce((a, i) => a + costoItem(i, R), 0);
+  const subtotalTransporte  = itemsCosto.filter(i => i.categoria === "transporte").reduce((a, i) => a + costoItem(i, R), 0);
   const totalCostoDirecto   = subtotalEquipos + subtotalMO + subtotalMateriales + subtotalTransporte;
 
   const subtotalDe = (key) => ({
@@ -103,7 +104,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         nombre: apu.nombre, unidad: apu.unidad, rendimiento: r, estado: apu.estado,
-        items: nuevosItems.map((i, idx) => ({
+        items: nuevosItems.filter(i => !i.es_herramienta_menor).map((i, idx) => ({
           recurso_id: i.recurso_id, categoria: i.categoria,
           cantidad: i.cantidad, orden: idx, es_herramienta_menor: false,
         }))
@@ -236,7 +237,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
 
       {/* Secciones */}
       {SECCIONES.map(({ key, label, usaRendimiento, labelB, tooltipB }) => {
-        const itemsSeccion = items.filter(i => i.categoria === key);
+        const itemsSeccion = itemsCosto.filter(i => i.categoria === key);
         const contraida = seccionesContraidas.has(key);
 
         return (

@@ -18,13 +18,20 @@ export default function Apus(props) {
   const [form, setForm] = useState(modalBase);
   const [editandoId, setEditandoId] = useState(null);
   const [error, setError] = useState("");
+  const [costos, setCostos] = useState({});
 
   const cargarApus = useCallback(async () => {
-    const params = new URLSearchParams({ limit: 200 });
+    const params = new URLSearchParams({ limit: 500 });
     if (buscar) params.append("buscar", buscar);
-    const res = await fetch(`${API}/apus/?${params}`);
+    const [res, resCostos] = await Promise.all([
+      fetch(`${API}/apus/?${params}`),
+      fetch(`${API}/apus/costos/resumen?limit=500`)
+    ]);
     const data = await res.json();
+    const dataCostos = await resCostos.json();
+    const costosPorApu = Object.fromEntries(dataCostos.map(c => [c.apu_id, c]));
     setApus(data);
+    setCostos(costosPorApu);
   }, [buscar]);
 
   useEffect(() => { cargarApus(); }, [cargarApus]);
@@ -86,6 +93,22 @@ export default function Apus(props) {
     return <span className={`px-2 py-0.5 rounded text-xs font-medium ${colores[estado] || "bg-gray-100"}`}>{estado}</span>;
   };
 
+  const controlBadge = (apu) => {
+    const control = costos[apu.id]?.control_costo;
+    if (control === "revisar_costo") {
+      return <span className="px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">Revisar costo</span>;
+    }
+    if (apu.estado === "en_revision") {
+      return <span className="px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">En revisión</span>;
+    }
+    return <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">OK</span>;
+  };
+
+  const fmtPrecio = (valor) => {
+    if (valor === undefined || valor === null) return "—";
+    return `$${Number(valor).toFixed(2)}`;
+  };
+
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-4">
@@ -110,24 +133,28 @@ export default function Apus(props) {
               <th className="px-3 py-2 border">Código</th>
               <th className="px-3 py-2 border">Nombre</th>
               <th className="px-3 py-2 border">Unidad</th>
+              <th className="px-3 py-2 border text-right">PU Calc.</th>
               <th className="px-3 py-2 border">Rendimiento</th>
               <th className="px-3 py-2 border">Categoría</th>
               <th className="px-3 py-2 border">Estado</th>
+              <th className="px-3 py-2 border">Control</th>
               <th className="px-3 py-2 border">Acciones</th>
             </tr>
           </thead>
           <tbody>
             {apus.length === 0 && (
-              <tr><td colSpan={7} className="text-center py-6 text-gray-400">No hay APUs registrados.</td></tr>
+              <tr><td colSpan={9} className="text-center py-6 text-gray-400">No hay APUs registrados.</td></tr>
             )}
             {apus.map(apu => (
               <tr key={apu.id} className="hover:bg-gray-50">
                 <td className="px-3 py-2 border text-gray-500">{apu.codigo || "—"}</td>
                 <td className="px-3 py-2 border font-medium">{apu.nombre}</td>
                 <td className="px-3 py-2 border">{apu.unidad}</td>
+                <td className="px-3 py-2 border text-right font-medium tabular-nums">{fmtPrecio(costos[apu.id]?.precio_unitario)}</td>
                 <td className="px-3 py-2 border text-right">{apu.rendimiento}</td>
                 <td className="px-3 py-2 border">{apu.categoria || "—"}</td>
                 <td className="px-3 py-2 border">{estadoBadge(apu.estado)}</td>
+                <td className="px-3 py-2 border">{controlBadge(apu)}</td>
                 <td className="px-3 py-2 border">
                   <button onClick={() => props.onVerDetalle(apu)} className="text-green-600 hover:underline text-xs mr-3">Ver</button>
                   <button onClick={() => abrirEditar(apu)} className="text-blue-600 hover:underline text-xs mr-3">Editar</button>
