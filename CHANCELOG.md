@@ -81,3 +81,13 @@
 - Botón Desactivar por fila
 - Navegación por tabs (Recursos / APUs) en App.jsx
 - Fix: migración Alembic apuntaba a DB diferente que el servidor (alineado alembic.ini con ruta absoluta)
+
+## Sesión 14 — 2026-06-12
+### Estabilización mínima y control de contexto
+- Validado el traspaso funcional contra código y datos reales.
+- Backend CORS actualizado para aceptar frontend en `localhost:5173` y `127.0.0.1:5173`.
+- Lint frontend estabilizado sin cambiar comportamiento funcional.
+- `presupuestos.db` y `bd_recursos.xlsx` removidos del índice Git, conservando los archivos locales y respetando `.gitignore`.
+- Cachés Python `__pycache__` / `*.pyc` removidos del índice Git y agregados a `.gitignore`.
+- Confirmado que la base activa de la app es `presupuestos.db` en la raíz del proyecto.
+- Pendiente: localizar/importar `bd_apus.xlsx` y alinear estados reales de APU antes del rediseño de APUs.

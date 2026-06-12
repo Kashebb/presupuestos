@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 const API = "http://127.0.0.1:8000";
 
@@ -19,15 +19,15 @@ export default function Apus(props) {
   const [editandoId, setEditandoId] = useState(null);
   const [error, setError] = useState("");
 
-  const cargarApus = async () => {
+  const cargarApus = useCallback(async () => {
     const params = new URLSearchParams({ limit: 200 });
     if (buscar) params.append("buscar", buscar);
     const res = await fetch(`${API}/apus/?${params}`);
     const data = await res.json();
     setApus(data);
-  };
+  }, [buscar]);
 
-  useEffect(() => { cargarApus(); }, [buscar]);
+  useEffect(() => { cargarApus(); }, [cargarApus]);
 
   const abrirNuevo = () => {
     setForm(modalBase);

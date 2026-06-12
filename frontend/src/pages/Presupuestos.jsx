@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, { useEffect, useState, useRef } from "react";
 
 const API = "http://127.0.0.1:8000";
 
@@ -20,7 +20,7 @@ const BADGE = {
 
 function normalizar(t) {
   if (!t) return "";
-  return t.replace(/^RN[\s\-]+/i,"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/\s+/g," ").trim();
+  return t.replace(/^RN[\s-]+/i,"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/\s+/g," ").trim();
 }
 
 function construirArbol(nodos) {
