@@ -71,3 +71,59 @@ def eliminar_apu(apu_id: int, db: Session = Depends(get_db)):
     db.delete(db_apu)
     db.commit()
     return {"ok": True}
+
+
+
+@router.get("/{apu_id}/costo")
+def obtener_costo_apu(apu_id: int, db: Session = Depends(get_db)):
+    """
+    Calcula y devuelve el precio unitario total del APU según SERCOP:
+    - Equipos/MO: costo = cantidad × precio_recurso × rendimiento
+    - Materiales/Transporte: costo = cantidad × precio_recurso
+    - Herramienta menor = 5% subtotal MO (ya incluida en items como es_herramienta_menor)
+    """
+    from app.models.recurso import Recurso
+    from app.models.apu import APU, APUItem
+
+    apu = db.query(APU).filter(APU.id == apu_id).first()
+    if not apu:
+        raise HTTPException(status_code=404, detail="APU no encontrado")
+
+    items = db.query(APUItem).filter(APUItem.apu_id == apu_id).all()
+
+    subtotales = {"equipo": 0.0, "mano_de_obra": 0.0, "material": 0.0, "transporte": 0.0}
+    subtotal_mo = 0.0
+
+    for item in items:
+        if item.es_herramienta_menor:
+            continue
+        recurso = db.query(Recurso).filter(Recurso.id == item.recurso_id).first()
+        if not recurso:
+            continue
+        precio = recurso.precio_unitario or 0.0
+        cat = item.categoria
+
+        if cat in ("equipo", "mano_de_obra"):
+            costo = item.cantidad * precio * apu.rendimiento
+        else:
+            costo = item.cantidad * precio
+
+        subtotales[cat] = subtotales.get(cat, 0.0) + costo
+        if cat == "mano_de_obra":
+            subtotal_mo += costo
+
+    # Herramienta menor = 5% MO
+    hm = subtotal_mo * 0.05
+    subtotales["equipo"] += hm
+
+    precio_unitario = round(sum(subtotales.values()), 6)
+
+    return {
+        "apu_id": apu_id,
+        "nombre": apu.nombre,
+        "unidad": apu.unidad,
+        "rendimiento": apu.rendimiento,
+        "precio_unitario": precio_unitario,
+        "subtotales": {k: round(v, 6) for k, v in subtotales.items()},
+        "herramienta_menor": round(hm, 6),
+    }

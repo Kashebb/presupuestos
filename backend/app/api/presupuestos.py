@@ -81,6 +81,7 @@ class NodoOut(BaseModel):
     apu_id: Optional[int]
     tipo_rubro: Optional[str]
     observaciones: Optional[str]
+    individualizado: Optional[bool] = None
 
     class Config:
         from_attributes = True
@@ -429,6 +430,27 @@ def desvincular_apu(nodo_id: int, db: Session = Depends(get_db)):
 
     nodo.apu_id = None
     nodo.tipo_rubro = "PENDIENTE"
+    db.commit()
+    db.refresh(nodo)
+    return nodo
+
+@router.patch("/nodos/{nodo_id}/individualizar", response_model=NodoOut)
+def individualizar_nodo(nodo_id: int, db: Session = Depends(get_db)):
+    nodo = db.query(NodoPresupuesto).filter(NodoPresupuesto.id == nodo_id).first()
+    if not nodo:
+        raise HTTPException(status_code=404, detail="Nodo no encontrado")
+    nodo.individualizado = True
+    db.commit()
+    db.refresh(nodo)
+    return nodo
+
+
+@router.patch("/nodos/{nodo_id}/reagrupar", response_model=NodoOut)
+def reagrupar_nodo(nodo_id: int, db: Session = Depends(get_db)):
+    nodo = db.query(NodoPresupuesto).filter(NodoPresupuesto.id == nodo_id).first()
+    if not nodo:
+        raise HTTPException(status_code=404, detail="Nodo no encontrado")
+    nodo.individualizado = False
     db.commit()
     db.refresh(nodo)
     return nodo

@@ -3,7 +3,7 @@ Modelos: Proyecto y NodoPresupuesto
 Módulo: Presupuestos - Sesión 12
 """
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Text
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Text, Boolean
 from sqlalchemy.orm import relationship
 from app.models.base import Base
 
@@ -47,14 +47,15 @@ class NodoPresupuesto(Base):
     tipo_rubro = Column(String(20), nullable=True)
     observaciones = Column(Text, nullable=True)
 
-    # Relación al proyecto
+    # True cuando el usuario sacó este rubro de su grupo automático
+    individualizado = Column(Boolean, default=False, nullable=True)
+
     proyecto = relationship(
         "Proyecto",
         back_populates="nodos",
         foreign_keys=[proyecto_id],
     )
 
-    # Relación recursiva: hijos (un nodo padre tiene muchos hijos)
     hijos = relationship(
         "NodoPresupuesto",
         foreign_keys=[padre_id],
@@ -62,5 +63,6 @@ class NodoPresupuesto(Base):
         lazy="select",
     )
 
-    # APU vinculado
     apu = relationship("APU", foreign_keys=[apu_id], lazy="select")
+
+    
