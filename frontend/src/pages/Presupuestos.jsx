@@ -79,11 +79,11 @@ function esDescendiente(ancestroId, nodo, planos) {
 const DOT_COLOR = { completo: "#16a34a", parcial: "#ca8a04", ninguno: "#dc2626", sin_rubros: "#d1d5db" };
 
 const VISTAS_COLUMNAS = {
-  presupuesto: ["descripcion", "unidad", "metrado", "pu_ref", "total_ref", "estado", "apu"],
-  meta: ["descripcion", "unidad", "metrado", "pu_meta", "total_meta", "estado", "apu"],
-  unitarios: ["descripcion", "unidad", "pu_ref", "pu_meta", "dif_pu", "dif_pu_pct", "estado", "apu"],
-  totales: ["descripcion", "unidad", "metrado", "total_ref", "total_meta", "dif_total", "dif_total_pct", "estado", "apu"],
-  diferencias: ["descripcion", "unidad", "metrado", "total_ref_comparable", "total_meta_comparable", "dif_comparable", "dif_comparable_pct", "estado", "apu"],
+  presupuesto: ["descripcion", "unidad", "metrado", "pu_ref", "total_ref", "estado"],
+  meta: ["descripcion", "unidad", "metrado", "pu_meta", "total_meta", "estado"],
+  unitarios: ["descripcion", "unidad", "pu_ref", "pu_meta", "dif_pu", "dif_pu_pct", "estado"],
+  totales: ["descripcion", "unidad", "metrado", "total_ref", "total_meta", "dif_total", "dif_total_pct", "estado"],
+  diferencias: ["descripcion", "unidad", "metrado", "total_ref_comparable", "total_meta_comparable", "dif_comparable", "dif_comparable_pct", "estado"],
   desglose: ["descripcion", "unidad", "metrado", "material", "mano_de_obra", "equipo", "transporte", "otros", "pu_meta"],
 };
 
@@ -109,7 +109,6 @@ const COLUMNAS = {
   transporte: { label: "P.U. Transporte", align: "right", width: "9%" },
   otros: { label: "P.U. Otros", align: "right", width: "8%" },
   estado: { label: "Estado", align: "center", width: "8%" },
-  apu: { label: "APU", align: "center", width: "18%" },
 };
 
 // Cache de costos APU
@@ -244,6 +243,7 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
   const [apusFiltrados, setApusFiltrados] = useState([]);
   const [costosModalApu, setCostosModalApu] = useState({});
   const [vistaColumnas, setVistaColumnas] = useState("presupuesto");
+  const [rubrosSeleccionados, setRubrosSeleccionados] = useState([]);
 
   const [error, setError] = useState("");
   const [msgExito, setMsgExito] = useState("");
@@ -266,16 +266,17 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
     setCostosApu(prev => ({ ...prev, ...nuevos }));
   }, []);
 
-  const cargarNodos = useCallback(async (proyecto) => {
+  const cargarNodos = useCallback(async (proyecto, opciones = {}) => {
     const r = await fetch(`${API}/presupuestos/proyectos/${proyecto.id}/nodos`);
     const data = await r.json();
     const planos = aplanar(construirArbol(data));
     setNodosPlanos(planos);
     setColapsados({}); setGruposExp({}); setNodoSeleccionado(null);
     setProyectoActual(proyecto); setVista("detalle");
+    if (opciones.limpiarSeleccion || proyectoActual?.id !== proyecto.id) setRubrosSeleccionados([]);
     // Cargar costos de APUs vinculados
     cargarCostosApu(planos);
-  }, [cargarCostosApu]);
+  }, [cargarCostosApu, proyectoActual?.id]);
 
   useEffect(() => {
     if (initialFilter !== "todos" && vista === "lista" && proyectos.length === 1) {
@@ -363,6 +364,10 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
       await fetch(`${API}/presupuestos/nodos/${accion.nodoId}/vincular-apu`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({apu_id: accion.apuId}) });
     } else if (accion.tipo === "desvincular") {
       await fetch(`${API}/presupuestos/nodos/${accion.nodoId}/desvincular-apu`, {method:"PATCH"});
+    } else if (accion.tipo === "marcar_sin_apu") {
+      await fetch(`${API}/presupuestos/nodos/${accion.nodoId}/marcar-sin-apu`, {method:"PATCH"});
+    } else if (accion.tipo === "desmarcar_sin_apu") {
+      await fetch(`${API}/presupuestos/nodos/${accion.nodoId}/desmarcar-sin-apu`, {method:"PATCH"});
     } else if (accion.tipo === "individualizar") {
       await fetch(`${API}/presupuestos/nodos/${accion.nodoId}/individualizar`, {method:"PATCH"});
     } else if (accion.tipo === "reagrupar") {
@@ -375,6 +380,11 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
       await fetch(`${API}/presupuestos/nodos/${accion.nodoId}/desvincular-apu`, {method:"PATCH"});
     } else if (accion.tipo === "desvincular") {
       if (accion.apuId) await fetch(`${API}/presupuestos/nodos/${accion.nodoId}/vincular-apu`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({apu_id: accion.apuId}) });
+    } else if (accion.tipo === "marcar_sin_apu") {
+      if (accion.apuId) await fetch(`${API}/presupuestos/nodos/${accion.nodoId}/vincular-apu`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({apu_id: accion.apuId}) });
+      else await fetch(`${API}/presupuestos/nodos/${accion.nodoId}/desmarcar-sin-apu`, {method:"PATCH"});
+    } else if (accion.tipo === "desmarcar_sin_apu") {
+      await fetch(`${API}/presupuestos/nodos/${accion.nodoId}/marcar-sin-apu`, {method:"PATCH"});
     } else if (accion.tipo === "individualizar") {
       await fetch(`${API}/presupuestos/nodos/${accion.nodoId}/reagrupar`, {method:"PATCH"});
     } else if (accion.tipo === "reagrupar") {
@@ -408,6 +418,7 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
     const creado = await res.json();
     setModalVincular(false);
     mostrarExito("APU creado y vinculado");
+    setRubrosSeleccionados([]);
     await cargarNodos(proyectoActual);
     if (onVerDetalle) {
       onVerDetalle({
@@ -422,12 +433,6 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
     }
   };
 
-  const desvincularApu = async (nodo) => {
-    registrarAccion({ tipo:"desvincular", nodoId:nodo.id, apuId:nodo.apu_id });
-    await fetch(`${API}/presupuestos/nodos/${nodo.id}/desvincular-apu`, {method:"PATCH"});
-    cargarNodos(proyectoActual);
-  };
-
   const individualizar = async (id) => {
     registrarAccion({ tipo:"individualizar", nodoId:id });
     await fetch(`${API}/presupuestos/nodos/${id}/individualizar`, {method:"PATCH"});
@@ -440,8 +445,6 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
     cargarNodos(proyectoActual);
   };
 
-  const marcarSinApu = async (nodo) => { registrarAccion({tipo:"marcar_sin_apu",nodoId:nodo.id,apuId:nodo.apu_id}); await fetch(`${API}/presupuestos/nodos/${nodo.id}/marcar-sin-apu`,{method:"PATCH"}); cargarNodos(proyectoActual); };
-  const desmarcarSinApu = async (nodo) => { registrarAccion({tipo:"desmarcar_sin_apu",nodoId:nodo.id}); await fetch(`${API}/presupuestos/nodos/${nodo.id}/desmarcar-sin-apu`,{method:"PATCH"}); cargarNodos(proyectoActual); };
   const mostrarExito = (msg) => { setMsgExito(msg); setTimeout(()=>setMsgExito(""),4000); };
   const toggleColapsar = (id) => setColapsados(p=>({...p,[id]:!p[id]}));
   const toggleGrupo = (k) => setGruposExp(p=>({...p,[k]:!p[k]}));
@@ -485,6 +488,13 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
 
   // Estadisticas
   const rubros = nodosPlanos.filter(n=>n.tipo==="RUBRO");
+  useEffect(() => {
+    if (!rubrosSeleccionados.length) return;
+    const idsExistentes = new Set(rubros.map(r => r.id));
+    const seleccionVigente = rubrosSeleccionados.filter(id => idsExistentes.has(id));
+    if (seleccionVigente.length !== rubrosSeleccionados.length) setRubrosSeleccionados(seleccionVigente);
+  }, [rubros, rubrosSeleccionados]);
+
   const columnasActivas = VISTAS_COLUMNAS[vistaColumnas] || VISTAS_COLUMNAS.presupuesto;
   const costoDe = (nodo) => nodo?.apu_id ? costosApu[nodo.apu_id] : null;
   const puMetaDe = (nodo) => costoDe(nodo)?.precio_unitario ?? null;
@@ -569,8 +579,70 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
     return true;
   });
 
+  const rubrosPorId = new Map(rubros.map(r => [r.id, r]));
+  const rubrosSeleccionadosDatos = rubrosSeleccionados.map(id => rubrosPorId.get(id)).filter(Boolean);
+  const idsSeleccionados = new Set(rubrosSeleccionadosDatos.map(r => r.id));
+  const rubrosSeleccionadosVisibles = nodosVisibles.filter(n => n.tipo === "RUBRO" && idsSeleccionados.has(n.id)).length;
+  const unicoRubroSeleccionado = rubrosSeleccionadosDatos.length === 1 ? rubrosSeleccionadosDatos[0] : null;
+  const puedeVincularSeleccion = Boolean(unicoRubroSeleccionado);
+  const puedeCrearApuSeleccion = Boolean(unicoRubroSeleccionado);
+  const puedeDesvincularSeleccion = rubrosSeleccionadosDatos.some(r => r.apu_id);
+  const puedeMarcarSinApuSeleccion = rubrosSeleccionadosDatos.length > 0;
+  const textoSeleccion = rubrosSeleccionadosDatos.length === 1
+    ? "1 rubro seleccionado"
+    : `${rubrosSeleccionadosDatos.length} rubros seleccionados`;
+
+  const toggleRubroSeleccionado = (id) => {
+    setRubrosSeleccionados(prev => prev.includes(id) ? prev.filter(rubroId => rubroId !== id) : [...prev, id]);
+  };
+
+  const limpiarSeleccion = () => setRubrosSeleccionados([]);
+
+  const vincularSeleccion = () => {
+    if (!unicoRubroSeleccionado) return;
+    abrirVincular(unicoRubroSeleccionado, false);
+  };
+
+  const crearApuSeleccion = () => {
+    if (!unicoRubroSeleccionado) return;
+    crearApuDesdeRubro(unicoRubroSeleccionado);
+  };
+
+  const desvincularSeleccion = async () => {
+    const conApu = rubrosSeleccionadosDatos.filter(r => r.apu_id);
+    if (!conApu.length) {
+      mostrarExito("No hay APUs vinculados en la seleccion");
+      return;
+    }
+    if (rubrosSeleccionadosDatos.length > 1 && !confirm(`Desvincular APU de ${conApu.length} rubro(s) seleccionado(s)?`)) return;
+    conApu.forEach(r => registrarAccion({ tipo:"desvincular", nodoId:r.id, apuId:r.apu_id }));
+    const resultados = await Promise.all(conApu.map(r => fetch(`${API}/presupuestos/nodos/${r.id}/desvincular-apu`, { method:"PATCH" })));
+    const errores = resultados.filter(r => !r.ok);
+    if (errores.length) {
+      setError(`${errores.length} rubro(s) no se pudieron desvincular.`);
+      return;
+    }
+    mostrarExito(`APU desvinculado de ${conApu.length} rubro(s)`);
+    cargarNodos(proyectoActual);
+  };
+
+  const marcarSinApuSeleccion = async () => {
+    if (!rubrosSeleccionadosDatos.length) return;
+    const conApu = rubrosSeleccionadosDatos.filter(r => r.apu_id);
+    if (conApu.length && !confirm(`Marcar como Sin APU quitará el vínculo de ${conApu.length} rubro(s). Continuar?`)) return;
+    rubrosSeleccionadosDatos.forEach(r => registrarAccion({ tipo:"marcar_sin_apu", nodoId:r.id, apuId:r.apu_id }));
+    const resultados = await Promise.all(rubrosSeleccionadosDatos.map(r => fetch(`${API}/presupuestos/nodos/${r.id}/marcar-sin-apu`, { method:"PATCH" })));
+    const errores = resultados.filter(r => !r.ok);
+    if (errores.length) {
+      setError(`${errores.length} rubro(s) no se pudieron marcar como Sin APU.`);
+      return;
+    }
+    mostrarExito(`${rubrosSeleccionadosDatos.length} rubro(s) marcados como Sin APU`);
+    cargarNodos(proyectoActual);
+  };
+
   const valorCelda = (n, col, esR, m, mc) => {
-    if (!esR && ["unidad","metrado","pu_ref","pu_meta","dif_pu","dif_pu_pct","material","mano_de_obra","equipo","transporte","otros","estado","apu"].includes(col)) return "";
+    if (!esR && ["unidad","metrado","pu_ref","pu_meta","dif_pu","dif_pu_pct","material","mano_de_obra","equipo","transporte","otros","estado"].includes(col)) return "";
     if (col === "unidad") return n.unidad || "";
     if (col === "metrado") return esR && n.metrado != null ? fmtN(n.metrado) : "";
     if (col === "pu_ref") return esR ? fmtM(m.puRef) : "";
@@ -785,6 +857,32 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
                     </button>
                   ))}
                 </div>
+                <div style={{ display:"flex", gap:"4px", alignItems:"center", flexWrap:"wrap", marginLeft:"8px" }}>
+                  <span style={{ fontSize:"10px", color:rubrosSeleccionadosDatos.length?"#166534":"#6b7280", background:rubrosSeleccionadosDatos.length?"#f0fdf4":"#f8fafc", border:"1px solid #e5e7eb", borderRadius:"999px", padding:"2px 8px", whiteSpace:"nowrap" }}>
+                    {rubrosSeleccionadosDatos.length ? textoSeleccion : "Selecciona un rubro"}
+                    {rubrosSeleccionadosDatos.length > 0 && rubrosSeleccionadosVisibles !== rubrosSeleccionadosDatos.length ? `, ${rubrosSeleccionadosVisibles} visible(s)` : ""}
+                  </span>
+                  <button onClick={vincularSeleccion} disabled={!puedeVincularSeleccion} title="Vincular un APU al rubro seleccionado"
+                    style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #166534", borderRadius:"5px", background:puedeVincularSeleccion?"#166534":"#f3f4f6", color:puedeVincularSeleccion?"#fff":"#9ca3af", cursor:puedeVincularSeleccion?"pointer":"not-allowed" }}>
+                    Vincular
+                  </button>
+                  <button onClick={crearApuSeleccion} disabled={!puedeCrearApuSeleccion} title="Crear un nuevo APU desde el rubro seleccionado"
+                    style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #86efac", borderRadius:"5px", background:puedeCrearApuSeleccion?"#f0fdf4":"#f3f4f6", color:puedeCrearApuSeleccion?"#166534":"#9ca3af", cursor:puedeCrearApuSeleccion?"pointer":"not-allowed" }}>
+                    Crear APU
+                  </button>
+                  <button onClick={desvincularSeleccion} disabled={!puedeDesvincularSeleccion} title="Quitar el APU vinculado de los rubros seleccionados"
+                    style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #fecaca", borderRadius:"5px", background:puedeDesvincularSeleccion?"#fff":"#f3f4f6", color:puedeDesvincularSeleccion?"#dc2626":"#9ca3af", cursor:puedeDesvincularSeleccion?"pointer":"not-allowed" }}>
+                    Desvincular
+                  </button>
+                  <button onClick={marcarSinApuSeleccion} disabled={!puedeMarcarSinApuSeleccion} title="Marcar los rubros seleccionados como Sin APU"
+                    style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #d1d5db", borderRadius:"5px", background:puedeMarcarSinApuSeleccion?"#fff":"#f3f4f6", color:puedeMarcarSinApuSeleccion?"#374151":"#9ca3af", cursor:puedeMarcarSinApuSeleccion?"pointer":"not-allowed" }}>
+                    Sin APU
+                  </button>
+                  <button onClick={limpiarSeleccion} disabled={!rubrosSeleccionadosDatos.length} title="Limpiar seleccion actual"
+                    style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #d1d5db", borderRadius:"5px", background:"#fff", color:rubrosSeleccionadosDatos.length?"#374151":"#9ca3af", cursor:rubrosSeleccionadosDatos.length?"pointer":"not-allowed" }}>
+                    Limpiar
+                  </button>
+                </div>
                 <div style={{ marginLeft:"auto", display:"flex", gap:"4px", alignItems:"center" }}>
                   <input type="text" placeholder="Buscar rubro..." value={buscarRubro} onChange={e=>setBuscarRubro(e.target.value)}
                     style={{ fontSize:"11px", padding:"3px 8px", border:"1px solid #d1d5db", borderRadius:"6px", width:"130px" }}/>
@@ -802,6 +900,9 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
                   <table style={{ width:"100%", borderCollapse:"collapse", fontSize:"11px" }}>
                     <thead>
                       <tr style={{ background:"#f3f4f6", position:"sticky", top:0, zIndex:1 }}>
+                        <th style={{ padding:"7px 3px", textAlign:"center", borderBottom:"1px solid #e5e7eb", color:"#374151", fontWeight:"600", width:"24px", minWidth:"24px", maxWidth:"24px", whiteSpace:"nowrap" }} title="Seleccion manual por rubro">
+                          Sel.
+                        </th>
                         {columnasActivas.map((key)=>{
                           const c = COLUMNAS[key];
                           return <th key={key} style={{ padding:"7px 8px", textAlign:c.align, borderBottom:"1px solid #e5e7eb", color:"#374151", fontWeight:"600", width:c.width, whiteSpace:"nowrap" }}>{c.label}</th>;
@@ -817,9 +918,21 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
                         const tieneHijos = !esR&&nodosPlanos.some(h=>h.padre_id===n.id);
                         const m = esR ? rubroMetricas(n) : {};
                         const mc = !esR ? metricasContenedor(n) : {};
+                        const estaSeleccionado = esR && idsSeleccionados.has(n.id);
                         return (
-                          <tr key={n.id} style={{ background:esR?"#fff":cfg.bg, borderBottom:"1px solid #e5e7eb", cursor:tieneHijos?"pointer":"default" }}
+                          <tr key={n.id} style={{ background:estaSeleccionado?"#ecfdf5":(esR?"#fff":cfg.bg), borderBottom:estaSeleccionado?"1px solid #bbf7d0":"1px solid #e5e7eb", cursor:tieneHijos?"pointer":"default" }}
                             onClick={()=>tieneHijos&&toggleColapsar(n.id)}>
+                            <td style={{ padding:"5px 3px", textAlign:"center", width:"24px", minWidth:"24px", maxWidth:"24px", borderLeft:estaSeleccionado?"3px solid #16a34a":"3px solid transparent" }} onClick={e=>e.stopPropagation()}>
+                              {esR&&(
+                                <input
+                                  type="checkbox"
+                                  checked={estaSeleccionado}
+                                  onChange={()=>toggleRubroSeleccionado(n.id)}
+                                  title="Seleccionar rubro"
+                                  style={{ width:"13px", height:"13px", cursor:"pointer", accentColor:"#166534" }}
+                                />
+                              )}
+                            </td>
                             {columnasActivas.map((col) => {
                               const c = COLUMNAS[col];
                               const diffValue = col.includes("dif") ? (col.includes("pu") ? m.difPu : (esR ? m.difTotal : mc.difTotal)) : null;
@@ -837,23 +950,6 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
                               }
                               if (col === "estado") {
                                 return <td key={col} style={{ padding:"5px 4px", textAlign:"center" }}>{badge&&<span style={{ background:badge.bg, color:badge.text, borderRadius:"4px", padding:"2px 6px", fontSize:"9px", fontWeight:"600" }}>{badge.label}</span>}</td>;
-                              }
-                              if (col === "apu") {
-                                return (
-                                  <td key={col} style={{ padding:"5px 8px", textAlign:"center" }} onClick={e=>e.stopPropagation()}>
-                                    {esR&&(
-                                      n.tipo_rubro==="VINCULADO"
-                                        ? <button onClick={()=>desvincularApu(n)} style={{ fontSize:"10px", color:"#dc2626", background:"none", border:"none", cursor:"pointer" }}>Desvincular</button>
-                                        : sinApu
-                                          ? <button onClick={()=>desmarcarSinApu(n)} style={{ fontSize:"10px", color:"#16a34a", background:"none", border:"1px solid #86efac", borderRadius:"4px", padding:"2px 6px", cursor:"pointer" }}>Tiene APU</button>
-                                          : <div style={{ display:"flex", gap:"3px", justifyContent:"center" }}>
-                                              <button onClick={()=>abrirVincular(n,false)} style={{ fontSize:"10px", background:"#166534", color:"#fff", border:"none", borderRadius:"4px", padding:"2px 6px", cursor:"pointer" }}>Vincular APU</button>
-                                              <button onClick={()=>crearApuDesdeRubro(n)} style={{ fontSize:"10px", background:"#f0fdf4", color:"#166534", border:"1px solid #86efac", borderRadius:"4px", padding:"2px 6px", cursor:"pointer" }}>Crear Nuevo</button>
-                                              <button onClick={()=>marcarSinApu(n)} style={{ fontSize:"10px", color:"#6b7280", background:"none", border:"1px solid #d1d5db", borderRadius:"4px", padding:"2px 6px", cursor:"pointer" }}>Sin APU</button>
-                                            </div>
-                                    )}
-                                  </td>
-                                );
                               }
                               return <td key={col} style={{ padding:"5px 4px", textAlign:c.align, color:col.includes("dif")?colorDif(diffValue):(esR?"#374151":cfg.text), fontWeight:col.includes("dif")?"500":"400" }}>{valorCelda(n, col, esR, m, mc)}</td>;
                             })}
