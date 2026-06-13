@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useState, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { ActionButton, ModalShell, PageHeader, fieldClass, labelClass } from "../components/ui";
 
 const API = "http://127.0.0.1:8000";
+const PERF_DEBUG = false;
 
 const COLORES_TIPO = {
   FASE:        { bg: "#14532d", text: "#fff", indent: 0  },
@@ -58,22 +59,13 @@ function fmtN(v) { if (v==null) return "-"; return Number(v).toLocaleString("es-
 function fmtPct(v) { if (v==null) return "-"; return Number(v).toLocaleString("es-EC",{style:"percent",minimumFractionDigits:2,maximumFractionDigits:2}); }
 function colorDif(v) { if (v == null) return "#6b7280"; if (v > 0) return "#dc2626"; if (v < 0) return "#16a34a"; return "#6b7280"; }
 function fmtDifM(v) { if (v == null) return "-"; return `${v > 0 ? "+" : ""}${fmtM(v)}`; }
-
-// Estado de vinculacion de un nodo padre
-function estadoNodo(nodoId, planos) {
-  const hijos = planos.filter(n => n.tipo === "RUBRO" && esDescendiente(nodoId, n, planos));
-  if (!hijos.length) return "sin_rubros";
-  const vinc = hijos.filter(r => r.tipo_rubro === "VINCULADO").length;
-  if (vinc === hijos.length) return "completo";
-  if (vinc === 0) return "ninguno";
-  return "parcial";
+function startPerf() {
+  if (!PERF_DEBUG) return null;
+  return performance.now();
 }
-
-function esDescendiente(ancestroId, nodo, planos) {
-  if (!nodo.padre_id) return false;
-  if (nodo.padre_id === ancestroId) return true;
-  const padre = planos.find(n => n.id === nodo.padre_id);
-  return padre ? esDescendiente(ancestroId, padre, planos) : false;
+function debugPerf(label, startedAt, extra = {}) {
+  if (!PERF_DEBUG || startedAt == null) return;
+  console.debug(`[Presupuestos perf] ${label}`, { ms: Math.round((performance.now() - startedAt) * 100) / 100, ...extra });
 }
 
 const DOT_COLOR = { completo: "#16a34a", parcial: "#ca8a04", ninguno: "#dc2626", sin_rubros: "#d1d5db" };
@@ -240,7 +232,6 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
   const [esGrupo, setEsGrupo] = useState(false);
   const [apus, setApus] = useState([]);
   const [buscarApu, setBuscarApu] = useState("");
-  const [apusFiltrados, setApusFiltrados] = useState([]);
   const [costosModalApu, setCostosModalApu] = useState({});
   const [vistaColumnas, setVistaColumnas] = useState("presupuesto");
   const [rubrosSeleccionados, setRubrosSeleccionados] = useState([]);
@@ -296,19 +287,16 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
     });
   }, [modalVincular]);
 
-  useEffect(() => {
-    if (!nodoVinculando) return;
+  const apusFiltrados = useMemo(() => {
+    if (!nodoVinculando) return [];
     const busq = buscarApu.toLowerCase().trim();
-    if (!busq) {
-      setApusFiltrados([]);
-      return;
-    }
-    setApusFiltrados(apus.filter(a => {
+    if (!busq) return [];
+    return apus.filter(a => {
       const nombre = (a.nombre || "").toLowerCase();
       const codigo = (a.codigo || "").toLowerCase();
       const categoria = (a.categoria || "").toLowerCase();
       return a.estado !== "inactivo" && (nombre.includes(busq) || codigo.includes(busq) || categoria.includes(busq));
-    }));
+    });
   }, [apus, buscarApu, nodoVinculando]);
 
   // CRUD proyectos
@@ -449,17 +437,174 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
   const toggleColapsar = (id) => setColapsados(p=>({...p,[id]:!p[id]}));
   const toggleGrupo = (k) => setGruposExp(p=>({...p,[k]:!p[k]}));
 
+  const {
+    nodoPorId,
+    hijosPorPadre,
+    rubros,
+    rubrosPorContenedor,
+    estadoNodoPorId,
+  } = useMemo(() => {
+    const t0 = startPerf();
+    const nodoPorIdLocal = new Map();
+    const hijosPorPadreLocal = new Map();
+    const rubrosLocal = [];
+
+    nodosPlanos.forEach(n => {
+      nodoPorIdLocal.set(n.id, n);
+      if (n.tipo === "RUBRO") rubrosLocal.push(n);
+      const padreKey = n.padre_id ?? null;
+      if (!hijosPorPadreLocal.has(padreKey)) hijosPorPadreLocal.set(padreKey, []);
+      hijosPorPadreLocal.get(padreKey).push(n);
+    });
+
+    const rubrosPorContenedorLocal = new Map();
+    rubrosLocal.forEach(rubro => {
+      let padreId = rubro.padre_id;
+      while (padreId) {
+        if (!rubrosPorContenedorLocal.has(padreId)) rubrosPorContenedorLocal.set(padreId, []);
+        rubrosPorContenedorLocal.get(padreId).push(rubro);
+        padreId = nodoPorIdLocal.get(padreId)?.padre_id;
+      }
+    });
+
+    const estadoNodoPorIdLocal = new Map();
+    nodosPlanos.forEach(nodo => {
+      if (nodo.tipo === "RUBRO") return;
+      const hijos = rubrosPorContenedorLocal.get(nodo.id) || [];
+      if (!hijos.length) {
+        estadoNodoPorIdLocal.set(nodo.id, "sin_rubros");
+        return;
+      }
+      const vinc = hijos.filter(r => r.tipo_rubro === "VINCULADO").length;
+      if (vinc === hijos.length) estadoNodoPorIdLocal.set(nodo.id, "completo");
+      else if (vinc === 0) estadoNodoPorIdLocal.set(nodo.id, "ninguno");
+      else estadoNodoPorIdLocal.set(nodo.id, "parcial");
+    });
+
+    debugPerf("indices", t0, { nodos: nodosPlanos.length, rubros: rubrosLocal.length });
+    return {
+      nodoPorId: nodoPorIdLocal,
+      hijosPorPadre: hijosPorPadreLocal,
+      rubros: rubrosLocal,
+      rubrosPorContenedor: rubrosPorContenedorLocal,
+      estadoNodoPorId: estadoNodoPorIdLocal,
+    };
+  }, [nodosPlanos]);
+
+  const rubrosPorId = useMemo(() => new Map(rubros.map(r => [r.id, r])), [rubros]);
+
+  const columnasActivas = useMemo(
+    () => VISTAS_COLUMNAS[vistaColumnas] || VISTAS_COLUMNAS.presupuesto,
+    [vistaColumnas]
+  );
+  const anchoColumnaSeleccion = 24;
+  const anchoOtrasColumnas = useMemo(() => columnasActivas
+    .filter((key) => key !== "descripcion")
+    .reduce((s, key) => s + (Number.parseFloat(COLUMNAS[key].width) || 0), 0), [columnasActivas]);
+  const anchoDescripcion = `calc(100% - ${anchoColumnaSeleccion}px - ${anchoOtrasColumnas}%)`;
+
+  const metricasRubroPorId = useMemo(() => {
+    const t0 = startPerf();
+    const mapa = new Map();
+    rubros.forEach(r => {
+      const puRef = r.precio_unitario_ref ?? null;
+      const metrado = r.metrado ?? null;
+      const costo = r?.apu_id ? costosApu[r.apu_id] : null;
+      const puMeta = costo?.precio_unitario ?? null;
+      const totalRefR = puRef != null && metrado != null ? puRef * metrado : null;
+      const totalMetaR = puMeta != null && metrado != null ? puMeta * metrado : null;
+      const comparable = Number.isFinite(totalRefR) && totalRefR > 0 && Number.isFinite(totalMetaR);
+      const refComparable = comparable ? totalRefR : null;
+      const metaComparable = comparable ? totalMetaR : null;
+      const difPu = comparable && puRef > 0 ? puMeta - puRef : null;
+      const difTotal = comparable ? metaComparable - refComparable : null;
+      mapa.set(r.id, {
+        puRef,
+        puMeta,
+        totalRef: totalRefR,
+        totalMeta: totalMetaR,
+        comparable,
+        refComparable,
+        metaComparable,
+        difPu,
+        difPuPct: difPu != null && puRef ? difPu / puRef : null,
+        difTotal,
+        difTotalPct: difTotal != null && refComparable ? difTotal / refComparable : null,
+        subtotales: costo?.subtotales || {},
+      });
+    });
+    debugPerf("metricas rubros", t0, { rubros: rubros.length });
+    return mapa;
+  }, [rubros, costosApu]);
+
+  const metricasContenedorPorId = useMemo(() => {
+    const t0 = startPerf();
+    const mapa = new Map();
+    nodosPlanos.forEach(nodo => {
+      if (nodo.tipo === "RUBRO") return;
+      const hijos = rubrosPorContenedor.get(nodo.id) || [];
+      const metricas = hijos.map(r => metricasRubroPorId.get(r.id)).filter(Boolean);
+      const totalRefC = metricas.reduce((s,m)=>s+(m.totalRef||0),0);
+      const metas = metricas.map(m=>m.totalMeta).filter(v=>Number.isFinite(v));
+      const totalMetaC = metas.length ? metas.reduce((s,v)=>s+v,0) : null;
+      const comparables = metricas.filter(m=>m.comparable);
+      const refComparableC = comparables.length ? comparables.reduce((s,m)=>s+(m.refComparable||0),0) : null;
+      const metaComparableC = comparables.length ? comparables.reduce((s,m)=>s+(m.metaComparable||0),0) : null;
+      const difComparableC = refComparableC ? metaComparableC - refComparableC : null;
+      mapa.set(nodo.id, {
+        totalRef: totalRefC,
+        totalMeta: totalMetaC,
+        refComparable: refComparableC,
+        metaComparable: metaComparableC,
+        difTotal: difComparableC,
+        difTotalPct: difComparableC != null && refComparableC ? difComparableC / refComparableC : null,
+      });
+    });
+    debugPerf("metricas contenedores", t0, { contenedores: mapa.size });
+    return mapa;
+  }, [nodosPlanos, rubrosPorContenedor, metricasRubroPorId]);
+
+  const rubroMetricas = useCallback((r) => metricasRubroPorId.get(r.id) || {
+    puRef: null,
+    puMeta: null,
+    totalRef: null,
+    totalMeta: null,
+    comparable: false,
+    refComparable: null,
+    metaComparable: null,
+    difPu: null,
+    difPuPct: null,
+    difTotal: null,
+    difTotalPct: null,
+    subtotales: {},
+  }, [metricasRubroPorId]);
+
+  const metricasContenedor = useCallback((nodo) => metricasContenedorPorId.get(nodo.id) || {
+    totalRef: 0,
+    totalMeta: null,
+    refComparable: null,
+    metaComparable: null,
+    difTotal: null,
+    difTotalPct: null,
+  }, [metricasContenedorPorId]);
+
   // Nodos visibles con filtros
-  const nodosVisibles = (() => {
+  const nodosVisibles = useMemo(() => {
+    const t0 = startPerf();
     const ocultos = new Set();
     nodosPlanos.forEach(n => { if (n.padre_id && (ocultos.has(n.padre_id)||colapsados[n.padre_id])) ocultos.add(n.id); });
     let visibles = nodosPlanos.filter(n => !ocultos.has(n.id));
 
     // Filtro por nodo seleccionado en sidebar
-    if (nodoSeleccionado) {
+    if (nodoSeleccionado && nodoPorId.has(nodoSeleccionado.id)) {
       const idsPermitidos = new Set();
       idsPermitidos.add(nodoSeleccionado.id);
-      nodosPlanos.forEach(n => { if (esDescendiente(nodoSeleccionado.id, n, nodosPlanos)) idsPermitidos.add(n.id); });
+      const pendientes = [...(hijosPorPadre.get(nodoSeleccionado.id) || [])];
+      while (pendientes.length) {
+        const actual = pendientes.pop();
+        idsPermitidos.add(actual.id);
+        pendientes.push(...(hijosPorPadre.get(actual.id) || []));
+      }
       visibles = visibles.filter(n => idsPermitidos.has(n.id));
     }
 
@@ -477,17 +622,16 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
       visibles = visibles.filter(n => n.tipo !== "RUBRO" || n.descripcion.toLowerCase().includes(q));
     }
 
+    debugPerf("nodos visibles", t0, { visibles: visibles.length });
     return visibles;
-  })();
+  }, [nodosPlanos, colapsados, nodoSeleccionado, nodoPorId, hijosPorPadre, filtroEstado, buscarRubro]);
 
   // Nodos sidebar filtrados
-  const nodosSidebar = nodosPlanos.filter(n => n.tipo !== "RUBRO").filter(n => {
+  const nodosSidebar = useMemo(() => nodosPlanos.filter(n => n.tipo !== "RUBRO").filter(n => {
     if (!buscarSidebar.trim()) return true;
     return n.descripcion.toLowerCase().includes(buscarSidebar.toLowerCase());
-  });
+  }), [nodosPlanos, buscarSidebar]);
 
-  // Estadisticas
-  const rubros = nodosPlanos.filter(n=>n.tipo==="RUBRO");
   useEffect(() => {
     if (!rubrosSeleccionados.length) return;
     const idsExistentes = new Set(rubros.map(r => r.id));
@@ -495,94 +639,100 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
     if (seleccionVigente.length !== rubrosSeleccionados.length) setRubrosSeleccionados(seleccionVigente);
   }, [rubros, rubrosSeleccionados]);
 
-  const columnasActivas = VISTAS_COLUMNAS[vistaColumnas] || VISTAS_COLUMNAS.presupuesto;
-  const costoDe = (nodo) => nodo?.apu_id ? costosApu[nodo.apu_id] : null;
-  const puMetaDe = (nodo) => costoDe(nodo)?.precio_unitario ?? null;
-  const rubroMetricas = (r) => {
-    const puRef = r.precio_unitario_ref ?? null;
-    const metrado = r.metrado ?? null;
-    const puMeta = puMetaDe(r);
-    const totalRefR = puRef != null && metrado != null ? puRef * metrado : null;
-    const totalMetaR = puMeta != null && metrado != null ? puMeta * metrado : null;
-    const comparable = Number.isFinite(totalRefR) && totalRefR > 0 && Number.isFinite(totalMetaR);
-    const refComparable = comparable ? totalRefR : null;
-    const metaComparable = comparable ? totalMetaR : null;
-    const difPu = comparable && puRef > 0 ? puMeta - puRef : null;
-    const difTotal = comparable ? metaComparable - refComparable : null;
-    return {
-      puRef,
-      puMeta,
-      totalRef: totalRefR,
-      totalMeta: totalMetaR,
-      comparable,
-      refComparable,
-      metaComparable,
-      difPu,
-      difPuPct: difPu != null && puRef ? difPu / puRef : null,
-      difTotal,
-      difTotalPct: difTotal != null && refComparable ? difTotal / refComparable : null,
-      subtotales: costoDe(r)?.subtotales || {},
-    };
-  };
-  const rubrosDescendientes = (nodoId) => rubros.filter(r => esDescendiente(nodoId, r, nodosPlanos));
-  const metricasContenedor = (nodo) => {
-    const hijos = rubrosDescendientes(nodo.id);
-    const metricas = hijos.map(rubroMetricas);
-    const totalRefC = metricas.reduce((s,m)=>s+(m.totalRef||0),0);
-    const metas = metricas.map(m=>m.totalMeta).filter(v=>Number.isFinite(v));
-    const totalMetaC = metas.length ? metas.reduce((s,v)=>s+v,0) : null;
+  const {
+    totalRef,
+    metricasConMeta,
+    totalMeta,
+    refComparable,
+    metaComparable,
+    difComparable,
+    difComparablePct,
+  } = useMemo(() => {
+    const metricas = rubros.map(r => metricasRubroPorId.get(r.id)).filter(Boolean);
+    const totalRefGlobal = metricas.reduce((s,m)=>s+(m.totalRef||0),0);
+    const conMeta = metricas.filter(m=>Number.isFinite(m.totalMeta));
+    const totalMetaGlobal = conMeta.reduce((s,m)=>s+(m.totalMeta||0),0);
     const comparables = metricas.filter(m=>m.comparable);
-    const refComparableC = comparables.length ? comparables.reduce((s,m)=>s+(m.refComparable||0),0) : null;
-    const metaComparableC = comparables.length ? comparables.reduce((s,m)=>s+(m.metaComparable||0),0) : null;
-    const difComparableC = refComparableC ? metaComparableC - refComparableC : null;
+    const refComparableGlobal = comparables.length ? comparables.reduce((s,m)=>s+(m.refComparable||0),0) : null;
+    const metaComparableGlobal = comparables.length ? comparables.reduce((s,m)=>s+(m.metaComparable||0),0) : null;
+    const difComparableGlobal = refComparableGlobal ? metaComparableGlobal - refComparableGlobal : null;
     return {
-      totalRef: totalRefC,
-      totalMeta: totalMetaC,
-      refComparable: refComparableC,
-      metaComparable: metaComparableC,
-      difTotal: difComparableC,
-      difTotalPct: difComparableC != null && refComparableC ? difComparableC / refComparableC : null,
+      totalRef: totalRefGlobal,
+      metricasConMeta: conMeta,
+      totalMeta: totalMetaGlobal,
+      refComparable: refComparableGlobal,
+      metaComparable: metaComparableGlobal,
+      difComparable: difComparableGlobal,
+      difComparablePct: difComparableGlobal != null && refComparableGlobal ? difComparableGlobal / refComparableGlobal : null,
     };
-  };
-  const metricasRubros = rubros.map(rubroMetricas);
-  const totalRef = metricasRubros.reduce((s,m)=>s+(m.totalRef||0),0);
-  const metricasConMeta = metricasRubros.filter(m=>Number.isFinite(m.totalMeta));
-  const totalMeta = metricasConMeta.reduce((s,m)=>s+(m.totalMeta||0),0);
-  const metricasComparables = metricasRubros.filter(m=>m.comparable);
-  const refComparable = metricasComparables.length ? metricasComparables.reduce((s,m)=>s+(m.refComparable||0),0) : null;
-  const metaComparable = metricasComparables.length ? metricasComparables.reduce((s,m)=>s+(m.metaComparable||0),0) : null;
-  const difComparable = refComparable ? metaComparable - refComparable : null;
-  const difComparablePct = difComparable != null && refComparable ? difComparable / refComparable : null;
+  }, [rubros, metricasRubroPorId]);
+
+  const resumenEstados = useMemo(() => ({
+    vinculados: rubros.filter(r=>r.tipo_rubro==="VINCULADO").length,
+    pendientes: rubros.filter(r=>r.tipo_rubro==="PENDIENTE"&&r.observaciones!=="SIN_APU").length,
+    sinApu: rubros.filter(r=>r.observaciones==="SIN_APU").length,
+  }), [rubros]);
 
   // Stats seccion seleccionada
-  const rubrosSeccion = nodoSeleccionado
-    ? rubros.filter(n=>esDescendiente(nodoSeleccionado.id, n, nodosPlanos))
-    : rubros;
-  const totalRefSeccion = rubrosSeccion.reduce((s,r)=>s+(rubroMetricas(r).totalRef||0),0);
-  const metricasRubrosSeccion = rubrosSeccion.map(rubroMetricas);
-  const metricasMetaSeccion = metricasRubrosSeccion.filter(m=>Number.isFinite(m.totalMeta));
-  const totalMetaSeccion = metricasMetaSeccion.length ? metricasMetaSeccion.reduce((s,m)=>s+(m.totalMeta||0),0) : null;
-  const metricasComparablesSeccion = metricasRubrosSeccion.filter(m=>m.comparable);
-  const refComparableSeccion = metricasComparablesSeccion.length ? metricasComparablesSeccion.reduce((s,m)=>s+(m.refComparable||0),0) : null;
-  const metaComparableSeccion = metricasComparablesSeccion.length ? metricasComparablesSeccion.reduce((s,m)=>s+(m.metaComparable||0),0) : null;
-  const difComparableSeccion = refComparableSeccion ? metaComparableSeccion - refComparableSeccion : null;
-  const difComparablePctSeccion = difComparableSeccion != null && refComparableSeccion ? difComparableSeccion / refComparableSeccion : null;
+  const {
+    rubrosSeccion,
+    rubrosVinculadosSeccion,
+    totalRefSeccion,
+    totalMetaSeccion,
+    refComparableSeccion,
+    metaComparableSeccion,
+    difComparableSeccion,
+    difComparablePctSeccion,
+  } = useMemo(() => {
+    const rubrosActuales = nodoSeleccionado
+      ? rubrosPorContenedor.get(nodoSeleccionado.id) || []
+      : rubros;
+    const metricas = rubrosActuales.map(r => metricasRubroPorId.get(r.id)).filter(Boolean);
+    const totalRefActual = metricas.reduce((s,m)=>s+(m.totalRef||0),0);
+    const metricasMeta = metricas.filter(m=>Number.isFinite(m.totalMeta));
+    const totalMetaActual = metricasMeta.length ? metricasMeta.reduce((s,m)=>s+(m.totalMeta||0),0) : null;
+    const comparables = metricas.filter(m=>m.comparable);
+    const refComparableActual = comparables.length ? comparables.reduce((s,m)=>s+(m.refComparable||0),0) : null;
+    const metaComparableActual = comparables.length ? comparables.reduce((s,m)=>s+(m.metaComparable||0),0) : null;
+    const difComparableActual = refComparableActual ? metaComparableActual - refComparableActual : null;
+    return {
+      rubrosSeccion: rubrosActuales,
+      rubrosVinculadosSeccion: rubrosActuales.filter(r=>r.tipo_rubro==="VINCULADO").length,
+      totalRefSeccion: totalRefActual,
+      totalMetaSeccion: totalMetaActual,
+      refComparableSeccion: refComparableActual,
+      metaComparableSeccion: metaComparableActual,
+      difComparableSeccion: difComparableActual,
+      difComparablePctSeccion: difComparableActual != null && refComparableActual ? difComparableActual / refComparableActual : null,
+    };
+  }, [nodoSeleccionado, rubros, rubrosPorContenedor, metricasRubroPorId]);
 
-  const { grupos, individualizados } = calcularGrupos(nodosPlanos);
+  const { grupos, individualizados } = useMemo(() => calcularGrupos(nodosPlanos), [nodosPlanos]);
 
   // Grupos filtrados
-  const gruposFiltrados = grupos.filter(g => {
+  const gruposFiltrados = useMemo(() => grupos.filter(g => {
     if (buscarGrupo && !normalizar(g.descripcion).includes(normalizar(buscarGrupo))) return false;
     if (filtroGrupo === "VINCULADO") return g.rubros.every(r=>r.tipo_rubro==="VINCULADO");
     if (filtroGrupo === "PENDIENTE") return g.rubros.some(r=>r.tipo_rubro!=="VINCULADO"&&r.observaciones!=="SIN_APU");
     if (filtroGrupo === "SIN_APU") return g.rubros.every(r=>r.observaciones==="SIN_APU");
     return true;
-  });
+  }), [grupos, buscarGrupo, filtroGrupo]);
 
-  const rubrosPorId = new Map(rubros.map(r => [r.id, r]));
-  const rubrosSeleccionadosDatos = rubrosSeleccionados.map(id => rubrosPorId.get(id)).filter(Boolean);
-  const idsSeleccionados = new Set(rubrosSeleccionadosDatos.map(r => r.id));
-  const rubrosSeleccionadosVisibles = nodosVisibles.filter(n => n.tipo === "RUBRO" && idsSeleccionados.has(n.id)).length;
+  const resumenGrupos = useMemo(() => ({
+    vinculados: grupos.filter(g=>g.rubros.every(r=>r.tipo_rubro==="VINCULADO")).length,
+    pendientes: grupos.filter(g=>g.rubros.some(r=>r.tipo_rubro!=="VINCULADO"&&r.observaciones!=="SIN_APU")).length,
+    individualizadosTotal: individualizados.reduce((s,g)=>s+g.rubros.length,0),
+  }), [grupos, individualizados]);
+
+  const idsSeleccionados = useMemo(() => new Set(rubrosSeleccionados), [rubrosSeleccionados]);
+  const rubrosSeleccionadosDatos = useMemo(
+    () => rubrosSeleccionados.map(id => rubrosPorId.get(id)).filter(Boolean),
+    [rubrosSeleccionados, rubrosPorId]
+  );
+  const rubrosSeleccionadosVisibles = useMemo(
+    () => nodosVisibles.filter(n => n.tipo === "RUBRO" && idsSeleccionados.has(n.id)).length,
+    [nodosVisibles, idsSeleccionados]
+  );
   const unicoRubroSeleccionado = rubrosSeleccionadosDatos.length === 1 ? rubrosSeleccionadosDatos[0] : null;
   const puedeVincularSeleccion = Boolean(unicoRubroSeleccionado);
   const puedeCrearApuSeleccion = Boolean(unicoRubroSeleccionado);
@@ -593,7 +743,12 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
     : `${rubrosSeleccionadosDatos.length} rubros seleccionados`;
 
   const toggleRubroSeleccionado = (id) => {
-    setRubrosSeleccionados(prev => prev.includes(id) ? prev.filter(rubroId => rubroId !== id) : [...prev, id]);
+    setRubrosSeleccionados(prev => {
+      const siguiente = new Set(prev);
+      if (siguiente.has(id)) siguiente.delete(id);
+      else siguiente.add(id);
+      return [...siguiente];
+    });
   };
 
   const limpiarSeleccion = () => setRubrosSeleccionados([]);
@@ -759,9 +914,9 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
       {nodosPlanos.length>0&&(
         <div style={{ background:"#f8fafc", borderBottom:"1px solid #e5e7eb", padding:"6px 20px", display:"flex", gap:"16px", fontSize:"11px", color:"#6b7280", flexShrink:0, flexWrap:"wrap" }}>
           <span>Rubros: <strong style={{ color:"#111827" }}>{rubros.length}</strong></span>
-          <span style={{ color:"#16a34a" }}>OK {rubros.filter(r=>r.tipo_rubro==="VINCULADO").length} vinculados</span>
-          <span style={{ color:"#ca8a04" }}>Pend. {rubros.filter(r=>r.tipo_rubro==="PENDIENTE"&&r.observaciones!=="SIN_APU").length} pendientes</span>
-          <span style={{ color:"#dc2626" }}>X {rubros.filter(r=>r.observaciones==="SIN_APU").length} sin APU</span>
+          <span style={{ color:"#16a34a" }}>OK {resumenEstados.vinculados} vinculados</span>
+          <span style={{ color:"#ca8a04" }}>Pend. {resumenEstados.pendientes} pendientes</span>
+          <span style={{ color:"#dc2626" }}>X {resumenEstados.sinApu} sin APU</span>
           <span style={{ marginLeft:"auto", fontWeight:"600", color:"#111827" }}>
             Ref total: {fmtM(totalRef)}
             {" | "}Meta parcial: <span style={{ color:"#166534" }}>{metricasConMeta.length ? fmtM(totalMeta) : "-"}</span>
@@ -805,9 +960,9 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
               <div style={{ overflowY:"auto", flex:1 }}>
                 {nodosSidebar.map(n=>{
                   const cfg = COLORES_TIPO[n.tipo]||COLORES_TIPO.GRUPO;
-                  const tieneHijos = nodosPlanos.some(h=>h.padre_id===n.id);
+                  const tieneHijos = Boolean(hijosPorPadre.get(n.id)?.length);
                   const seleccionado = nodoSeleccionado?.id===n.id;
-                  const est = estadoNodo(n.id, nodosPlanos);
+                  const est = estadoNodoPorId.get(n.id) || "sin_rubros";
                   return (
                     <div key={n.id} onClick={()=>setNodoSeleccionado(seleccionado?null:n)}
                       style={{ paddingLeft:`${cfg.indent+10}px`, paddingRight:"8px", paddingTop:"4px", paddingBottom:"4px",
@@ -826,7 +981,7 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
               {nodoSeleccionado&&(
                 <div style={{ borderTop:"1px solid #e5e7eb", padding:"8px", fontSize:"10px", color:"#6b7280", lineHeight:"1.7" }}>
                   <div style={{ fontWeight:"600", color:"#111827", marginBottom:"2px" }}>{textoVista(nodoSeleccionado.descripcion)}</div>
-                  <div>{rubrosSeccion.length} rubros | {rubrosSeccion.filter(r=>r.tipo_rubro==="VINCULADO").length} vinculados</div>
+                  <div>{rubrosSeccion.length} rubros | {rubrosVinculadosSeccion} vinculados</div>
                   <div>Ref: <strong>{fmtM(totalRefSeccion)}</strong></div>
                   <div>Meta parcial: <strong style={{ color:"#166534" }}>{fmtM(totalMetaSeccion)}</strong></div>
                   <div>Comparable: <strong>{fmtM(refComparableSeccion)}</strong> - <strong style={{ color:"#166534" }}>{fmtM(metaComparableSeccion)}</strong></div>
@@ -897,7 +1052,13 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
                       style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:"6px", padding:"8px 20px", fontSize:"13px", cursor:"pointer" }}>Importar Excel</button>
                   </div>
                 ):(
-                  <table style={{ width:"100%", borderCollapse:"collapse", fontSize:"11px" }}>
+                  <table style={{ width:"100%", borderCollapse:"collapse", fontSize:"11px", tableLayout:"fixed" }}>
+                    <colgroup>
+                      <col style={{ width:`${anchoColumnaSeleccion}px` }} />
+                      {columnasActivas.map((key) => (
+                        <col key={key} style={{ width:key === "descripcion" ? anchoDescripcion : COLUMNAS[key].width }} />
+                      ))}
+                    </colgroup>
                     <thead>
                       <tr style={{ background:"#f3f4f6", position:"sticky", top:0, zIndex:1 }}>
                         <th style={{ padding:"7px 3px", textAlign:"center", borderBottom:"1px solid #e5e7eb", color:"#374151", fontWeight:"600", width:"24px", minWidth:"24px", maxWidth:"24px", whiteSpace:"nowrap" }} title="Seleccion manual por rubro">
@@ -905,7 +1066,7 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
                         </th>
                         {columnasActivas.map((key)=>{
                           const c = COLUMNAS[key];
-                          return <th key={key} style={{ padding:"7px 8px", textAlign:c.align, borderBottom:"1px solid #e5e7eb", color:"#374151", fontWeight:"600", width:c.width, whiteSpace:"nowrap" }}>{c.label}</th>;
+                          return <th key={key} style={{ padding:"7px 8px", textAlign:c.align, borderBottom:"1px solid #e5e7eb", color:"#374151", fontWeight:"600", width:key === "descripcion" ? anchoDescripcion : c.width, whiteSpace:"nowrap" }}>{c.label}</th>;
                         })}
                       </tr>
                     </thead>
@@ -915,7 +1076,7 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
                         const esR = n.tipo==="RUBRO";
                         const sinApu = n.observaciones==="SIN_APU";
                         const badge = esR?(sinApu?BADGE.SIN_APU:BADGE[n.tipo_rubro]||BADGE.PENDIENTE):null;
-                        const tieneHijos = !esR&&nodosPlanos.some(h=>h.padre_id===n.id);
+                        const tieneHijos = !esR&&Boolean(hijosPorPadre.get(n.id)?.length);
                         const m = esR ? rubroMetricas(n) : {};
                         const mc = !esR ? metricasContenedor(n) : {};
                         const estaSeleccionado = esR && idsSeleccionados.has(n.id);
@@ -972,7 +1133,7 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
             ):(
               <>
                 <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:"8px", marginBottom:"12px" }}>
-                  {[["Grupos",grupos.length,"#f8fafc","#374151"],["Con APU",grupos.filter(g=>g.rubros.every(r=>r.tipo_rubro==="VINCULADO")).length,"#f0fdf4","#166534"],["Pendientes",grupos.filter(g=>g.rubros.some(r=>r.tipo_rubro!=="VINCULADO"&&r.observaciones!=="SIN_APU")).length,"#fefce8","#854d0e"],["Individualizados",individualizados.reduce((s,g)=>s+g.rubros.length,0),"#fef9c3","#854d0e"]].map(([label,val,bg,color])=>(
+                  {[["Grupos",grupos.length,"#f8fafc","#374151"],["Con APU",resumenGrupos.vinculados,"#f0fdf4","#166534"],["Pendientes",resumenGrupos.pendientes,"#fefce8","#854d0e"],["Individualizados",resumenGrupos.individualizadosTotal,"#fef9c3","#854d0e"]].map(([label,val,bg,color])=>(
                     <div key={label} style={{ background:bg, border:"1px solid #e5e7eb", borderRadius:"8px", padding:"8px 12px" }}>
                       <div style={{ fontSize:"10px", color }}>{label}</div>
                       <div style={{ fontSize:"16px", fontWeight:"600", color }}>{val}</div>
@@ -1004,7 +1165,7 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
                 {individualizados.length>0&&(
                   <div style={{ marginTop:"24px" }}>
                     <TablaGrupos
-                      titulo={`Rubros individualizados | ${individualizados.reduce((s,g)=>s+g.rubros.length,0)}`}
+                      titulo={`Rubros individualizados | ${resumenGrupos.individualizadosTotal}`}
                       grupos={individualizados} expandidos={gruposExp} onToggle={toggleGrupo}
                       onVincular={g=>abrirVincular(g,true)}
                       onDesvincularGrupo={async g=>{g.rubros.forEach(r=>registrarAccion({tipo:"desvincular",nodoId:r.id,apuId:r.apu_id}));await Promise.all(g.rubros.map(r=>fetch(`${API}/presupuestos/nodos/${r.id}/desvincular-apu`,{method:"PATCH"})));mostrarExito("APU desvinculado");cargarNodos(proyectoActual);}}
