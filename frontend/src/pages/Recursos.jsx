@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ActionButton,
   DataTable,
+  MetricStrip,
   ModalShell,
   PageHeader,
   ToolbarFilter,
@@ -250,6 +251,15 @@ export default function Recursos() {
       .filter((grupo) => grupo.recursos.length > 0);
   }, [filtrados]);
 
+  const resumen = useMemo(() => ({
+    total: recursos.length,
+    mano_de_obra: recursos.filter((recurso) => recurso.categoria === "mano_de_obra").length,
+    material: recursos.filter((recurso) => recurso.categoria === "material").length,
+    equipo: recursos.filter((recurso) => recurso.categoria === "equipo").length,
+    transporte: recursos.filter((recurso) => recurso.categoria === "transporte").length,
+    otros: recursos.filter((recurso) => recurso.categoria === "otros").length,
+  }), [recursos]);
+
   const columns = [
     { key: "codigo", label: "Codigo", width: "13%", render: (recurso) => recurso.codigo || "-" },
     { key: "descripcion", label: "Nombre", render: (recurso) => <span className="font-medium text-slate-900">{recurso.descripcion}</span> },
@@ -280,8 +290,8 @@ export default function Recursos() {
       width: "22%",
       render: (recurso) => (
         <div className="flex justify-center gap-1">
-          <ActionButton onClick={() => abrirDuplicar(recurso)}>Duplicar</ActionButton>
-          {recurso.activo && <ActionButton variant="danger" onClick={() => desactivar(recurso)}>Desactivar</ActionButton>}
+          <ActionButton compact onClick={() => abrirDuplicar(recurso)}>Duplicar</ActionButton>
+          {recurso.activo && <ActionButton variant="danger" compact onClick={() => desactivar(recurso)}>Desactivar</ActionButton>}
         </div>
       ),
     },
@@ -293,14 +303,27 @@ export default function Recursos() {
   ];
 
   return (
-    <div className="p-5">
+    <div className="page-wrap">
       <PageHeader
         title="Recursos"
         subtitle="Biblioteca base de mano de obra, materiales, equipos y transporte."
         actions={<ActionButton variant="primary" onClick={abrirCrear}>Nuevo recurso</ActionButton>}
       />
 
-      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-white p-2">
+      <div className="mb-3">
+        <MetricStrip
+          items={[
+            { label: "Total recursos", value: resumen.total, detail: `${filtrados.length} visibles`, tone: "blue" },
+            { label: "Mano de obra", value: resumen.mano_de_obra, detail: "Recursos laborales", tone: "green" },
+            { label: "Materiales", value: resumen.material, detail: "Insumos directos", tone: "slate" },
+            { label: "Equipos", value: resumen.equipo, detail: "Maquinaria y herramientas", tone: "slate" },
+            { label: "Transporte", value: resumen.transporte, detail: "Movilizacion y acarreo", tone: "slate" },
+            { label: "Otros", value: resumen.otros, detail: "Categorias varias", tone: "slate" },
+          ]}
+        />
+      </div>
+
+      <div className="filter-bar">
         <input
           type="text"
           placeholder="Buscar por nombre o codigo..."
@@ -319,7 +342,7 @@ export default function Recursos() {
         <div className="space-y-4">
           {grupos.map((grupo) => (
             <section key={grupo.categoria}>
-              <div className="mb-1 flex items-center justify-between rounded-t-md border border-slate-200 bg-slate-100 px-3 py-2">
+              <div className="mb-1 flex items-center justify-between rounded-t-md border border-slate-200 bg-green-50 px-3 py-2">
                 <h2 className="text-xs font-semibold text-slate-800">{ETIQUETAS[grupo.categoria] || grupo.categoria}</h2>
                 <span className="text-[11px] text-slate-500">{grupo.recursos.length} recurso{grupo.recursos.length !== 1 ? "s" : ""}</span>
               </div>

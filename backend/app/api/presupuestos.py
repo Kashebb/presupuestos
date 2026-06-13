@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models.presupuesto import Proyecto, NodoPresupuesto
 from app.models.apu import APU
+from app.api.apus import siguiente_codigo_apu
 
 router = APIRouter(prefix="/presupuestos", tags=["Presupuestos"])
 
@@ -89,6 +90,15 @@ class NodoOut(BaseModel):
 
 class VincularAPURequest(BaseModel):
     apu_id: int
+
+
+class CrearAPUDesdeRubroOut(BaseModel):
+    nodo: NodoOut
+    apu_id: int
+    codigo: Optional[str]
+    nombre: str
+    unidad: str
+    estado: str
 
 
 # ════════════════════════════════════════
@@ -420,6 +430,47 @@ def desvincular_apu(nodo_id: int, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(nodo)
     return nodo
+
+
+@router.post("/nodos/{nodo_id}/crear-apu", response_model=CrearAPUDesdeRubroOut, status_code=201)
+def crear_apu_desde_rubro(nodo_id: int, db: Session = Depends(get_db)):
+    """
+    Crea un APU en revision desde un RUBRO y lo vincula en la misma transaccion.
+    """
+    nodo = db.query(NodoPresupuesto).filter(NodoPresupuesto.id == nodo_id).first()
+    if not nodo:
+        raise HTTPException(status_code=404, detail="Nodo no encontrado")
+    if nodo.tipo != "RUBRO":
+        raise HTTPException(status_code=400, detail="Solo se puede crear APU desde nodos tipo RUBRO")
+    if not nodo.unidad:
+        raise HTTPException(status_code=400, detail="El rubro no tiene unidad para crear el APU")
+
+    apu = APU(
+        codigo=siguiente_codigo_apu(db),
+        nombre=nodo.descripcion,
+        descripcion=nodo.descripcion,
+        unidad=nodo.unidad,
+        rendimiento=1.0,
+        estado="en_revision",
+    )
+    db.add(apu)
+    db.flush()
+
+    nodo.apu_id = apu.id
+    nodo.tipo_rubro = "VINCULADO"
+    nodo.observaciones = None
+
+    db.commit()
+    db.refresh(nodo)
+    db.refresh(apu)
+    return {
+        "nodo": nodo,
+        "apu_id": apu.id,
+        "codigo": apu.codigo,
+        "nombre": apu.nombre,
+        "unidad": apu.unidad,
+        "estado": apu.estado,
+    }
 
 @router.patch("/nodos/{nodo_id}/individualizar", response_model=NodoOut)
 def individualizar_nodo(nodo_id: int, db: Session = Depends(get_db)):

@@ -13,7 +13,7 @@ import {
 
 const API = "http://127.0.0.1:8000";
 
-const ESTADOS = ["activo", "en_revision", "inactivo"];
+const ESTADOS = ["referencial", "en_revision", "revisar_costo", "inactivo", "activo"];
 const CATEGORIAS = ["Obras Preliminares", "Movimiento de Tierras", "Estructura", "Mamposteria", "Cubierta", "Instalaciones", "Acabados", "Vias", "Otros"];
 
 const modalBase = {
@@ -30,7 +30,9 @@ const modalBase = {
 
 function estadoTone(estado) {
   if (estado === "activo") return "green";
+  if (estado === "referencial" || estado === "ok" || estado === "validado") return "green";
   if (estado === "en_revision") return "amber";
+  if (estado === "revisar_costo") return "red";
   return "gray";
 }
 
@@ -79,7 +81,8 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
       const control = controlApu(apu);
       if (filtro === "revisar_costo") return control === "revisar_costo";
       if (filtro === "ok") return control !== "revisar_costo";
-      if (["activo", "en_revision", "inactivo"].includes(filtro)) return apu.estado === filtro;
+      if (filtro === "estado_revisar_costo") return apu.estado === "revisar_costo";
+      if (["activo", "referencial", "en_revision", "inactivo"].includes(filtro)) return apu.estado === filtro;
       return true;
     });
   }, [apus, controlApu, filtro]);
@@ -91,6 +94,8 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
       ok: apus.length - revisar,
       revisar,
       enRevision: apus.filter((apu) => apu.estado === "en_revision").length,
+      inactivos: apus.filter((apu) => apu.estado === "inactivo").length,
+      referencial: apus.filter((apu) => apu.estado === "referencial").length,
     };
   }, [apus, controlApu]);
 
@@ -164,8 +169,10 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
     { value: "todos", label: `Todos (${resumen.total})` },
     { value: "revisar_costo", label: `Revisar costo (${resumen.revisar})` },
     { value: "ok", label: `OK (${resumen.ok})` },
+    { value: "referencial", label: `Referencial (${resumen.referencial})` },
     { value: "activo", label: "Activo" },
     { value: "en_revision", label: "En revision" },
+    { value: "estado_revisar_costo", label: "Estado revisar costo" },
     { value: "inactivo", label: "Inactivo" },
   ];
 
@@ -214,23 +221,23 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
       width: "18%",
       render: (apu) => (
         <div className="flex justify-center gap-1">
-          <ActionButton variant="ghost" onClick={() => onVerDetalle(apu)}>Ver</ActionButton>
+          <ActionButton variant="ghost" compact onClick={() => onVerDetalle(apu)}>Ver</ActionButton>
           {editandoRapidoId === apu.id ? (
             <>
-              <ActionButton variant="primary" onClick={() => guardarEdicionRapida(apu)}>Guardar</ActionButton>
-              <ActionButton onClick={() => setEditandoRapidoId(null)}>Cancelar</ActionButton>
+              <ActionButton variant="primary" compact onClick={() => guardarEdicionRapida(apu)}>Guardar</ActionButton>
+              <ActionButton compact onClick={() => setEditandoRapidoId(null)}>Cancelar</ActionButton>
             </>
           ) : (
-            <ActionButton onClick={() => abrirEditarRapido(apu)}>Editar</ActionButton>
+            <ActionButton compact onClick={() => abrirEditarRapido(apu)}>Editar</ActionButton>
           )}
-          {apu.estado !== "inactivo" && <ActionButton variant="danger" onClick={() => desactivar(apu.id)}>Desactivar</ActionButton>}
+          {apu.estado !== "inactivo" && <ActionButton variant="danger" compact onClick={() => desactivar(apu.id)}>Desactivar</ActionButton>}
         </div>
       ),
     },
   ];
 
   return (
-    <div className="p-5">
+    <div className="page-wrap">
       <PageHeader
         title="APUs"
         subtitle="Biblioteca reutilizable de analisis de precios unitarios."
@@ -244,11 +251,12 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
             { label: "OK", value: resumen.ok, detail: "Sin alerta de costo", tone: "green" },
             { label: "Revisar costo", value: resumen.revisar, detail: "Bloquear automatizacion", tone: resumen.revisar > 0 ? "red" : "green", onClick: () => setFiltro("revisar_costo") },
             { label: "En revision", value: resumen.enRevision, detail: "Estado tecnico", tone: resumen.enRevision > 0 ? "amber" : "green", onClick: () => setFiltro("en_revision") },
+            { label: "Inactivos", value: resumen.inactivos, detail: "Fuera de uso", tone: "slate", onClick: () => setFiltro("inactivo") },
           ]}
         />
       </div>
 
-      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-white p-2">
+      <div className="filter-bar">
         <input
           type="text"
           placeholder="Buscar por nombre o codigo..."

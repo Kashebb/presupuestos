@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
@@ -6,6 +8,25 @@ from app.models.apu import APU, APUItem
 from app.schemas.apu import APUCreate, APUUpdate, APUOut
 
 router = APIRouter(prefix="/apus", tags=["apus"])
+
+CODIGO_APU_RE = re.compile(r"^(.*?)(\d+)$")
+
+
+def siguiente_codigo_apu(db: Session):
+    codigos = [row[0] for row in db.query(APU.codigo).filter(APU.codigo.isnot(None)).all()]
+    candidatos = []
+    for codigo in codigos:
+        match = CODIGO_APU_RE.match(codigo or "")
+        if not match:
+            continue
+        prefijo, numero = match.groups()
+        candidatos.append((prefijo, len(numero), int(numero)))
+
+    if not candidatos:
+        return "APU-0001"
+
+    prefijo, ancho, numero = max(candidatos, key=lambda item: item[2])
+    return f"{prefijo}{str(numero + 1).zfill(ancho)}"
 
 def calcular_costo_apu(apu: APU):
     subtotales = {"equipo": 0.0, "mano_de_obra": 0.0, "material": 0.0, "transporte": 0.0}
@@ -95,7 +116,10 @@ def obtener_apu(apu_id: int, db: Session = Depends(get_db)):
 
 @router.post("/", response_model=APUOut)
 def crear_apu(apu: APUCreate, db: Session = Depends(get_db)):
-    db_apu = APU(**apu.model_dump(exclude={"items"}))
+    data = apu.model_dump(exclude={"items"})
+    if not data.get("codigo"):
+        data["codigo"] = siguiente_codigo_apu(db)
+    db_apu = APU(**data)
     db.add(db_apu)
     db.flush()
     for item in apu.items:

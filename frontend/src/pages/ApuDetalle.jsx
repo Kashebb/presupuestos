@@ -10,10 +10,22 @@ const SECCIONES = [
   { key: "transporte",   label: "Transporte",   usaRendimiento: false, labelB: "P.U.",   tooltipB: "B: tarifa de transporte" },
 ];
 
+const ESTADOS_APU = [
+  ["referencial", "Validado / Referencial"],
+  ["en_revision", "En revision"],
+  ["revisar_costo", "Revisar costo"],
+  ["inactivo", "Inactivo"],
+  ["activo", "Activo"],
+];
+
 const estadoBadge = (estado) => {
   const estilos = {
     activo:      { background: "#dcfce7", color: "#166534" },
+    referencial: { background: "#dcfce7", color: "#166534" },
+    ok:          { background: "#dcfce7", color: "#166534" },
+    validado:    { background: "#dcfce7", color: "#166534" },
     en_revision: { background: "#fef9c3", color: "#854d0e" },
+    revisar_costo: { background: "#fee2e2", color: "#991b1b" },
     inactivo:    { background: "#f3f4f6", color: "#6b7280" },
   };
   const s = estilos[estado] || estilos.inactivo;
@@ -24,7 +36,7 @@ const estadoBadge = (estado) => {
   );
 };
 
-// Ícono con tooltip al pasar el cursor por encima
+// Ãcono con tooltip al pasar el cursor por encima
 const InfoIcon = ({ tooltip }) => (
   <span
     title={tooltip}
@@ -37,7 +49,7 @@ const InfoIcon = ({ tooltip }) => (
       verticalAlign: "1px",
     }}
   >
-    ⓘ
+    i
   </span>
 );
 
@@ -53,9 +65,8 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
   const [error, setError]                   = useState("");
   const [cargando, setCargando]             = useState(true);
   const [seccionesContraidas, setSeccionesContraidas] = useState(new Set());
-  const [rendimientoExpandido, setRendimientoExpandido] = useState(false);
-  const [laboral, setLaboral] = useState({ horasDia: 8, diasSemana: 5, semanasMes: 4 });
-  const [rendimientoCampoActivo, setRendimientoCampoActivo] = useState(null);
+  const [laboral] = useState({ horasDia: 8, diasSemana: 5, semanasMes: 4 });
+  const [rendimientoModo, setRendimientoModo] = useState("h_unidad");
   const [rendimientoCampoValor, setRendimientoCampoValor] = useState("");
 
   useEffect(() => {
@@ -67,6 +78,8 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
       ]);
       const dataApu = await resApu.json();
       const dataRec = await resRec.json();
+      setApu(dataApu);
+      setRendimientoEdit(dataApu.rendimiento);
       setItems(dataApu.items || []);
       setRecursos(dataRec);
       setCargando(false);
@@ -74,7 +87,8 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
     cargar();
   }, [apu.id]);
 
-  // ── Cálculos ──────────────────────────────────────────────────────────────
+
+  // â”€â”€ Cálculos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const costoItem = (item, r) => {
     const recurso = recursos.find(rc => rc.id === item.recurso_id);
@@ -100,7 +114,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
     transporte: subtotalTransporte
   })[key] || 0;
 
-  // ── Persistencia ──────────────────────────────────────────────────────────
+  // â”€â”€ Persistencia â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const guardarItems = async (nuevosItems, rendimientoActual) => {
     const r = rendimientoActual ?? apu.rendimiento;
@@ -127,11 +141,33 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
     await guardarItems(items, valorFinal);
   };
 
-  const guardarRendimiento = async () => {
-    await guardarRendimientoBase(parseFloat(String(rendimientoEdit).replace(",", ".")));
+  const guardarEstado = async (nuevoEstado) => {
+    const apuActualizado = { ...apu, estado: nuevoEstado };
+    setApu(apuActualizado);
+    await fetch(`${API}/apus/${apu.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nombre: apu.nombre,
+        unidad: apu.unidad,
+        rendimiento: apu.rendimiento,
+        estado: nuevoEstado,
+        categoria: apu.categoria,
+        subcategoria: apu.subcategoria,
+        descripcion: apu.descripcion,
+        observacion: apu.observacion,
+        items: items.filter(i => !i.es_herramienta_menor).map((i, idx) => ({
+          recurso_id: i.recurso_id,
+          categoria: i.categoria,
+          cantidad: i.cantidad,
+          orden: idx,
+          es_herramienta_menor: false,
+        })),
+      })
+    });
   };
 
-  // ── Agregar ítem ──────────────────────────────────────────────────────────
+  // â”€â”€ Agregar ítem â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const confirmarAgregar = async () => {
     if (!formItem.recurso_id) { setError("Selecciona un recurso."); return; }
@@ -149,7 +185,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
     setError("");
   };
 
-  // ── Editar cantidad inline ────────────────────────────────────────────────
+  // â”€â”€ Editar cantidad inline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const iniciarEditCantidad = (globalIdx, cantidadActual) => {
     setEditandoCantidad(globalIdx);
@@ -167,7 +203,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
     await guardarItems(nuevosItems);
   };
 
-  // ── Eliminar ítem ─────────────────────────────────────────────────────────
+  // â”€â”€ Eliminar ítem â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const eliminarItem = async (globalIdx) => {
     if (!confirm("¿Eliminar este ítem?")) return;
@@ -176,7 +212,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
     await guardarItems(nuevosItems);
   };
 
-  // ── Contraer / expandir sección ───────────────────────────────────────────
+  // â”€â”€ Contraer / expandir sección â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const toggleSeccion = (key) => {
     setSeccionesContraidas(prev => {
@@ -186,7 +222,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
     });
   };
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+  // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const horasDia = Math.max(parseFloat(laboral.horasDia) || 0, 0);
   const diasSemana = Math.max(parseFloat(laboral.diasSemana) || 0, 0);
@@ -222,18 +258,15 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
     return null;
   };
 
-  const confirmarRendimientoCampo = async (key) => {
-    const base = baseDesdeRendimiento(key, rendimientoCampoValor);
-    setRendimientoCampoActivo(null);
-    setRendimientoCampoValor("");
+  const confirmarRendimientoCampo = async () => {
+    const base = baseDesdeRendimiento(rendimientoModo, rendimientoCampoValor);
     if (!base) return;
     await guardarRendimientoBase(base);
   };
 
   const fmt  = (n) => (n || 0).toFixed(4);
-  const rendimientoValue = (key) => (
-    rendimientoCampoActivo === key ? rendimientoCampoValor : fmt(rendimientoValores[key])
-  );
+  const rendimientoModoValor = fmt(rendimientoValores[rendimientoModo]);
+  const rendimientoValue = rendimientoCampoValor || rendimientoModoValor;
   const fmt2 = (n) => (n || 0).toFixed(2);
   const recursosDe = (key) => recursos.filter(r => r.categoria === key);
   const rendimientoCampos = [
@@ -247,13 +280,17 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
     ["unidad_mes", `${apu.unidad}/mes`],
   ];
 
+  useEffect(() => {
+    setRendimientoCampoValor(rendimientoModoValor);
+  }, [rendimientoModoValor]);
+
   if (cargando) return (
     <div style={{ padding: "48px", textAlign: "center", color: "#9ca3af" }}>
       Cargando...
     </div>
   );
 
-  // ── Estilos ───────────────────────────────────────────────────────────────
+  // â”€â”€ Estilos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const card   = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: "8px", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" };
   const thBase = { padding: "8px 10px", fontSize: "0.7rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", color: "#6b7280", borderBottom: "2px solid #e5e7eb", whiteSpace: "nowrap" };
@@ -264,7 +301,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
   const tdR    = { ...tdBase, textAlign: "right", fontVariantNumeric: "tabular-nums" };
 
   return (
-    <div className="p-5">
+    <div className="page-wrap">
       <PageHeader
         title={apu.nombre}
         subtitle="Detalle tecnico y composicion del APU."
@@ -275,7 +312,16 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
       <div style={{ ...card, padding: "14px 18px", marginBottom: "16px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
           <div style={{ fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase" }}>Resumen APU</div>
-          {estadoBadge(apu.estado)}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            {estadoBadge(apu.estado)}
+            <select
+              value={apu.estado || "en_revision"}
+              onChange={e => guardarEstado(e.target.value)}
+              style={{ border: "1px solid #d1d5db", borderRadius: "6px", padding: "4px 8px", fontSize: "0.75rem", color: "#374151", background: "#fff" }}
+            >
+              {ESTADOS_APU.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </div>
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "32px" }}>
           {[["Codigo", apu.codigo || "-"], ["Unidad", apu.unidad], ["Categoria", apu.categoria || "-"]].map(([lbl, val]) => (
@@ -285,63 +331,39 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
             </div>
           ))}
           <div style={{ flex: "1 1 420px", minWidth: "320px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-              <div style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "#9ca3af" }}>Rendimiento</div>
-              <button
-                onClick={() => setRendimientoExpandido(v => !v)}
-                style={{ border: "1px solid #d1d5db", borderRadius: "5px", background: "#fff", color: "#2563eb", fontSize: "0.7rem", padding: "2px 7px", cursor: "pointer" }}
-              >
-                {rendimientoExpandido ? "Ocultar" : "Expandir"}
-              </button>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <input type="text" inputMode="decimal"
-                value={rendimientoEdit}
-                onChange={e => setRendimientoEdit(e.target.value)}
-                onBlur={guardarRendimiento}
-                style={{ border: "1px solid #d1d5db", borderRadius: "6px", padding: "3px 8px", width: "86px", fontSize: "0.95rem", fontWeight: 600, color: "#1f2937", outline: "none" }}
-              />
-              <span style={{ color: "#6b7280", fontSize: "0.875rem" }}>h/{apu.unidad}</span>
-            </div>
-            {rendimientoExpandido && (
-              <div style={{ marginTop: "10px", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "10px", background: "#f8fafc" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(90px, 1fr))", gap: "8px", marginBottom: "10px" }}>
-                  {[
-                    ["horasDia", "Horas/dia"],
-                    ["diasSemana", "Dias/semana"],
-                    ["semanasMes", "Semanas/mes"],
-                  ].map(([key, label]) => (
-                    <label key={key} style={{ fontSize: "0.68rem", color: "#6b7280", fontWeight: 600 }}>
-                      {label}
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={laboral[key]}
-                        onChange={e => setLaboral(prev => ({ ...prev, [key]: e.target.value }))}
-                        style={{ marginTop: "3px", border: "1px solid #d1d5db", borderRadius: "5px", padding: "4px 6px", width: "100%", fontSize: "0.78rem", color: "#111827" }}
-                      />
-                    </label>
-                  ))}
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(96px, 1fr))", gap: "8px" }}>
-                  {rendimientoCampos.map(([key, label]) => (
-                    <label key={key} style={{ fontSize: "0.68rem", color: "#6b7280", fontWeight: 600 }}>
-                      {label}
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={rendimientoValue(key)}
-                        onFocus={() => { setRendimientoCampoActivo(key); setRendimientoCampoValor(fmt(rendimientoValores[key])); }}
-                        onChange={e => setRendimientoCampoValor(e.target.value)}
-                        onBlur={() => confirmarRendimientoCampo(key)}
-                        style={{ marginTop: "3px", border: "1px solid #d1d5db", borderRadius: "5px", padding: "4px 6px", width: "100%", fontSize: "0.78rem", color: "#111827" }}
-                      />
-                    </label>
-                  ))}
-                </div>
+            <div style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "#9ca3af", marginBottom: "6px" }}>Rendimiento</div>
+            <div style={{ border: "1px solid #d1fae5", borderRadius: "8px", padding: "10px", background: "#f0fdf4" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginBottom: "8px" }}>
+                <span style={{ fontSize: "0.78rem", color: "#14532d", fontWeight: 600 }}>Editar desde</span>
+                <select
+                  value={rendimientoModo}
+                  onChange={e => setRendimientoModo(e.target.value)}
+                  style={{ border: "1px solid #86efac", borderRadius: "6px", padding: "4px 8px", fontSize: "0.82rem", color: "#14532d", background: "#fff" }}
+                >
+                  {rendimientoCampos.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                </select>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={rendimientoValue}
+                  onChange={e => setRendimientoCampoValor(e.target.value)}
+                  onBlur={confirmarRendimientoCampo}
+                  onKeyDown={e => { if (e.key === "Enter") confirmarRendimientoCampo(); }}
+                  style={{ border: "1px solid #86efac", borderRadius: "6px", padding: "4px 8px", width: "94px", fontSize: "0.9rem", fontWeight: 700, color: "#1f2937", outline: "none" }}
+                />
               </div>
-            )}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(92px, 1fr))", gap: "6px", fontSize: "0.72rem", color: "#374151" }}>
+                {rendimientoCampos.map(([key, label]) => (
+                  <div key={key} style={{ background: "#fff", border: "1px solid #dcfce7", borderRadius: "6px", padding: "5px 7px" }}>
+                    <div style={{ color: "#6b7280" }}>{label}</div>
+                    <strong>{fmt(rendimientoValores[key])}</strong>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: "7px", fontSize: "0.68rem", color: "#6b7280" }}>
+                Configuracion: {laboral.horasDia} h/dia · {laboral.diasSemana} dias/semana · {laboral.semanasMes} semanas/mes
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -358,8 +380,8 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
             <div
               onClick={() => toggleSeccion(key)}
               style={{
-                background: "#eff6ff",
-                borderLeft: "4px solid #3b82f6",
+                background: "#f0fdf4",
+                borderLeft: "4px solid #15803d",
                 padding: "10px 20px",
                 display: "flex",
                 justifyContent: "space-between",
@@ -367,13 +389,13 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
                 cursor: "pointer",
                 userSelect: "none",
               }}>
-              <h2 style={{ margin: 0, fontSize: "0.8rem", fontWeight: 700, color: "#1e40af", textTransform: "uppercase", letterSpacing: "0.06em", display: "flex", alignItems: "center", gap: "8px" }}>
+              <h2 style={{ margin: 0, fontSize: "0.8rem", fontWeight: 700, color: "#14532d", textTransform: "uppercase", letterSpacing: "0.06em", display: "flex", alignItems: "center", gap: "8px" }}>
                 <span style={{ fontSize: "0.7rem", display: "inline-block", width: "12px" }}>
                   {contraida ? "▶" : "▼"}
                 </span>
                 {label}
               </h2>
-              <span style={{ fontSize: "0.85rem", color: "#1e40af" }}>
+              <span style={{ fontSize: "0.85rem", color: "#14532d" }}>
                 Subtotal: <strong>${fmt2(subtotalDe(key))}</strong>
               </span>
             </div>
@@ -397,15 +419,15 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
                     <th style={{ ...thR, cursor: "help" }} title={tooltipB}>{labelB}<InfoIcon tooltip={tooltipB} /></th>
                     {usaRendimiento ? (
                       <>
-                        <th style={{ ...thR, cursor: "help" }} title="C = A × B (costo unitario)">Costo<InfoIcon tooltip="C = A × B" /></th>
+                        <th style={{ ...thR, cursor: "help" }} title="C = A Ã— B (costo unitario)">Costo<InfoIcon tooltip="C = A Ã— B" /></th>
                         <th style={{ ...thR, cursor: "help" }} title="R: rendimiento (h por unidad)">Rend.<InfoIcon tooltip="R: rendimiento" /></th>
-                        <th style={{ ...thR, cursor: "help" }} title="D = C × R (total del ítem)">Total<InfoIcon tooltip="D = C × R" /></th>
+                        <th style={{ ...thR, cursor: "help" }} title="D = C Ã— R (total del ítem)">Total<InfoIcon tooltip="D = C Ã— R" /></th>
                       </>
                     ) : (
                       <>
                         <th style={{ ...thBase, textAlign: "center", color: "#d1d5db" }}>—</th>
                         <th style={{ ...thBase, textAlign: "center", color: "#d1d5db" }}>—</th>
-                        <th style={{ ...thR, cursor: "help" }} title="Total = A × B">Total<InfoIcon tooltip="Total = A × B" /></th>
+                        <th style={{ ...thR, cursor: "help" }} title="Total = A Ã— B">Total<InfoIcon tooltip="Total = A Ã— B" /></th>
                       </>
                     )}
                     <th style={thBase}></th>
@@ -435,7 +457,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
                     </tr>
                   )}
 
-                  {/* Ítems de la sección */}
+                  {/* Ãtems de la sección */}
                   {itemsSeccion.map((item) => {
                     const recurso   = recursos.find(r => r.id === item.recurso_id);
                     const globalIdx = items.indexOf(item);
@@ -462,12 +484,12 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
                               onChange={e => setCantidadEdit(e.target.value)}
                               onBlur={() => confirmarEditCantidad(globalIdx)}
                               onKeyDown={e => { if (e.key === "Enter") confirmarEditCantidad(globalIdx); if (e.key === "Escape") setEditandoCantidad(null); }}
-                              style={{ border: "1px solid #93c5fd", borderRadius: "4px", padding: "2px 6px", width: "70px", textAlign: "right", fontSize: "0.85rem", outline: "none" }}
+                              style={{ border: "1px solid #bbf7d0", borderRadius: "4px", padding: "2px 6px", width: "70px", textAlign: "right", fontSize: "0.85rem", outline: "none" }}
                             />
                           ) : (
                             <span
                               onClick={() => iniciarEditCantidad(globalIdx, item.cantidad)}
-                              style={{ cursor: "pointer", borderBottom: "1px dashed #93c5fd", paddingBottom: "1px" }}
+                              style={{ cursor: "pointer", borderBottom: "1px dashed #bbf7d0", paddingBottom: "1px" }}
                               title="Clic para editar">
                               {fmt(item.cantidad)}
                             </span>
@@ -505,12 +527,12 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
 
                   {/* Fila para agregar nuevo ítem */}
                   {agregando === key ? (
-                    <tr style={{ background: "#eff6ff" }}>
+                    <tr style={{ background: "#f0fdf4" }}>
                       <td style={{ padding: "10px 14px" }} colSpan={2}>
                         <select
                           value={formItem.recurso_id}
                           onChange={e => { setFormItem({ ...formItem, recurso_id: e.target.value }); setError(""); }}
-                          style={{ border: "1px solid #93c5fd", borderRadius: "6px", padding: "6px 10px", fontSize: "0.85rem", width: "100%", outline: "none" }}>
+                          style={{ border: "1px solid #bbf7d0", borderRadius: "6px", padding: "6px 10px", fontSize: "0.85rem", width: "100%", outline: "none" }}>
                           <option value="">— Seleccionar recurso —</option>
                           {recursosDe(key).map(r => (
                             <option key={r.id} value={r.id}>{r.descripcion} — {r.unidad}</option>
@@ -523,11 +545,11 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
                           value={formItem.cantidad}
                           onChange={e => setFormItem({ ...formItem, cantidad: e.target.value })}
                           placeholder="Cantidad"
-                          style={{ border: "1px solid #93c5fd", borderRadius: "6px", padding: "6px 10px", fontSize: "0.85rem", width: "100%", outline: "none" }} />
+                          style={{ border: "1px solid #bbf7d0", borderRadius: "6px", padding: "6px 10px", fontSize: "0.85rem", width: "100%", outline: "none" }} />
                       </td>
                       <td colSpan={3} style={{ padding: "10px 14px" }}>
                         <button onClick={confirmarAgregar}
-                          style={{ background: "#2563eb", color: "#fff", border: "none", borderRadius: "6px", padding: "6px 16px", fontSize: "0.85rem", cursor: "pointer", marginRight: "8px" }}>
+                          style={{ background: "#166534", color: "#fff", border: "none", borderRadius: "6px", padding: "6px 16px", fontSize: "0.85rem", cursor: "pointer", marginRight: "8px" }}>
                           Agregar
                         </button>
                         <button onClick={() => { setAgregando(null); setError(""); }}
@@ -540,7 +562,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
                     <tr>
                       <td colSpan={7} style={{ padding: "8px 14px" }}>
                         <button onClick={() => { setFormItem({ recurso_id: "", cantidad: 1.0 }); setError(""); setAgregando(key); }}
-                          style={{ background: "none", border: "none", color: "#3b82f6", cursor: "pointer", fontSize: "0.85rem", fontWeight: 500, padding: 0 }}>
+                          style={{ background: "none", border: "none", color: "#15803d", cursor: "pointer", fontSize: "0.85rem", fontWeight: 500, padding: 0 }}>
                           + Agregar recurso
                         </button>
                       </td>
@@ -570,7 +592,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
             ))}
             <tr style={{ borderTop: "2px solid #e5e7eb" }}>
               <td style={{ padding: "12px 0 0", fontWeight: 700, color: "#111827", fontSize: "1rem" }}>Total Costo Directo</td>
-              <td style={{ padding: "12px 0 0", textAlign: "right", fontWeight: 700, color: "#1d4ed8", fontSize: "1.2rem" }}>${fmt2(totalCostoDirecto)}</td>
+              <td style={{ padding: "12px 0 0", textAlign: "right", fontWeight: 700, color: "#166534", fontSize: "1.2rem" }}>${fmt2(totalCostoDirecto)}</td>
             </tr>
           </tbody>
         </table>

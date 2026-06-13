@@ -1,14 +1,15 @@
 import React, { useCallback, useEffect, useState, useRef } from "react";
+import { ActionButton, ModalShell, PageHeader, fieldClass, labelClass } from "../components/ui";
 
 const API = "http://127.0.0.1:8000";
 
 const COLORES_TIPO = {
-  FASE:        { bg: "#1e40af", text: "#fff", indent: 0  },
-  CATEGORIA:   { bg: "#1d4ed8", text: "#fff", indent: 16 },
-  SUBCATEGORIA:{ bg: "#2563eb", text: "#fff", indent: 32 },
-  CAPITULO:    { bg: "#3b82f6", text: "#fff", indent: 48 },
-  SUBCAPITULO: { bg: "#60a5fa", text: "#1e3a8a", indent: 64 },
-  GRUPO:       { bg: "#93c5fd", text: "#1e3a8a", indent: 80 },
+  FASE:        { bg: "#14532d", text: "#fff", indent: 0  },
+  CATEGORIA:   { bg: "#166534", text: "#fff", indent: 16 },
+  SUBCATEGORIA:{ bg: "#166534", text: "#fff", indent: 32 },
+  CAPITULO:    { bg: "#15803d", text: "#fff", indent: 48 },
+  SUBCAPITULO: { bg: "#86efac", text: "#1e3a8a", indent: 64 },
+  GRUPO:       { bg: "#bbf7d0", text: "#1e3a8a", indent: 80 },
   RUBRO:       { bg: "#fff",    text: "#111827", indent: 96 },
 };
 
@@ -49,8 +50,11 @@ function calcularGrupos(planos) {
 
 function fmtM(v) { if (v==null) return "—"; return "$"+Number(v).toLocaleString("es-EC",{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function fmtN(v) { if (v==null) return "—"; return Number(v).toLocaleString("es-EC",{maximumFractionDigits:2}); }
+function fmtPct(v) { if (v==null) return "—"; return Number(v).toLocaleString("es-EC",{style:"percent",minimumFractionDigits:2,maximumFractionDigits:2}); }
+function colorDif(v) { if (v == null) return "#6b7280"; if (v > 0) return "#dc2626"; if (v < 0) return "#16a34a"; return "#6b7280"; }
+function fmtDifM(v) { if (v == null) return "—"; return `${v > 0 ? "+" : ""}${fmtM(v)}`; }
 
-// ── Estado de vinculación de un nodo padre ────────────────
+// â”€â”€ Estado de vinculación de un nodo padre â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function estadoNodo(nodoId, planos) {
   const hijos = planos.filter(n => n.tipo === "RUBRO" && esDescendiente(nodoId, n, planos));
   if (!hijos.length) return "sin_rubros";
@@ -69,7 +73,37 @@ function esDescendiente(ancestroId, nodo, planos) {
 
 const DOT_COLOR = { completo: "#16a34a", parcial: "#ca8a04", ninguno: "#dc2626", sin_rubros: "#d1d5db" };
 
-// ── Cache de costos APU ───────────────────────────────────
+const VISTAS_COLUMNAS = {
+  presupuesto: ["descripcion", "unidad", "metrado", "pu_ref", "total_ref", "estado", "apu"],
+  meta: ["descripcion", "unidad", "metrado", "pu_meta", "total_meta", "estado", "apu"],
+  unitarios: ["descripcion", "unidad", "pu_ref", "pu_meta", "dif_pu", "dif_pu_pct", "estado", "apu"],
+  totales: ["descripcion", "unidad", "metrado", "total_ref", "total_meta", "dif_total", "dif_total_pct", "estado", "apu"],
+  diferencias: ["descripcion", "unidad", "metrado", "dif_pu", "dif_pu_pct", "dif_total", "dif_total_pct", "estado", "apu"],
+  desglose: ["descripcion", "unidad", "metrado", "material", "mano_de_obra", "equipo", "transporte", "otros", "pu_meta"],
+};
+
+const COLUMNAS = {
+  descripcion: { label: "Descripcion", align: "left", width: "28%" },
+  unidad: { label: "Und", align: "center", width: "5%" },
+  metrado: { label: "Metrado", align: "right", width: "8%" },
+  pu_ref: { label: "P.U. Ref", align: "right", width: "8%" },
+  pu_meta: { label: "P.U. Meta", align: "right", width: "8%" },
+  dif_pu: { label: "Dif P.U. $", align: "right", width: "8%" },
+  dif_pu_pct: { label: "Dif P.U. %", align: "right", width: "8%" },
+  total_ref: { label: "P. Total Ref", align: "right", width: "9%" },
+  total_meta: { label: "P. Total Meta", align: "right", width: "9%" },
+  dif_total: { label: "Dif Total $", align: "right", width: "9%" },
+  dif_total_pct: { label: "Dif Total %", align: "right", width: "8%" },
+  material: { label: "P.U. Materiales", align: "right", width: "9%" },
+  mano_de_obra: { label: "P.U. Mano de Obra", align: "right", width: "9%" },
+  equipo: { label: "P.U. Equipos", align: "right", width: "9%" },
+  transporte: { label: "P.U. Transporte", align: "right", width: "9%" },
+  otros: { label: "P.U. Otros", align: "right", width: "8%" },
+  estado: { label: "Estado", align: "center", width: "8%" },
+  apu: { label: "APU", align: "center", width: "18%" },
+};
+
+// â”€â”€ Cache de costos APU â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const costoCache = {};
 async function fetchCostoApu(apuId) {
   if (costoCache[apuId] !== undefined) return costoCache[apuId];
@@ -77,14 +111,14 @@ async function fetchCostoApu(apuId) {
     const r = await fetch(`${API}/apus/${apuId}/costo`);
     if (!r.ok) { costoCache[apuId] = null; return null; }
     const d = await r.json();
-    costoCache[apuId] = d.precio_unitario;
-    return d.precio_unitario;
+    costoCache[apuId] = d;
+    return d;
   } catch { costoCache[apuId] = null; return null; }
 }
 
-// ════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // Subcomponente TablaGrupos
-// ════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function TablaGrupos({ titulo, grupos, expandidos, onToggle, onVincular, onDesvincularGrupo, onIndividualizar, onReagrupar, esInd, bordeColor, headerBg }) {
   return (
     <>
@@ -128,7 +162,7 @@ function TablaGrupos({ titulo, grupos, expandidos, onToggle, onVincular, onDesvi
                     <td style={{ padding:"7px 8px", textAlign:"center" }} onClick={e=>e.stopPropagation()}>
                       {todoVinc
                         ? <button onClick={()=>onDesvincularGrupo(g)} style={{ fontSize:"10px", color:"#dc2626", background:"none", border:"none", cursor:"pointer" }}>Desvincular</button>
-                        : !sinApu && <button onClick={()=>onVincular(g)} style={{ fontSize:"10px", background:"#2563eb", color:"#fff", border:"none", borderRadius:"4px", padding:"3px 8px", cursor:"pointer" }}>+ Vincular al grupo</button>}
+                        : !sinApu && <button onClick={()=>onVincular(g)} style={{ fontSize:"10px", background:"#166534", color:"#fff", border:"none", borderRadius:"4px", padding:"3px 8px", cursor:"pointer" }}>+ Vincular al grupo</button>}
                     </td>
                   </tr>
                   {exp && (
@@ -138,11 +172,11 @@ function TablaGrupos({ titulo, grupos, expandidos, onToggle, onVincular, onDesvi
                         <table style={{ width:"100%", fontSize:"11px", borderCollapse:"collapse" }}>
                           {g.rubros.map(r=>(
                             <tr key={r.id}>
-                              <td style={{ padding:"3px 0", color:"#374151" }}>› {r.descripcion}</td>
+                              <td style={{ padding:"3px 0", color:"#374151" }}>â€º {r.descripcion}</td>
                               <td style={{ padding:"3px 8px", textAlign:"right", color:"#6b7280", whiteSpace:"nowrap" }}>{fmtN(r.metrado)} {r.unidad}</td>
                               <td style={{ padding:"3px 0", textAlign:"right", color:"#6b7280" }}>${r.precio_unitario_ref?.toFixed(2)||"—"}</td>
                               <td style={{ padding:"3px 0 3px 12px", whiteSpace:"nowrap" }}>
-                                {!esInd && onIndividualizar && <button onClick={()=>onIndividualizar(r.id)} style={{ fontSize:"10px", color:"#2563eb", background:"none", border:"none", cursor:"pointer" }}>individualizar</button>}
+                                {!esInd && onIndividualizar && <button onClick={()=>onIndividualizar(r.id)} style={{ fontSize:"10px", color:"#166534", background:"none", border:"none", cursor:"pointer" }}>individualizar</button>}
                                 {esInd && onReagrupar && <button onClick={()=>onReagrupar(r.id)} style={{ fontSize:"10px", color:"#16a34a", background:"none", border:"none", cursor:"pointer" }}>reagrupar</button>}
                               </td>
                             </tr>
@@ -161,10 +195,10 @@ function TablaGrupos({ titulo, grupos, expandidos, onToggle, onVincular, onDesvi
   );
 }
 
-// ════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // Componente principal
-// ════════════════════════════════════════════════════════════
-export default function Presupuestos({ initialFilter = "todos" }) {
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) {
   const [vista, setVista] = useState("lista");
   const [pestana, setPestana] = useState("jerarquica");
   const [proyectos, setProyectos] = useState([]);
@@ -203,6 +237,8 @@ export default function Presupuestos({ initialFilter = "todos" }) {
   const [apus, setApus] = useState([]);
   const [buscarApu, setBuscarApu] = useState("");
   const [apusFiltrados, setApusFiltrados] = useState([]);
+  const [costosModalApu, setCostosModalApu] = useState({});
+  const [vistaColumnas, setVistaColumnas] = useState("presupuesto");
 
   const [error, setError] = useState("");
   const [msgExito, setMsgExito] = useState("");
@@ -213,11 +249,11 @@ export default function Presupuestos({ initialFilter = "todos" }) {
     setPestana("jerarquica");
   }, [initialFilter]);
 
-  // ── Cargar proyectos ──────────────────────────────────────
+  // â”€â”€ Cargar proyectos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const cargarProyectos = async () => { const r = await fetch(`${API}/presupuestos/proyectos/`); setProyectos(await r.json()); };
   useEffect(() => { cargarProyectos(); }, []);
 
-  // ── Cargar nodos ──────────────────────────────────────────
+  // â”€â”€ Cargar nodos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const cargarCostosApu = useCallback(async (planos) => {
     const apuIds = [...new Set(planos.filter(n=>n.apu_id).map(n=>n.apu_id))];
     const nuevos = {};
@@ -242,10 +278,16 @@ export default function Presupuestos({ initialFilter = "todos" }) {
     }
   }, [cargarNodos, initialFilter, proyectos, vista]);
 
-  // ── Filtrar APUs para modal ───────────────────────────────
+  // â”€â”€ Filtrar APUs para modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (!modalVincular) return;
-    fetch(`${API}/apus/?limit=500`).then(r=>r.json()).then(setApus);
+    Promise.all([
+      fetch(`${API}/apus/?limit=500`).then(r=>r.json()),
+      fetch(`${API}/apus/costos/resumen?limit=500`).then(r=>r.json()),
+    ]).then(([lista, costos]) => {
+      setApus(lista);
+      setCostosModalApu(Object.fromEntries(costos.map(c => [c.apu_id, c])));
+    });
   }, [modalVincular]);
 
   useEffect(() => {
@@ -263,7 +305,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
     }));
   }, [apus, buscarApu, nodoVinculando]);
 
-  // ── CRUD proyectos ────────────────────────────────────────
+  // â”€â”€ CRUD proyectos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const crearProyecto = async () => {
     if (!formNuevo.nombre.trim()) { setError("El nombre es obligatorio."); return; }
     const r = await fetch(`${API}/presupuestos/proyectos/`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(formNuevo) });
@@ -276,7 +318,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
     await fetch(`${API}/presupuestos/proyectos/${id}`, {method:"DELETE"}); cargarProyectos();
   };
 
-  // ── Importar Excel ────────────────────────────────────────
+  // â”€â”€ Importar Excel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const importarExcel = async () => {
     if (!archivoImport) { setError("Selecciona un archivo."); return; }
     setImportando(true); setError("");
@@ -287,7 +329,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
     else { const e=await r.json(); setError(e.detail||"Error."); }
   };
 
-  // ── Historial para deshacer/rehacer ───────────────────────
+  // â”€â”€ Historial para deshacer/rehacer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const registrarAccion = (accion) => {
     setHistorial(prev => [...prev, accion]);
     setFuturo([]);
@@ -335,7 +377,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
     }
   };
 
-  // ── Vincular APU ──────────────────────────────────────────
+  // â”€â”€ Vincular APU â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const abrirVincular = (nodo, grupo) => { setNodoVinculando(nodo); setEsGrupo(grupo); setBuscarApu(""); setError(""); setModalVincular(true); };
 
   const vincularApu = async (apu) => {
@@ -348,6 +390,31 @@ export default function Presupuestos({ initialFilter = "todos" }) {
     // Registrar en historial
     rubros.forEach(r => registrarAccion({ tipo:"vincular", nodoId:r.id, apuId:apu.id }));
     setModalVincular(false); mostrarExito("APU vinculado"); cargarNodos(proyectoActual);
+  };
+
+  const crearApuDesdeRubro = async (nodo) => {
+    setError("");
+    const res = await fetch(`${API}/presupuestos/nodos/${nodo.id}/crear-apu`, { method:"POST" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setError(err.detail || "No se pudo crear y vincular el APU.");
+      return;
+    }
+    const creado = await res.json();
+    setModalVincular(false);
+    mostrarExito("APU creado y vinculado");
+    await cargarNodos(proyectoActual);
+    if (onVerDetalle) {
+      onVerDetalle({
+        id: creado.apu_id,
+        codigo: creado.codigo,
+        nombre: creado.nombre,
+        unidad: creado.unidad,
+        estado: creado.estado,
+        rendimiento: 1.0,
+        items: [],
+      });
+    }
   };
 
   const desvincularApu = async (nodo) => {
@@ -374,7 +441,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
   const toggleColapsar = (id) => setColapsados(p=>({...p,[id]:!p[id]}));
   const toggleGrupo = (k) => setGruposExp(p=>({...p,[k]:!p[k]}));
 
-  // ── Nodos visibles con filtros ────────────────────────────
+  // â”€â”€ Nodos visibles con filtros â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const nodosVisibles = (() => {
     const ocultos = new Set();
     nodosPlanos.forEach(n => { if (n.padre_id && (ocultos.has(n.padre_id)||colapsados[n.padre_id])) ocultos.add(n.id); });
@@ -412,28 +479,62 @@ export default function Presupuestos({ initialFilter = "todos" }) {
     return n.descripcion.toLowerCase().includes(buscarSidebar.toLowerCase());
   });
 
-  // ── Estadísticas ──────────────────────────────────────────
+  // â”€â”€ Estadísticas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const rubros = nodosPlanos.filter(n=>n.tipo==="RUBRO");
-  const totalRef = rubros.reduce((s,r)=>s+(r.metrado||0)*(r.precio_unitario_ref||0),0);
-  const totalMeta = rubros.reduce((s,r)=>{
-    const pu = r.apu_id ? (costosApu[r.apu_id]||0) : 0;
-    return s+(r.metrado||0)*pu;
-  },0);
-  const dif = totalMeta > 0 ? totalMeta - totalRef : null;
+  const columnasActivas = VISTAS_COLUMNAS[vistaColumnas] || VISTAS_COLUMNAS.presupuesto;
+  const costoDe = (nodo) => nodo?.apu_id ? costosApu[nodo.apu_id] : null;
+  const puMetaDe = (nodo) => costoDe(nodo)?.precio_unitario ?? null;
+  const rubroMetricas = (r) => {
+    const puRef = r.precio_unitario_ref ?? null;
+    const metrado = r.metrado ?? null;
+    const puMeta = puMetaDe(r);
+    const totalRefR = puRef != null && metrado != null ? puRef * metrado : null;
+    const totalMetaR = puMeta != null && metrado != null ? puMeta * metrado : null;
+    const difPu = puMeta != null && puRef != null ? puMeta - puRef : null;
+    const difTotal = totalMetaR != null && totalRefR != null ? totalMetaR - totalRefR : null;
+    return {
+      puRef,
+      puMeta,
+      totalRef: totalRefR,
+      totalMeta: totalMetaR,
+      difPu,
+      difPuPct: difPu != null && puRef ? difPu / puRef : null,
+      difTotal,
+      difTotalPct: difTotal != null && totalRefR ? difTotal / totalRefR : null,
+      subtotales: costoDe(r)?.subtotales || {},
+    };
+  };
+  const rubrosDescendientes = (nodoId) => rubros.filter(r => esDescendiente(nodoId, r, nodosPlanos));
+  const metricasContenedor = (nodo) => {
+    const hijos = rubrosDescendientes(nodo.id);
+    const totalRefC = hijos.reduce((s,r)=>s+(rubroMetricas(r).totalRef||0),0);
+    const metas = hijos.map(r=>rubroMetricas(r).totalMeta).filter(v=>v!=null);
+    const totalMetaC = metas.length ? metas.reduce((s,v)=>s+v,0) : null;
+    const difTotalC = totalMetaC != null ? totalMetaC - totalRefC : null;
+    return {
+      totalRef: totalRefC,
+      totalMeta: totalMetaC,
+      difTotal: difTotalC,
+      difTotalPct: difTotalC != null && totalRefC ? difTotalC / totalRefC : null,
+    };
+  };
+  const totalRef = rubros.reduce((s,r)=>s+(rubroMetricas(r).totalRef||0),0);
+  const rubrosConMeta = rubros.filter(r=>puMetaDe(r)!=null);
+  const totalMeta = rubrosConMeta.reduce((s,r)=>s+(rubroMetricas(r).totalMeta||0),0);
+  const dif = rubrosConMeta.length ? totalMeta - totalRef : null;
+  const difPct = dif != null && totalRef ? dif / totalRef : null;
 
   // Stats sección seleccionada
   const rubrosSeccion = nodoSeleccionado
     ? rubros.filter(n=>esDescendiente(nodoSeleccionado.id, n, nodosPlanos))
     : rubros;
-  const totalRefSeccion = rubrosSeccion.reduce((s,r)=>s+(r.metrado||0)*(r.precio_unitario_ref||0),0);
-  const totalMetaSeccion = rubrosSeccion.reduce((s,r)=>{
-    const pu = r.apu_id ? (costosApu[r.apu_id]||0) : 0;
-    return s+(r.metrado||0)*pu;
-  },0);
+  const totalRefSeccion = rubrosSeccion.reduce((s,r)=>s+(rubroMetricas(r).totalRef||0),0);
+  const rubrosMetaSeccion = rubrosSeccion.filter(r=>puMetaDe(r)!=null);
+  const totalMetaSeccion = rubrosMetaSeccion.length ? rubrosMetaSeccion.reduce((s,r)=>s+(rubroMetricas(r).totalMeta||0),0) : null;
 
   const { grupos, individualizados } = calcularGrupos(nodosPlanos);
 
-  // ── Grupos filtrados ──────────────────────────────────────
+  // â”€â”€ Grupos filtrados â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const gruposFiltrados = grupos.filter(g => {
     if (buscarGrupo && !normalizar(g.descripcion).includes(normalizar(buscarGrupo))) return false;
     if (filtroGrupo === "VINCULADO") return g.rubros.every(r=>r.tipo_rubro==="VINCULADO");
@@ -442,74 +543,99 @@ export default function Presupuestos({ initialFilter = "todos" }) {
     return true;
   });
 
-  // ════════════════════════════════════════════════════════════
+  const valorCelda = (n, col, esR, m, mc) => {
+    if (!esR && ["unidad","metrado","pu_ref","pu_meta","dif_pu","dif_pu_pct","material","mano_de_obra","equipo","transporte","otros","estado","apu"].includes(col)) return "";
+    if (col === "unidad") return n.unidad || "";
+    if (col === "metrado") return esR && n.metrado != null ? fmtN(n.metrado) : "";
+    if (col === "pu_ref") return esR ? fmtM(m.puRef) : "";
+    if (col === "pu_meta") return esR ? fmtM(m.puMeta) : "";
+    if (col === "dif_pu") return esR ? fmtDifM(m.difPu) : "";
+    if (col === "dif_pu_pct") return esR ? fmtPct(m.difPuPct) : "";
+    if (col === "total_ref") return fmtM(esR ? m.totalRef : mc.totalRef);
+    if (col === "total_meta") return fmtM(esR ? m.totalMeta : mc.totalMeta);
+    if (col === "dif_total") return fmtDifM(esR ? m.difTotal : mc.difTotal);
+    if (col === "dif_total_pct") return fmtPct(esR ? m.difTotalPct : mc.difTotalPct);
+    if (col === "material") return esR ? fmtM(m.subtotales.material ?? null) : "";
+    if (col === "mano_de_obra") return esR ? fmtM(m.subtotales.mano_de_obra ?? null) : "";
+    if (col === "equipo") return esR ? fmtM(m.subtotales.equipo ?? null) : "";
+    if (col === "transporte") return esR ? fmtM(m.subtotales.transporte ?? null) : "";
+    if (col === "otros") return esR ? fmtM(m.subtotales.otros ?? null) : "";
+    return "";
+  };
+
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // VISTA: Lista de proyectos
-  // ════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   if (vista === "lista") return (
-    <div style={{ padding:"24px" }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"16px" }}>
-        <h1 style={{ fontSize:"22px", fontWeight:"700", color:"#1f2937" }}>Presupuestos</h1>
-        <button onClick={()=>{setFormNuevo({nombre:"",codigo:"",descripcion:""});setError("");setModalNuevo(true);}}
-          style={{ background:"#2563eb", color:"#fff", border:"none", borderRadius:"6px", padding:"8px 16px", fontSize:"13px", cursor:"pointer" }}>+ Nuevo Proyecto</button>
-      </div>
-      {proyectos.length===0 && <div style={{ textAlign:"center", padding:"48px", color:"#9ca3af" }}>No hay proyectos.</div>}
+    <div className="page-wrap">
+      <PageHeader
+        title="Presupuestos"
+        subtitle="Proyectos cargados para vincular rubros, APUs y costos referenciales."
+        actions={
+          <ActionButton variant="primary" onClick={()=>{setFormNuevo({nombre:"",codigo:"",descripcion:""});setError("");setModalNuevo(true);}}>
+            Nuevo proyecto
+          </ActionButton>
+        }
+      />
+      {proyectos.length===0 && <div className="panel" style={{ textAlign:"center", padding:"48px", color:"#9ca3af" }}>No hay proyectos.</div>}
       <div style={{ display:"grid", gap:"12px" }}>
         {proyectos.map(p=>(
-          <div key={p.id} style={{ background:"#fff", border:"1px solid #e5e7eb", borderRadius:"8px", padding:"16px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <div key={p.id} className="panel" style={{ padding:"16px", display:"flex", justifyContent:"space-between", alignItems:"center", gap:"16px", flexWrap:"wrap" }}>
             <div>
               <div style={{ fontWeight:"600", fontSize:"15px" }}>{p.nombre}</div>
               {p.codigo&&<div style={{ fontSize:"12px", color:"#6b7280" }}>Código: {p.codigo}</div>}
             </div>
             <div style={{ display:"flex", gap:"8px" }}>
-              <button onClick={()=>cargarNodos(p)} style={{ background:"#2563eb", color:"#fff", border:"none", borderRadius:"6px", padding:"6px 14px", fontSize:"12px", cursor:"pointer" }}>Abrir</button>
-              <button onClick={()=>eliminarProyecto(p.id)} style={{ background:"#fff", color:"#dc2626", border:"1px solid #fca5a5", borderRadius:"6px", padding:"6px 14px", fontSize:"12px", cursor:"pointer" }}>Eliminar</button>
+              <ActionButton variant="primary" compact onClick={()=>cargarNodos(p)}>Abrir</ActionButton>
+              <ActionButton variant="danger" compact onClick={()=>eliminarProyecto(p.id)}>Eliminar</ActionButton>
             </div>
           </div>
         ))}
       </div>
       {modalNuevo&&(
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.4)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:50 }}>
-          <div style={{ background:"#fff", borderRadius:"10px", padding:"24px", width:"100%", maxWidth:"420px" }}>
-            <h2 style={{ fontSize:"16px", fontWeight:"700", marginBottom:"16px" }}>Nuevo Proyecto</h2>
+        <ModalShell
+          title="Nuevo proyecto"
+          footer={
+            <>
+              <ActionButton onClick={()=>setModalNuevo(false)}>Cancelar</ActionButton>
+              <ActionButton variant="primary" onClick={crearProyecto}>Crear</ActionButton>
+            </>
+          }
+        >
             {[["Nombre *","nombre","Ej: Edificio Norte"],["Código","codigo","Ej: PPTO-2026-001"]].map(([label,key,ph])=>(
               <div key={key} style={{ marginBottom:"10px" }}>
-                <label style={{ display:"block", fontSize:"13px", color:"#374151", marginBottom:"4px" }}>{label}</label>
+                <label className={labelClass}>{label}</label>
                 <input value={formNuevo[key]} onChange={e=>setFormNuevo({...formNuevo,[key]:e.target.value})}
-                  style={{ border:"1px solid #d1d5db", borderRadius:"6px", padding:"6px 10px", width:"100%", boxSizing:"border-box", fontSize:"13px" }} placeholder={ph}/>
+                  className={fieldClass} placeholder={ph}/>
               </div>
             ))}
             <div style={{ marginBottom:"10px" }}>
-              <label style={{ display:"block", fontSize:"13px", color:"#374151", marginBottom:"4px" }}>Descripción</label>
+              <label className={labelClass}>Descripcion</label>
               <textarea value={formNuevo.descripcion} onChange={e=>setFormNuevo({...formNuevo,descripcion:e.target.value})}
-                style={{ border:"1px solid #d1d5db", borderRadius:"6px", padding:"6px 10px", width:"100%", boxSizing:"border-box", fontSize:"13px" }} rows={2}/>
+                className={fieldClass} rows={2}/>
             </div>
             {error&&<p style={{ color:"#dc2626", fontSize:"12px" }}>{error}</p>}
-            <div style={{ display:"flex", justifyContent:"flex-end", gap:"8px", marginTop:"12px" }}>
-              <button onClick={()=>setModalNuevo(false)} style={{ border:"1px solid #d1d5db", borderRadius:"6px", padding:"6px 14px", fontSize:"13px", cursor:"pointer" }}>Cancelar</button>
-              <button onClick={crearProyecto} style={{ background:"#2563eb", color:"#fff", border:"none", borderRadius:"6px", padding:"6px 14px", fontSize:"13px", cursor:"pointer" }}>Crear</button>
-            </div>
-          </div>
-        </div>
+        </ModalShell>
       )}
     </div>
   );
 
-  // ════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // VISTA: Detalle del proyecto
-  // ════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   return (
     <div style={{ display:"flex", flexDirection:"column", height:"calc(100vh - 52px)" }}>
 
       {/* Barra superior */}
       <div style={{ background:"#fff", borderBottom:"1px solid #e5e7eb", padding:"8px 20px", display:"flex", alignItems:"center", gap:"10px", flexShrink:0, flexWrap:"wrap" }}>
-        <button onClick={()=>setVista("lista")} style={{ background:"none", border:"none", color:"#2563eb", fontSize:"13px", cursor:"pointer", padding:0 }}>← Proyectos</button>
+        <button onClick={()=>setVista("lista")} style={{ background:"none", border:"none", color:"#166534", fontSize:"13px", cursor:"pointer", padding:0 }}>â† Proyectos</button>
         <span style={{ color:"#d1d5db" }}>|</span>
         <span style={{ fontWeight:"600", fontSize:"14px" }}>{proyectoActual?.nombre}</span>
         {proyectoActual?.codigo&&<span style={{ fontSize:"12px", color:"#6b7280" }}>({proyectoActual.codigo})</span>}
         <div style={{ display:"flex", gap:"4px", marginLeft:"12px" }}>
           {[["jerarquica","Jerárquica"],["grupos","Por grupos"]].map(([k,label])=>(
             <button key={k} onClick={()=>setPestana(k)}
-              style={{ fontSize:"12px", padding:"4px 12px", border:"1px solid", borderRadius:"6px", cursor:"pointer", borderColor:pestana===k?"#2563eb":"#d1d5db", background:pestana===k?"#2563eb":"#fff", color:pestana===k?"#fff":"#374151" }}>
+              style={{ fontSize:"12px", padding:"4px 12px", border:"1px solid", borderRadius:"6px", cursor:"pointer", borderColor:pestana===k?"#166534":"#d1d5db", background:pestana===k?"#166534":"#fff", color:pestana===k?"#fff":"#374151" }}>
               {label}
             </button>
           ))}
@@ -518,15 +644,15 @@ export default function Presupuestos({ initialFilter = "todos" }) {
           {msgExito&&<span style={{ fontSize:"12px", color:"#16a34a", background:"#f0fdf4", border:"1px solid #86efac", borderRadius:"4px", padding:"3px 10px" }}>{msgExito}</span>}
           <button onClick={deshacer} disabled={!historial.length} title="Deshacer"
             style={{ fontSize:"12px", padding:"4px 10px", cursor:historial.length?"pointer":"not-allowed", opacity:historial.length?1:0.4, border:"1px solid #d1d5db", borderRadius:"6px", background:"#fff" }}>
-            ↩ Deshacer
+            â†© Deshacer
           </button>
           <button onClick={rehacer} disabled={!futuro.length} title="Rehacer"
             style={{ fontSize:"12px", padding:"4px 10px", cursor:futuro.length?"pointer":"not-allowed", opacity:futuro.length?1:0.4, border:"1px solid #d1d5db", borderRadius:"6px", background:"#fff" }}>
-            ↪ Rehacer
+            â†ª Rehacer
           </button>
           {nodosPlanos.length===0&&(
             <button onClick={()=>{setArchivoImport(null);setError("");setModalImportar(true);}}
-              style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:"6px", padding:"6px 14px", fontSize:"12px", cursor:"pointer" }}>↑ Importar Excel</button>
+              style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:"6px", padding:"6px 14px", fontSize:"12px", cursor:"pointer" }}>â†‘ Importar Excel</button>
           )}
         </div>
       </div>
@@ -540,14 +666,16 @@ export default function Presupuestos({ initialFilter = "todos" }) {
           <span style={{ color:"#dc2626" }}>✗ {rubros.filter(r=>r.observaciones==="SIN_APU").length} sin APU</span>
           <span style={{ marginLeft:"auto", fontWeight:"600", color:"#111827" }}>
             Ref: {fmtM(totalRef)}
-            {totalMeta>0&&<> · Meta: <span style={{ color:"#166534" }}>{fmtM(totalMeta)}</span> · Dif: <span style={{ color:dif<0?"#16a34a":"#dc2626" }}>{dif<0?"-":"++"}{fmtM(Math.abs(dif))}</span></>}
+            {" "}· Meta {rubrosConMeta.length < rubros.length ? "parcial" : "total"}: <span style={{ color:"#166534" }}>{rubrosConMeta.length ? fmtM(totalMeta) : "—"}</span>
+            {" "}· Dif: <span style={{ color:colorDif(dif) }}>{fmtDifM(dif)}</span>
+            {" "}· Dif %: <span style={{ color:colorDif(dif) }}>{fmtPct(difPct)}</span>
           </span>
         </div>
       )}
 
       <div style={{ flex:1, overflow:"hidden", display:"flex" }}>
 
-        {/* ═══ PESTAÑA JERÁRQUICA ═══ */}
+        {/* â•â•â• PESTAÃ‘A JERÃRQUICA â•â•â• */}
         {pestana==="jerarquica"&&(
           <>
             {/* Sidebar */}
@@ -568,12 +696,12 @@ export default function Presupuestos({ initialFilter = "todos" }) {
               {nodoSeleccionado&&(
                 <div style={{ padding:"0 8px 6px" }}>
                   <button onClick={()=>setNodoSeleccionado(null)}
-                    style={{ fontSize:"10px", color:"#2563eb", background:"#eff6ff", border:"1px solid #bfdbfe", borderRadius:"4px", padding:"2px 8px", cursor:"pointer", width:"100%" }}>
+                    style={{ fontSize:"10px", color:"#166534", background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:"4px", padding:"2px 8px", cursor:"pointer", width:"100%" }}>
                     ✕ Mostrar todo el presupuesto
                   </button>
                 </div>
               )}
-              {/* Árbol */}
+              {/* Ãrbol */}
               <div style={{ overflowY:"auto", flex:1 }}>
                 {nodosSidebar.map(n=>{
                   const cfg = COLORES_TIPO[n.tipo]||COLORES_TIPO.GRUPO;
@@ -584,7 +712,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                     <div key={n.id} onClick={()=>setNodoSeleccionado(seleccionado?null:n)}
                       style={{ paddingLeft:`${cfg.indent+10}px`, paddingRight:"8px", paddingTop:"4px", paddingBottom:"4px",
                         fontSize:"11px", cursor:"pointer", display:"flex", alignItems:"center", gap:"4px", color:"#1f2937",
-                        background:seleccionado?"#dbeafe":"transparent", borderLeft:seleccionado?"3px solid #2563eb":"3px solid transparent" }}>
+                        background:seleccionado?"#dcfce7":"transparent", borderLeft:seleccionado?"3px solid #166534":"3px solid transparent" }}>
                       {tieneHijos
                         ? <span onClick={e=>{e.stopPropagation();toggleColapsar(n.id);}} style={{ fontSize:"9px", color:"#6b7280", userSelect:"none", minWidth:"10px" }}>{colapsados[n.id]?"▶":"▼"}</span>
                         : <span style={{ minWidth:"10px" }}/>}
@@ -612,6 +740,21 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                 {nodoSeleccionado
                   ? <><span style={{ fontSize:"11px", color:"#6b7280" }}>Mostrando:</span><span style={{ fontSize:"11px", fontWeight:"500" }}>{nodoSeleccionado.descripcion}</span><span style={{ fontSize:"10px", color:"#9ca3af" }}>({rubrosSeccion.length} rubros)</span></>
                   : <span style={{ fontSize:"11px", color:"#6b7280" }}>Presupuesto completo</span>}
+                <div style={{ display:"flex", gap:"3px", flexWrap:"wrap" }}>
+                  {[
+                    ["presupuesto","Presupuesto"],
+                    ["meta","Meta"],
+                    ["unitarios","Unitarios"],
+                    ["totales","Totales"],
+                    ["diferencias","Diferencias"],
+                    ["desglose","Desglose"],
+                  ].map(([key,label])=>(
+                    <button key={key} onClick={()=>setVistaColumnas(key)}
+                      style={{ fontSize:"10px", padding:"2px 7px", border:"1px solid", borderColor:vistaColumnas===key?"#166534":"#d1d5db", borderRadius:"999px", background:vistaColumnas===key?"#166534":"#fff", color:vistaColumnas===key?"#fff":"#374151", cursor:"pointer" }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
                 <div style={{ marginLeft:"auto", display:"flex", gap:"4px", alignItems:"center" }}>
                   <input type="text" placeholder="Buscar rubro..." value={buscarRubro} onChange={e=>setBuscarRubro(e.target.value)}
                     style={{ fontSize:"11px", padding:"3px 8px", border:"1px solid #d1d5db", borderRadius:"6px", width:"130px" }}/>
@@ -623,15 +766,16 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                   <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", gap:"12px", color:"#9ca3af" }}>
                     <div style={{ fontSize:"40px" }}>📄</div>
                     <button onClick={()=>{setArchivoImport(null);setError("");setModalImportar(true);}}
-                      style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:"6px", padding:"8px 20px", fontSize:"13px", cursor:"pointer" }}>↑ Importar Excel</button>
+                      style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:"6px", padding:"8px 20px", fontSize:"13px", cursor:"pointer" }}>â†‘ Importar Excel</button>
                   </div>
                 ):(
                   <table style={{ width:"100%", borderCollapse:"collapse", fontSize:"11px" }}>
                     <thead>
                       <tr style={{ background:"#f3f4f6", position:"sticky", top:0, zIndex:1 }}>
-                        {[["Descripción","left","28%"],["Und","center","5%"],["Metrado","right","8%"],["P.U. Ref","right","8%"],["P.U. Meta","right","8%"],["Dif ($)","right","8%"],["P. Total Ref","right","9%"],["Estado","center","8%"],["APU","center","18%"]].map(([h,align,w])=>(
-                          <th key={h} style={{ padding:"7px 8px", textAlign:align, borderBottom:"1px solid #e5e7eb", color:"#374151", fontWeight:"600", width:w, whiteSpace:"nowrap" }}>{h}</th>
-                        ))}
+                        {columnasActivas.map((key)=>{
+                          const c = COLUMNAS[key];
+                          return <th key={key} style={{ padding:"7px 8px", textAlign:c.align, borderBottom:"1px solid #e5e7eb", color:"#374151", fontWeight:"600", width:c.width, whiteSpace:"nowrap" }}>{c.label}</th>;
+                        })}
                       </tr>
                     </thead>
                     <tbody>
@@ -641,37 +785,48 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                         const sinApu = n.observaciones==="SIN_APU";
                         const badge = esR?(sinApu?BADGE.SIN_APU:BADGE[n.tipo_rubro]||BADGE.PENDIENTE):null;
                         const tieneHijos = !esR&&nodosPlanos.some(h=>h.padre_id===n.id);
-                        const puMeta = esR&&n.apu_id ? (costosApu[n.apu_id]||null) : null;
-                        const difVal = esR&&puMeta!=null ? (puMeta-(n.precio_unitario_ref||0))*(n.metrado||0) : null;
+                        const m = esR ? rubroMetricas(n) : {};
+                        const mc = !esR ? metricasContenedor(n) : {};
                         return (
                           <tr key={n.id} style={{ background:esR?"#fff":cfg.bg, borderBottom:"1px solid #e5e7eb", cursor:tieneHijos?"pointer":"default" }}
                             onClick={()=>tieneHijos&&toggleColapsar(n.id)}>
-                            <td style={{ padding:"5px 8px", paddingLeft:`${cfg.indent+8}px` }}>
-                              <div style={{ display:"flex", alignItems:"center", gap:"5px" }}>
-                                {tieneHijos&&<span style={{ fontSize:"9px", opacity:0.7 }}>{colapsados[n.id]?"▶":"▼"}</span>}
-                                <span style={{ color:esR?"#111827":cfg.text, fontWeight:esR?"400":"600", fontSize:esR?"11px":"11px" }}>{n.descripcion}</span>
-                                {sinApu&&<span style={{ fontSize:"9px", background:"#fee2e2", color:"#991b1b", borderRadius:"3px", padding:"1px 4px" }}>SIN APU</span>}
-                              </div>
-                            </td>
-                            <td style={{ padding:"5px 4px", textAlign:"center", color:esR?"#374151":cfg.text }}>{n.unidad||""}</td>
-                            <td style={{ padding:"5px 4px", textAlign:"right", color:esR?"#374151":cfg.text }}>{esR&&n.metrado!=null?fmtN(n.metrado):""}</td>
-                            <td style={{ padding:"5px 4px", textAlign:"right", color:esR?"#374151":cfg.text }}>{esR?fmtM(n.precio_unitario_ref):""}</td>
-                            <td style={{ padding:"5px 4px", textAlign:"right", color:"#166534" }}>{esR&&puMeta!=null?fmtM(puMeta):esR?"—":""}</td>
-                            <td style={{ padding:"5px 4px", textAlign:"right", fontWeight:"500", color:difVal!=null?(difVal<0?"#16a34a":"#dc2626"):"#6b7280" }}>{esR&&difVal!=null?`${difVal<0?"-":"+"}${fmtM(Math.abs(difVal))}`:esR?"—":""}</td>
-                            <td style={{ padding:"5px 4px", textAlign:"right" }}>{esR?fmtM((n.metrado||0)*(n.precio_unitario_ref||0)):""}</td>
-                            <td style={{ padding:"5px 4px", textAlign:"center" }}>{badge&&<span style={{ background:badge.bg, color:badge.text, borderRadius:"4px", padding:"2px 6px", fontSize:"9px", fontWeight:"600" }}>{badge.label}</span>}</td>
-                            <td style={{ padding:"5px 8px", textAlign:"center" }}>
-                              {esR&&(
-                                n.tipo_rubro==="VINCULADO"
-                                  ? <button onClick={()=>desvincularApu(n)} style={{ fontSize:"10px", color:"#dc2626", background:"none", border:"none", cursor:"pointer" }}>Desvincular</button>
-                                  : sinApu
-                                    ? <button onClick={()=>desmarcarSinApu(n)} style={{ fontSize:"10px", color:"#16a34a", background:"none", border:"1px solid #86efac", borderRadius:"4px", padding:"2px 6px", cursor:"pointer" }}>✓ Tiene APU</button>
-                                    : <div style={{ display:"flex", gap:"3px", justifyContent:"center" }}>
-                                        <button onClick={()=>abrirVincular(n,false)} style={{ fontSize:"10px", background:"#2563eb", color:"#fff", border:"none", borderRadius:"4px", padding:"2px 6px", cursor:"pointer" }}>Vincular APU</button>
-                                        <button onClick={()=>marcarSinApu(n)} style={{ fontSize:"10px", color:"#6b7280", background:"none", border:"1px solid #d1d5db", borderRadius:"4px", padding:"2px 6px", cursor:"pointer" }}>Sin APU</button>
-                                      </div>
-                              )}
-                            </td>
+                            {columnasActivas.map((col) => {
+                              const c = COLUMNAS[col];
+                              const diffValue = col.includes("dif") ? (col.includes("pu") ? m.difPu : (esR ? m.difTotal : mc.difTotal)) : null;
+                              if (col === "descripcion") {
+                                return (
+                                  <td key={col} style={{ padding:"5px 8px", paddingLeft:`${cfg.indent+8}px` }}>
+                                    <div style={{ display:"flex", alignItems:"center", gap:"5px" }}>
+                                      {tieneHijos&&<span style={{ fontSize:"9px", opacity:0.7 }}>{colapsados[n.id]?"▶":"▼"}</span>}
+                                      <span style={{ color:esR?"#111827":cfg.text, fontWeight:esR?"400":"600", fontSize:"11px" }}>{n.descripcion}</span>
+                                      {!esR&&mc.totalRef!=null&&<span style={{ fontSize:"9px", opacity:0.8 }}>total real</span>}
+                                      {sinApu&&<span style={{ fontSize:"9px", background:"#fee2e2", color:"#991b1b", borderRadius:"3px", padding:"1px 4px" }}>SIN APU</span>}
+                                    </div>
+                                  </td>
+                                );
+                              }
+                              if (col === "estado") {
+                                return <td key={col} style={{ padding:"5px 4px", textAlign:"center" }}>{badge&&<span style={{ background:badge.bg, color:badge.text, borderRadius:"4px", padding:"2px 6px", fontSize:"9px", fontWeight:"600" }}>{badge.label}</span>}</td>;
+                              }
+                              if (col === "apu") {
+                                return (
+                                  <td key={col} style={{ padding:"5px 8px", textAlign:"center" }} onClick={e=>e.stopPropagation()}>
+                                    {esR&&(
+                                      n.tipo_rubro==="VINCULADO"
+                                        ? <button onClick={()=>desvincularApu(n)} style={{ fontSize:"10px", color:"#dc2626", background:"none", border:"none", cursor:"pointer" }}>Desvincular</button>
+                                        : sinApu
+                                          ? <button onClick={()=>desmarcarSinApu(n)} style={{ fontSize:"10px", color:"#16a34a", background:"none", border:"1px solid #86efac", borderRadius:"4px", padding:"2px 6px", cursor:"pointer" }}>Tiene APU</button>
+                                          : <div style={{ display:"flex", gap:"3px", justifyContent:"center" }}>
+                                              <button onClick={()=>abrirVincular(n,false)} style={{ fontSize:"10px", background:"#166534", color:"#fff", border:"none", borderRadius:"4px", padding:"2px 6px", cursor:"pointer" }}>Vincular APU</button>
+                                              <button onClick={()=>crearApuDesdeRubro(n)} style={{ fontSize:"10px", background:"#f0fdf4", color:"#166534", border:"1px solid #86efac", borderRadius:"4px", padding:"2px 6px", cursor:"pointer" }}>Crear Nuevo</button>
+                                              <button onClick={()=>marcarSinApu(n)} style={{ fontSize:"10px", color:"#6b7280", background:"none", border:"1px solid #d1d5db", borderRadius:"4px", padding:"2px 6px", cursor:"pointer" }}>Sin APU</button>
+                                            </div>
+                                    )}
+                                  </td>
+                                );
+                              }
+                              return <td key={col} style={{ padding:"5px 4px", textAlign:c.align, color:col.includes("dif")?colorDif(diffValue):(esR?"#374151":cfg.text), fontWeight:col.includes("dif")?"500":"400" }}>{valorCelda(n, col, esR, m, mc)}</td>;
+                            })}
                           </tr>
                         );
                       })}
@@ -683,7 +838,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
           </>
         )}
 
-        {/* ═══ PESTAÑA POR GRUPOS ═══ */}
+        {/* â•â•â• PESTAÃ‘A POR GRUPOS â•â•â• */}
         {pestana==="grupos"&&(
           <div style={{ flex:1, overflowY:"auto", padding:"16px 20px" }}>
             {nodosPlanos.length===0?(
@@ -706,7 +861,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                   {[["todos","Todos"],["VINCULADO","Vinculados"],["PENDIENTE","Pendientes"],["SIN_APU","Sin APU"]].map(([val,label])=>(
                     <button key={val} onClick={()=>setFiltroGrupo(val)}
                       style={{ fontSize:"11px", padding:"4px 10px", borderRadius:"20px", cursor:"pointer", border:"1px solid",
-                        borderColor:filtroGrupo===val?"#2563eb":"#d1d5db", background:filtroGrupo===val?"#2563eb":"#fff", color:filtroGrupo===val?"#fff":"#374151" }}>
+                        borderColor:filtroGrupo===val?"#166534":"#d1d5db", background:filtroGrupo===val?"#166534":"#fff", color:filtroGrupo===val?"#fff":"#374151" }}>
                       {label}
                     </button>
                   ))}
@@ -739,27 +894,27 @@ export default function Presupuestos({ initialFilter = "todos" }) {
 
       {/* Modal Importar */}
       {modalImportar&&(
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.4)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:50 }}>
-          <div style={{ background:"#fff", borderRadius:"10px", padding:"24px", width:"100%", maxWidth:"400px" }}>
-            <h2 style={{ fontSize:"16px", fontWeight:"700", marginBottom:"12px" }}>Importar Excel</h2>
+        <div className="modal-overlay">
+          <div className="modal-shell" style={{ maxWidth:"400px" }}>
+            <h2 className="modal-title">Importar Excel</h2>
             <div style={{ marginBottom:"10px" }}>
-              <label style={{ display:"block", fontSize:"13px", color:"#374151", marginBottom:"4px" }}>Archivo Excel *</label>
-              <input ref={fileRef} type="file" accept=".xlsx" onChange={e=>setArchivoImport(e.target.files[0])} style={{ fontSize:"12px", width:"100%" }}/>
+              <label className={labelClass}>Archivo Excel *</label>
+              <input ref={fileRef} type="file" accept=".xlsx" onChange={e=>setArchivoImport(e.target.files[0])} className={fieldClass}/>
             </div>
             <div style={{ marginBottom:"10px" }}>
-              <label style={{ display:"block", fontSize:"13px", color:"#374151", marginBottom:"4px" }}>Hoja</label>
+              <label className={labelClass}>Hoja</label>
               <select value={hojaImport} onChange={e=>setHojaImport(e.target.value)}
-                style={{ border:"1px solid #d1d5db", borderRadius:"6px", padding:"6px 10px", width:"100%", fontSize:"13px" }}>
+                className={fieldClass}>
                 <option value="PPTO META">PPTO META</option>
                 <option value="PPTO CONTRACTUAL">PPTO CONTRACTUAL</option>
               </select>
             </div>
             {error&&<p style={{ color:"#dc2626", fontSize:"12px" }}>{error}</p>}
-            <div style={{ display:"flex", justifyContent:"flex-end", gap:"8px", marginTop:"12px" }}>
-              <button onClick={()=>{setModalImportar(false);setError("");}} style={{ border:"1px solid #d1d5db", borderRadius:"6px", padding:"6px 14px", fontSize:"13px", cursor:"pointer" }}>Cancelar</button>
-              <button onClick={importarExcel} disabled={importando} style={{ background:importando?"#9ca3af":"#16a34a", color:"#fff", border:"none", borderRadius:"6px", padding:"6px 14px", fontSize:"13px", cursor:importando?"not-allowed":"pointer" }}>
+            <div className="modal-footer">
+              <ActionButton onClick={()=>{setModalImportar(false);setError("");}}>Cancelar</ActionButton>
+              <ActionButton variant="primary" onClick={importarExcel} disabled={importando}>
                 {importando?"Importando...":"Importar"}
-              </button>
+              </ActionButton>
             </div>
           </div>
         </div>
@@ -769,28 +924,54 @@ export default function Presupuestos({ initialFilter = "todos" }) {
       {modalVincular&&(
         <div style={{ position:"fixed", left:0, right:0, bottom:0, background:"#fff", borderTop:"1px solid #cbd5e1", boxShadow:"0 -8px 24px rgba(15,23,42,0.14)", zIndex:60, padding:"12px 20px" }}>
           <div style={{ background:"#fff", width:"100%", maxWidth:"1100px", maxHeight:"42vh", margin:"0 auto", display:"flex", flexDirection:"column" }}>
-            <div style={{ marginBottom:"12px" }}>
+            <div style={{ marginBottom:"12px", display:"flex", justifyContent:"space-between", gap:"12px", alignItems:"flex-start" }}>
+              <div>
               <h2 style={{ fontSize:"15px", fontWeight:"700", margin:0 }}>Vincular APU</h2>
               <div style={{ fontSize:"12px", color:"#6b7280", marginTop:"4px" }}>
                 {esGrupo?`Grupo: "${nodoVinculando?.descripcion}" (${nodoVinculando?.rubros?.length} rubros)`:`Rubro: "${nodoVinculando?.descripcion}"`}
                 {nodoVinculando?.unidad&&<span style={{ marginLeft:"6px", background:"#f3f4f6", padding:"1px 6px", borderRadius:"4px" }}>{nodoVinculando.unidad}</span>}
                 <span style={{ marginLeft:"8px" }}>Unidad solo referencial; no filtra resultados.</span>
               </div>
+              </div>
+              {!esGrupo&&(
+                <button onClick={()=>crearApuDesdeRubro(nodoVinculando)}
+                  style={{ background:"#f0fdf4", color:"#166534", border:"1px solid #86efac", borderRadius:"6px", padding:"6px 12px", fontSize:"12px", fontWeight:"600", cursor:"pointer", whiteSpace:"nowrap" }}>
+                  Crear Nuevo
+                </button>
+              )}
             </div>
             <input type="text" placeholder="Buscar APU por nombre, codigo o categoria..." value={buscarApu} onChange={e=>setBuscarApu(e.target.value)}
               style={{ border:"1px solid #d1d5db", borderRadius:"6px", padding:"7px 10px", fontSize:"13px", marginBottom:"8px" }}/>
             <div style={{ fontSize:"11px", color:"#6b7280", marginBottom:"6px" }}>{buscarApu.trim()?`${apusFiltrados.length} coincidencia(s) no inactivas`:"Escribe para buscar APUs"}</div>
-            <div style={{ overflowY:"auto", flex:1, display:"flex", flexDirection:"column", gap:"4px" }}>
+            <div style={{ overflowY:"auto", flex:1 }}>
               {buscarApu.trim()&&apusFiltrados.length===0&&<div style={{ textAlign:"center", padding:"24px", color:"#9ca3af", fontSize:"13px" }}>No hay APUs coincidentes no inactivos.</div>}
-              {apusFiltrados.map(a=>(
-                <div key={a.id} style={{ border:"1px solid #e5e7eb", borderRadius:"6px", padding:"8px 12px", display:"flex", justifyContent:"space-between", alignItems:"center", fontSize:"12px" }}>
-                  <div>
-                    <div style={{ fontWeight:"500" }}>{a.nombre}</div>
-                    <div style={{ color:"#6b7280", fontSize:"11px" }}>{a.codigo||"—"} · {a.unidad}</div>
-                  </div>
-                  <button onClick={()=>vincularApu(a)} style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:"4px", padding:"4px 12px", fontSize:"11px", cursor:"pointer" }}>Vincular</button>
-                </div>
-              ))}
+              {apusFiltrados.length>0&&(
+                <table style={{ width:"100%", borderCollapse:"collapse", fontSize:"12px" }}>
+                  <thead>
+                    <tr style={{ background:"#f8fafc" }}>
+                      {["APU","Unidad","P.U. Calc.","Estado","Accion"].map((h,i)=>(
+                        <th key={h} style={{ padding:"6px 8px", textAlign:i===2?"right":i===4?"center":"left", color:"#6b7280", borderBottom:"1px solid #e5e7eb", fontSize:"11px" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {apusFiltrados.map(a=>(
+                      <tr key={a.id} style={{ borderBottom:"1px solid #f1f5f9" }}>
+                        <td style={{ padding:"7px 8px" }}>
+                          <div style={{ fontWeight:"500" }}>{a.nombre}</div>
+                          <div style={{ color:"#6b7280", fontSize:"11px" }}>{a.codigo||"—"}</div>
+                        </td>
+                        <td style={{ padding:"7px 8px", color:"#374151" }}>{a.unidad||"—"}</td>
+                        <td style={{ padding:"7px 8px", textAlign:"right", fontVariantNumeric:"tabular-nums", color:"#166534", fontWeight:"600" }}>{fmtM(costosModalApu[a.id]?.precio_unitario ?? null)}</td>
+                        <td style={{ padding:"7px 8px", color:"#374151" }}>{a.estado}</td>
+                        <td style={{ padding:"7px 8px", textAlign:"center" }}>
+                          <button onClick={()=>vincularApu(a)} style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:"4px", padding:"4px 12px", fontSize:"11px", cursor:"pointer" }}>Vincular</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
             {error&&<p style={{ color:"#dc2626", fontSize:"12px", marginTop:"8px" }}>{error}</p>}
             <button onClick={()=>{setModalVincular(false);setError("");}} style={{ marginTop:"12px", border:"1px solid #d1d5db", borderRadius:"6px", padding:"6px", fontSize:"13px", cursor:"pointer" }}>Cerrar panel</button>

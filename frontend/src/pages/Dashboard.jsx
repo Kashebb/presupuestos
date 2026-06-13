@@ -19,7 +19,7 @@ function ProgressBar({ value }) {
   return (
     <div className="flex items-center gap-2">
       <div className="h-1.5 w-full rounded bg-slate-100">
-        <div className="h-1.5 rounded bg-blue-600" style={{ width: `${pct}%` }} />
+        <div className="h-1.5 rounded bg-green-700" style={{ width: `${pct}%` }} />
       </div>
       <span className="w-10 text-right text-[11px] tabular-nums text-slate-600">
         {pct.toFixed(0)}%
@@ -44,7 +44,7 @@ export default function Dashboard({ onNavigate }) {
 
   if (error) {
     return (
-      <div className="p-5">
+      <div className="page-wrap">
         <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800">
           {error}
         </div>
@@ -53,7 +53,7 @@ export default function Dashboard({ onNavigate }) {
   }
 
   if (!resumen) {
-    return <div className="p-5 text-xs text-slate-500">Cargando tablero...</div>;
+    return <div className="page-wrap text-xs text-slate-500">Cargando tablero...</div>;
   }
 
   const { recursos, apus, presupuestos, proyectos } = resumen;
@@ -118,7 +118,7 @@ export default function Dashboard({ onNavigate }) {
   ];
 
   return (
-    <div className="p-5">
+    <div className="page-wrap">
       <PageHeader
         title="Tablero"
         subtitle="Bandeja operativa para priorizar pendientes de presupuestos."

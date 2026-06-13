@@ -1,23 +1,23 @@
 export function PageHeader({ title, subtitle, actions, meta }) {
   return (
-    <div className="mb-3 flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-3">
+    <div className="page-header">
       <div>
-        <h1 className="m-0 text-lg font-semibold text-slate-900">{title}</h1>
-        {subtitle && <p className="mt-1 text-xs text-slate-500">{subtitle}</p>}
-        {meta && <div className="mt-2 flex flex-wrap gap-2">{meta}</div>}
+        <h1 className="page-title">{title}</h1>
+        {subtitle && <p className="page-subtitle">{subtitle}</p>}
+        {meta && <div className="page-meta">{meta}</div>}
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="page-actions">{actions}</div>}
     </div>
   );
 }
 
-export function ActionButton({ children, variant = "secondary", onClick, disabled, type = "button" }) {
+export function ActionButton({ children, variant = "secondary", onClick, disabled, type = "button", compact = false }) {
   const variants = {
-    primary: "border-blue-600 bg-blue-600 text-white hover:bg-blue-700",
-    secondary: "border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
-    danger: "border-red-200 bg-red-50 text-red-700 hover:bg-red-100",
-    ghost: "border-transparent bg-transparent text-blue-700 hover:bg-blue-50",
-    success: "border-green-600 bg-green-600 text-white hover:bg-green-700",
+    primary: "btn-primary",
+    secondary: "btn-secondary",
+    danger: "btn-danger",
+    ghost: "btn-ghost",
+    success: "btn-success",
   };
 
   return (
@@ -25,7 +25,7 @@ export function ActionButton({ children, variant = "secondary", onClick, disable
       type={type}
       disabled={disabled}
       onClick={onClick}
-      className={`rounded border px-2.5 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-60 ${variants[variant] || variants.secondary}`}
+      className={`app-btn ${compact ? "app-btn-compact" : ""} ${variants[variant] || variants.secondary}`}
     >
       {children}
     </button>
@@ -34,16 +34,16 @@ export function ActionButton({ children, variant = "secondary", onClick, disable
 
 export function StatusBadge({ children, tone = "slate" }) {
   const tones = {
-    slate: "bg-slate-100 text-slate-700",
-    green: "bg-green-100 text-green-800",
-    amber: "bg-amber-100 text-amber-800",
-    red: "bg-red-100 text-red-800",
-    blue: "bg-blue-100 text-blue-800",
-    gray: "bg-gray-100 text-gray-600",
+    slate: "status-slate",
+    green: "status-green",
+    amber: "status-amber",
+    red: "status-red",
+    blue: "status-blue",
+    gray: "status-gray",
   };
 
   return (
-    <span className={`inline-flex whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-semibold ${tones[tone] || tones.slate}`}>
+    <span className={`status-badge ${tones[tone] || tones.slate}`}>
       {children}
     </span>
   );
@@ -59,11 +59,7 @@ export function ToolbarFilter({ options, value, onChange }) {
             key={option.value}
             type="button"
             onClick={() => onChange(option.value)}
-            className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${
-              active
-                ? "border-blue-600 bg-blue-600 text-white"
-                : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
-            }`}
+            className={`filter-chip ${active ? "filter-chip-active" : ""}`}
           >
             {option.label}
           </button>
@@ -75,14 +71,14 @@ export function ToolbarFilter({ options, value, onChange }) {
 
 export function MetricStrip({ items }) {
   return (
-    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="metric-grid">
       {items.map((item) => {
         const tones = {
-          red: "border-red-200 bg-red-50 text-red-900",
-          amber: "border-amber-200 bg-amber-50 text-amber-900",
-          green: "border-green-200 bg-green-50 text-green-900",
-          blue: "border-blue-200 bg-blue-50 text-blue-900",
-          slate: "border-slate-200 bg-white text-slate-900",
+          red: "metric-red",
+          amber: "metric-amber",
+          green: "metric-green",
+          blue: "metric-blue",
+          slate: "metric-slate",
         };
         const interactive = Boolean(item.onClick);
         return (
@@ -91,13 +87,11 @@ export function MetricStrip({ items }) {
             type="button"
             onClick={item.onClick}
             disabled={!interactive}
-            className={`rounded-md border p-3 text-left ${tones[item.tone] || tones.slate} ${
-              interactive ? "cursor-pointer hover:border-blue-400 hover:shadow-sm" : "cursor-default"
-            }`}
+            className={`metric-card ${tones[item.tone] || tones.slate} ${interactive ? "metric-card-interactive" : ""}`}
           >
-            <div className="text-[10px] font-semibold uppercase text-slate-500">{item.label}</div>
-            <div className="mt-1 text-xl font-semibold tabular-nums">{item.value}</div>
-            {item.detail && <div className="mt-0.5 text-[11px] text-slate-600">{item.detail}</div>}
+            <div className="metric-label">{item.label}</div>
+            <div className="metric-value">{item.value}</div>
+            {item.detail && <div className="metric-detail">{item.detail}</div>}
           </button>
         );
       })}
@@ -107,15 +101,15 @@ export function MetricStrip({ items }) {
 
 export function DataTable({ columns, rows, rowKey, emptyText = "Sin registros." }) {
   return (
-    <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
+    <div className="data-table-shell">
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-xs">
-          <thead className="bg-slate-100 text-[11px] text-slate-600">
+        <table className="data-table">
+          <thead>
             <tr>
               {columns.map((column) => (
                 <th
                   key={column.key}
-                  className={`border-b border-slate-200 px-2.5 py-2 font-semibold ${column.align === "right" ? "text-right" : column.align === "center" ? "text-center" : "text-left"}`}
+                  className={column.align === "right" ? "text-right" : column.align === "center" ? "text-center" : "text-left"}
                   style={column.width ? { width: column.width } : undefined}
                 >
                   {column.label}
@@ -126,17 +120,17 @@ export function DataTable({ columns, rows, rowKey, emptyText = "Sin registros." 
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td className="px-3 py-8 text-center text-xs text-slate-400" colSpan={columns.length}>
+                <td className="data-table-empty" colSpan={columns.length}>
                   {emptyText}
                 </td>
               </tr>
             )}
             {rows.map((row) => (
-              <tr key={rowKey(row)} className="border-b border-slate-100 hover:bg-slate-50">
+              <tr key={rowKey(row)}>
                 {columns.map((column) => (
                   <td
                     key={column.key}
-                    className={`px-2.5 py-2 text-slate-700 ${column.align === "right" ? "text-right tabular-nums" : column.align === "center" ? "text-center" : "text-left"}`}
+                    className={column.align === "right" ? "text-right tabular-nums" : column.align === "center" ? "text-center" : "text-left"}
                   >
                     {column.render ? column.render(row) : row[column.key]}
                   </td>
@@ -152,17 +146,17 @@ export function DataTable({ columns, rows, rowKey, emptyText = "Sin registros." 
 
 export function ModalShell({ title, children, footer }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 shadow-xl">
-        <h2 className="mb-4 text-base font-semibold text-slate-900">{title}</h2>
+    <div className="modal-overlay">
+      <div className="modal-shell">
+        <h2 className="modal-title">{title}</h2>
         {children}
-        {footer && <div className="mt-4 flex justify-end gap-2">{footer}</div>}
+        {footer && <div className="modal-footer">{footer}</div>}
       </div>
     </div>
   );
 }
 
 export const fieldClass =
-  "w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-xs text-slate-800 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500";
+  "form-field";
 
-export const labelClass = "mb-1 block text-[11px] font-semibold text-slate-600";
+export const labelClass = "form-label";
