@@ -24,6 +24,11 @@ function normalizar(t) {
   return t.replace(/^RN[\s-]+/i,"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/\s+/g," ").trim();
 }
 
+function textoVista(t) {
+  if (t == null) return "";
+  return String(t).replace(/\u00c2(?=\u00b0)/g, "").replace(/\u00c2/g, "");
+}
+
 function construirArbol(nodos) {
   const m = {}; nodos.forEach(n => { m[n.id] = { ...n, hijos: [] }; });
   const r = [];
@@ -48,13 +53,13 @@ function calcularGrupos(planos) {
   return { grupos: ord(norm), individualizados: ord(ind) };
 }
 
-function fmtM(v) { if (v==null) return "—"; return "$"+Number(v).toLocaleString("es-EC",{minimumFractionDigits:2,maximumFractionDigits:2}); }
-function fmtN(v) { if (v==null) return "—"; return Number(v).toLocaleString("es-EC",{maximumFractionDigits:2}); }
-function fmtPct(v) { if (v==null) return "—"; return Number(v).toLocaleString("es-EC",{style:"percent",minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmtM(v) { if (v==null) return "-"; return "$"+Number(v).toLocaleString("es-EC",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmtN(v) { if (v==null) return "-"; return Number(v).toLocaleString("es-EC",{maximumFractionDigits:2}); }
+function fmtPct(v) { if (v==null) return "-"; return Number(v).toLocaleString("es-EC",{style:"percent",minimumFractionDigits:2,maximumFractionDigits:2}); }
 function colorDif(v) { if (v == null) return "#6b7280"; if (v > 0) return "#dc2626"; if (v < 0) return "#16a34a"; return "#6b7280"; }
-function fmtDifM(v) { if (v == null) return "—"; return `${v > 0 ? "+" : ""}${fmtM(v)}`; }
+function fmtDifM(v) { if (v == null) return "-"; return `${v > 0 ? "+" : ""}${fmtM(v)}`; }
 
-// â”€â”€ Estado de vinculación de un nodo padre â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Estado de vinculacion de un nodo padre
 function estadoNodo(nodoId, planos) {
   const hijos = planos.filter(n => n.tipo === "RUBRO" && esDescendiente(nodoId, n, planos));
   if (!hijos.length) return "sin_rubros";
@@ -78,7 +83,7 @@ const VISTAS_COLUMNAS = {
   meta: ["descripcion", "unidad", "metrado", "pu_meta", "total_meta", "estado", "apu"],
   unitarios: ["descripcion", "unidad", "pu_ref", "pu_meta", "dif_pu", "dif_pu_pct", "estado", "apu"],
   totales: ["descripcion", "unidad", "metrado", "total_ref", "total_meta", "dif_total", "dif_total_pct", "estado", "apu"],
-  diferencias: ["descripcion", "unidad", "metrado", "dif_pu", "dif_pu_pct", "dif_total", "dif_total_pct", "estado", "apu"],
+  diferencias: ["descripcion", "unidad", "metrado", "total_ref_comparable", "total_meta_comparable", "dif_comparable", "dif_comparable_pct", "estado", "apu"],
   desglose: ["descripcion", "unidad", "metrado", "material", "mano_de_obra", "equipo", "transporte", "otros", "pu_meta"],
 };
 
@@ -94,6 +99,10 @@ const COLUMNAS = {
   total_meta: { label: "P. Total Meta", align: "right", width: "9%" },
   dif_total: { label: "Dif Total $", align: "right", width: "9%" },
   dif_total_pct: { label: "Dif Total %", align: "right", width: "8%" },
+  total_ref_comparable: { label: "P. Total Ref comparable", align: "right", width: "11%" },
+  total_meta_comparable: { label: "P. Total Meta comparable", align: "right", width: "11%" },
+  dif_comparable: { label: "Dif $", align: "right", width: "9%" },
+  dif_comparable_pct: { label: "Dif %", align: "right", width: "8%" },
   material: { label: "P.U. Materiales", align: "right", width: "9%" },
   mano_de_obra: { label: "P.U. Mano de Obra", align: "right", width: "9%" },
   equipo: { label: "P.U. Equipos", align: "right", width: "9%" },
@@ -103,7 +112,7 @@ const COLUMNAS = {
   apu: { label: "APU", align: "center", width: "18%" },
 };
 
-// â”€â”€ Cache de costos APU â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Cache de costos APU
 const costoCache = {};
 async function fetchCostoApu(apuId) {
   if (costoCache[apuId] !== undefined) return costoCache[apuId];
@@ -116,9 +125,7 @@ async function fetchCostoApu(apuId) {
   } catch { costoCache[apuId] = null; return null; }
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // Subcomponente TablaGrupos
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function TablaGrupos({ titulo, grupos, expandidos, onToggle, onVincular, onDesvincularGrupo, onIndividualizar, onReagrupar, esInd, bordeColor, headerBg }) {
   return (
     <>
@@ -130,7 +137,7 @@ function TablaGrupos({ titulo, grupos, expandidos, onToggle, onVincular, onDesvi
           <colgroup><col style={{width:"36%"}}/><col style={{width:"6%"}}/><col style={{width:"5%"}}/><col style={{width:"12%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"21%"}}/></colgroup>
           <thead>
             <tr style={{ background: headerBg }}>
-              {["Descripción","Und","N","Metrado total","P.U. Ref","Dif ($)","APU"].map((h,i)=>(
+              {["Descripcion","Und","N","Metrado total","P.U. Ref","Dif ($)","APU"].map((h,i)=>(
                 <th key={h} style={{ padding:"7px 8px", textAlign: i>=2&&i<=5?"right":i===6?"center":"left", fontWeight:"500", fontSize:"11px", color: esInd?"#854d0e":"#6b7280", borderBottom:`1px solid ${bordeColor}` }}>{h}</th>
               ))}
             </tr>
@@ -142,15 +149,15 @@ function TablaGrupos({ titulo, grupos, expandidos, onToggle, onVincular, onDesvi
               const mt = g.rubros.reduce((s,r)=>s+(r.metrado||0),0);
               const pus = [...new Set(g.rubros.map(r=>r.precio_unitario_ref).filter(v=>v!=null))];
               const puVar = pus.length>1;
-              const puDisp = puVar?`${Math.min(...pus).toFixed(2)}–${Math.max(...pus).toFixed(2)}`:pus[0]?.toFixed(2)||"—";
+              const puDisp = puVar?`${Math.min(...pus).toFixed(2)}-${Math.max(...pus).toFixed(2)}`:pus[0]?.toFixed(2)||"-";
               const todoVinc = g.rubros.every(r=>r.tipo_rubro==="VINCULADO");
               const sinApu = g.rubros.every(r=>r.observaciones==="SIN_APU");
               return (
                 <React.Fragment key={clave}>
                   <tr style={{ borderTop:`1px solid ${bordeColor}`, background: todoVinc?"#f0fdf4":"#fff", cursor:"pointer" }} onClick={()=>onToggle(clave)}>
                     <td style={{ padding:"7px 8px" }}>
-                      <span style={{ fontSize:"10px", marginRight:"4px" }}>{exp?"▼":"▶"}</span>
-                      {g.descripcion}
+                      <span style={{ fontSize:"10px", marginRight:"4px" }}>{exp?"v":">"}</span>
+                      {textoVista(g.descripcion)}
                       {puVar && <span style={{ fontSize:"10px", background:"#fee2e2", color:"#991b1b", borderRadius:"3px", padding:"1px 5px", marginLeft:"6px" }}>P.U. variable</span>}
                       {sinApu && <span style={{ fontSize:"10px", background:"#fee2e2", color:"#991b1b", borderRadius:"3px", padding:"1px 5px", marginLeft:"6px" }}>SIN APU</span>}
                     </td>
@@ -158,7 +165,7 @@ function TablaGrupos({ titulo, grupos, expandidos, onToggle, onVincular, onDesvi
                     <td style={{ padding:"7px 4px", textAlign:"right", fontWeight:"600", color: esInd?"#854d0e":"#374151" }}>{g.rubros.length}</td>
                     <td style={{ padding:"7px 4px", textAlign:"right" }}>{fmtN(mt)}</td>
                     <td style={{ padding:"7px 4px", textAlign:"right", color: puVar?"#dc2626":"#374151" }}>{puDisp}</td>
-                    <td style={{ padding:"7px 4px", textAlign:"right", color:"#6b7280" }}>—</td>
+                    <td style={{ padding:"7px 4px", textAlign:"right", color:"#6b7280" }}>-</td>
                     <td style={{ padding:"7px 8px", textAlign:"center" }} onClick={e=>e.stopPropagation()}>
                       {todoVinc
                         ? <button onClick={()=>onDesvincularGrupo(g)} style={{ fontSize:"10px", color:"#dc2626", background:"none", border:"none", cursor:"pointer" }}>Desvincular</button>
@@ -168,13 +175,13 @@ function TablaGrupos({ titulo, grupos, expandidos, onToggle, onVincular, onDesvi
                   {exp && (
                     <tr key={`${clave}-det`} style={{ background:"#f9fafb" }}>
                       <td colSpan={7} style={{ padding:"8px 12px 10px 28px", borderTop:`1px dashed ${bordeColor}` }}>
-                        <div style={{ fontSize:"11px", color:"#6b7280", marginBottom:"6px" }}>{g.rubros.length} ubicación(es):</div>
+                        <div style={{ fontSize:"11px", color:"#6b7280", marginBottom:"6px" }}>{g.rubros.length} ubicacion(es):</div>
                         <table style={{ width:"100%", fontSize:"11px", borderCollapse:"collapse" }}>
                           {g.rubros.map(r=>(
                             <tr key={r.id}>
-                              <td style={{ padding:"3px 0", color:"#374151" }}>â€º {r.descripcion}</td>
+                              <td style={{ padding:"3px 0", color:"#374151" }}>&gt; {textoVista(r.descripcion)}</td>
                               <td style={{ padding:"3px 8px", textAlign:"right", color:"#6b7280", whiteSpace:"nowrap" }}>{fmtN(r.metrado)} {r.unidad}</td>
-                              <td style={{ padding:"3px 0", textAlign:"right", color:"#6b7280" }}>${r.precio_unitario_ref?.toFixed(2)||"—"}</td>
+                              <td style={{ padding:"3px 0", textAlign:"right", color:"#6b7280" }}>${r.precio_unitario_ref?.toFixed(2)||"-"}</td>
                               <td style={{ padding:"3px 0 3px 12px", whiteSpace:"nowrap" }}>
                                 {!esInd && onIndividualizar && <button onClick={()=>onIndividualizar(r.id)} style={{ fontSize:"10px", color:"#166534", background:"none", border:"none", cursor:"pointer" }}>individualizar</button>}
                                 {esInd && onReagrupar && <button onClick={()=>onReagrupar(r.id)} style={{ fontSize:"10px", color:"#16a34a", background:"none", border:"none", cursor:"pointer" }}>reagrupar</button>}
@@ -195,9 +202,7 @@ function TablaGrupos({ titulo, grupos, expandidos, onToggle, onVincular, onDesvi
   );
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // Componente principal
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) {
   const [vista, setVista] = useState("lista");
   const [pestana, setPestana] = useState("jerarquica");
@@ -208,7 +213,7 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
   const [gruposExp, setGruposExp] = useState({});
   const [nodoSeleccionado, setNodoSeleccionado] = useState(null); // filtro sidebar
 
-  // Filtros vista jerárquica
+  // Filtros vista jerarquica
   const [filtroEstado, setFiltroEstado] = useState("todos"); // todos|VINCULADO|PENDIENTE|SIN_APU
   const [buscarRubro, setBuscarRubro] = useState("");
   const [buscarSidebar, setBuscarSidebar] = useState("");
@@ -249,11 +254,11 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
     setPestana("jerarquica");
   }, [initialFilter]);
 
-  // â”€â”€ Cargar proyectos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Cargar proyectos
   const cargarProyectos = async () => { const r = await fetch(`${API}/presupuestos/proyectos/`); setProyectos(await r.json()); };
   useEffect(() => { cargarProyectos(); }, []);
 
-  // â”€â”€ Cargar nodos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Cargar nodos
   const cargarCostosApu = useCallback(async (planos) => {
     const apuIds = [...new Set(planos.filter(n=>n.apu_id).map(n=>n.apu_id))];
     const nuevos = {};
@@ -278,7 +283,7 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
     }
   }, [cargarNodos, initialFilter, proyectos, vista]);
 
-  // â”€â”€ Filtrar APUs para modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Filtrar APUs para modal
   useEffect(() => {
     if (!modalVincular) return;
     Promise.all([
@@ -305,7 +310,7 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
     }));
   }, [apus, buscarApu, nodoVinculando]);
 
-  // â”€â”€ CRUD proyectos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // CRUD proyectos
   const crearProyecto = async () => {
     if (!formNuevo.nombre.trim()) { setError("El nombre es obligatorio."); return; }
     const r = await fetch(`${API}/presupuestos/proyectos/`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(formNuevo) });
@@ -314,11 +319,11 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
   };
 
   const eliminarProyecto = async (id) => {
-    if (!confirm("¿Eliminar este proyecto?")) return;
+    if (!confirm("Eliminar este proyecto?")) return;
     await fetch(`${API}/presupuestos/proyectos/${id}`, {method:"DELETE"}); cargarProyectos();
   };
 
-  // â”€â”€ Importar Excel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Importar Excel
   const importarExcel = async () => {
     if (!archivoImport) { setError("Selecciona un archivo."); return; }
     setImportando(true); setError("");
@@ -329,7 +334,7 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
     else { const e=await r.json(); setError(e.detail||"Error."); }
   };
 
-  // â”€â”€ Historial para deshacer/rehacer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Historial para deshacer/rehacer
   const registrarAccion = (accion) => {
     setHistorial(prev => [...prev, accion]);
     setFuturo([]);
@@ -377,7 +382,7 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
     }
   };
 
-  // â”€â”€ Vincular APU â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Vincular APU
   const abrirVincular = (nodo, grupo) => { setNodoVinculando(nodo); setEsGrupo(grupo); setBuscarApu(""); setError(""); setModalVincular(true); };
 
   const vincularApu = async (apu) => {
@@ -441,7 +446,7 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
   const toggleColapsar = (id) => setColapsados(p=>({...p,[id]:!p[id]}));
   const toggleGrupo = (k) => setGruposExp(p=>({...p,[k]:!p[k]}));
 
-  // â”€â”€ Nodos visibles con filtros â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Nodos visibles con filtros
   const nodosVisibles = (() => {
     const ocultos = new Set();
     nodosPlanos.forEach(n => { if (n.padre_id && (ocultos.has(n.padre_id)||colapsados[n.padre_id])) ocultos.add(n.id); });
@@ -464,7 +469,6 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
       });
     }
 
-    // Filtro por búsqueda
     if (buscarRubro.trim()) {
       const q = buscarRubro.toLowerCase();
       visibles = visibles.filter(n => n.tipo !== "RUBRO" || n.descripcion.toLowerCase().includes(q));
@@ -479,7 +483,7 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
     return n.descripcion.toLowerCase().includes(buscarSidebar.toLowerCase());
   });
 
-  // â”€â”€ Estadísticas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Estadisticas
   const rubros = nodosPlanos.filter(n=>n.tipo==="RUBRO");
   const columnasActivas = VISTAS_COLUMNAS[vistaColumnas] || VISTAS_COLUMNAS.presupuesto;
   const costoDe = (nodo) => nodo?.apu_id ? costosApu[nodo.apu_id] : null;
@@ -490,51 +494,73 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
     const puMeta = puMetaDe(r);
     const totalRefR = puRef != null && metrado != null ? puRef * metrado : null;
     const totalMetaR = puMeta != null && metrado != null ? puMeta * metrado : null;
-    const difPu = puMeta != null && puRef != null ? puMeta - puRef : null;
-    const difTotal = totalMetaR != null && totalRefR != null ? totalMetaR - totalRefR : null;
+    const comparable = Number.isFinite(totalRefR) && totalRefR > 0 && Number.isFinite(totalMetaR);
+    const refComparable = comparable ? totalRefR : null;
+    const metaComparable = comparable ? totalMetaR : null;
+    const difPu = comparable && puRef > 0 ? puMeta - puRef : null;
+    const difTotal = comparable ? metaComparable - refComparable : null;
     return {
       puRef,
       puMeta,
       totalRef: totalRefR,
       totalMeta: totalMetaR,
+      comparable,
+      refComparable,
+      metaComparable,
       difPu,
       difPuPct: difPu != null && puRef ? difPu / puRef : null,
       difTotal,
-      difTotalPct: difTotal != null && totalRefR ? difTotal / totalRefR : null,
+      difTotalPct: difTotal != null && refComparable ? difTotal / refComparable : null,
       subtotales: costoDe(r)?.subtotales || {},
     };
   };
   const rubrosDescendientes = (nodoId) => rubros.filter(r => esDescendiente(nodoId, r, nodosPlanos));
   const metricasContenedor = (nodo) => {
     const hijos = rubrosDescendientes(nodo.id);
-    const totalRefC = hijos.reduce((s,r)=>s+(rubroMetricas(r).totalRef||0),0);
-    const metas = hijos.map(r=>rubroMetricas(r).totalMeta).filter(v=>v!=null);
+    const metricas = hijos.map(rubroMetricas);
+    const totalRefC = metricas.reduce((s,m)=>s+(m.totalRef||0),0);
+    const metas = metricas.map(m=>m.totalMeta).filter(v=>Number.isFinite(v));
     const totalMetaC = metas.length ? metas.reduce((s,v)=>s+v,0) : null;
-    const difTotalC = totalMetaC != null ? totalMetaC - totalRefC : null;
+    const comparables = metricas.filter(m=>m.comparable);
+    const refComparableC = comparables.length ? comparables.reduce((s,m)=>s+(m.refComparable||0),0) : null;
+    const metaComparableC = comparables.length ? comparables.reduce((s,m)=>s+(m.metaComparable||0),0) : null;
+    const difComparableC = refComparableC ? metaComparableC - refComparableC : null;
     return {
       totalRef: totalRefC,
       totalMeta: totalMetaC,
-      difTotal: difTotalC,
-      difTotalPct: difTotalC != null && totalRefC ? difTotalC / totalRefC : null,
+      refComparable: refComparableC,
+      metaComparable: metaComparableC,
+      difTotal: difComparableC,
+      difTotalPct: difComparableC != null && refComparableC ? difComparableC / refComparableC : null,
     };
   };
-  const totalRef = rubros.reduce((s,r)=>s+(rubroMetricas(r).totalRef||0),0);
-  const rubrosConMeta = rubros.filter(r=>puMetaDe(r)!=null);
-  const totalMeta = rubrosConMeta.reduce((s,r)=>s+(rubroMetricas(r).totalMeta||0),0);
-  const dif = rubrosConMeta.length ? totalMeta - totalRef : null;
-  const difPct = dif != null && totalRef ? dif / totalRef : null;
+  const metricasRubros = rubros.map(rubroMetricas);
+  const totalRef = metricasRubros.reduce((s,m)=>s+(m.totalRef||0),0);
+  const metricasConMeta = metricasRubros.filter(m=>Number.isFinite(m.totalMeta));
+  const totalMeta = metricasConMeta.reduce((s,m)=>s+(m.totalMeta||0),0);
+  const metricasComparables = metricasRubros.filter(m=>m.comparable);
+  const refComparable = metricasComparables.length ? metricasComparables.reduce((s,m)=>s+(m.refComparable||0),0) : null;
+  const metaComparable = metricasComparables.length ? metricasComparables.reduce((s,m)=>s+(m.metaComparable||0),0) : null;
+  const difComparable = refComparable ? metaComparable - refComparable : null;
+  const difComparablePct = difComparable != null && refComparable ? difComparable / refComparable : null;
 
-  // Stats sección seleccionada
+  // Stats seccion seleccionada
   const rubrosSeccion = nodoSeleccionado
     ? rubros.filter(n=>esDescendiente(nodoSeleccionado.id, n, nodosPlanos))
     : rubros;
   const totalRefSeccion = rubrosSeccion.reduce((s,r)=>s+(rubroMetricas(r).totalRef||0),0);
-  const rubrosMetaSeccion = rubrosSeccion.filter(r=>puMetaDe(r)!=null);
-  const totalMetaSeccion = rubrosMetaSeccion.length ? rubrosMetaSeccion.reduce((s,r)=>s+(rubroMetricas(r).totalMeta||0),0) : null;
+  const metricasRubrosSeccion = rubrosSeccion.map(rubroMetricas);
+  const metricasMetaSeccion = metricasRubrosSeccion.filter(m=>Number.isFinite(m.totalMeta));
+  const totalMetaSeccion = metricasMetaSeccion.length ? metricasMetaSeccion.reduce((s,m)=>s+(m.totalMeta||0),0) : null;
+  const metricasComparablesSeccion = metricasRubrosSeccion.filter(m=>m.comparable);
+  const refComparableSeccion = metricasComparablesSeccion.length ? metricasComparablesSeccion.reduce((s,m)=>s+(m.refComparable||0),0) : null;
+  const metaComparableSeccion = metricasComparablesSeccion.length ? metricasComparablesSeccion.reduce((s,m)=>s+(m.metaComparable||0),0) : null;
+  const difComparableSeccion = refComparableSeccion ? metaComparableSeccion - refComparableSeccion : null;
+  const difComparablePctSeccion = difComparableSeccion != null && refComparableSeccion ? difComparableSeccion / refComparableSeccion : null;
 
   const { grupos, individualizados } = calcularGrupos(nodosPlanos);
 
-  // â”€â”€ Grupos filtrados â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Grupos filtrados
   const gruposFiltrados = grupos.filter(g => {
     if (buscarGrupo && !normalizar(g.descripcion).includes(normalizar(buscarGrupo))) return false;
     if (filtroGrupo === "VINCULADO") return g.rubros.every(r=>r.tipo_rubro==="VINCULADO");
@@ -555,6 +581,10 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
     if (col === "total_meta") return fmtM(esR ? m.totalMeta : mc.totalMeta);
     if (col === "dif_total") return fmtDifM(esR ? m.difTotal : mc.difTotal);
     if (col === "dif_total_pct") return fmtPct(esR ? m.difTotalPct : mc.difTotalPct);
+    if (col === "total_ref_comparable") return fmtM(esR ? m.refComparable : mc.refComparable);
+    if (col === "total_meta_comparable") return fmtM(esR ? m.metaComparable : mc.metaComparable);
+    if (col === "dif_comparable") return fmtDifM(esR ? m.difTotal : mc.difTotal);
+    if (col === "dif_comparable_pct") return fmtPct(esR ? m.difTotalPct : mc.difTotalPct);
     if (col === "material") return esR ? fmtM(m.subtotales.material ?? null) : "";
     if (col === "mano_de_obra") return esR ? fmtM(m.subtotales.mano_de_obra ?? null) : "";
     if (col === "equipo") return esR ? fmtM(m.subtotales.equipo ?? null) : "";
@@ -563,9 +593,7 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
     return "";
   };
 
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // VISTA: Lista de proyectos
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   if (vista === "lista") return (
     <div className="page-wrap">
       <PageHeader
@@ -582,8 +610,8 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
         {proyectos.map(p=>(
           <div key={p.id} className="panel" style={{ padding:"16px", display:"flex", justifyContent:"space-between", alignItems:"center", gap:"16px", flexWrap:"wrap" }}>
             <div>
-              <div style={{ fontWeight:"600", fontSize:"15px" }}>{p.nombre}</div>
-              {p.codigo&&<div style={{ fontSize:"12px", color:"#6b7280" }}>Código: {p.codigo}</div>}
+              <div style={{ fontWeight:"600", fontSize:"15px" }}>{textoVista(p.nombre)}</div>
+              {p.codigo&&<div style={{ fontSize:"12px", color:"#6b7280" }}>Codigo: {p.codigo}</div>}
             </div>
             <div style={{ display:"flex", gap:"8px" }}>
               <ActionButton variant="primary" compact onClick={()=>cargarNodos(p)}>Abrir</ActionButton>
@@ -602,7 +630,7 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
             </>
           }
         >
-            {[["Nombre *","nombre","Ej: Edificio Norte"],["Código","codigo","Ej: PPTO-2026-001"]].map(([label,key,ph])=>(
+            {[["Nombre *","nombre","Ej: Edificio Norte"],["Codigo","codigo","Ej: PPTO-2026-001"]].map(([label,key,ph])=>(
               <div key={key} style={{ marginBottom:"10px" }}>
                 <label className={labelClass}>{label}</label>
                 <input value={formNuevo[key]} onChange={e=>setFormNuevo({...formNuevo,[key]:e.target.value})}
@@ -620,20 +648,18 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
     </div>
   );
 
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // VISTA: Detalle del proyecto
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   return (
     <div style={{ display:"flex", flexDirection:"column", height:"calc(100vh - 52px)" }}>
 
       {/* Barra superior */}
       <div style={{ background:"#fff", borderBottom:"1px solid #e5e7eb", padding:"8px 20px", display:"flex", alignItems:"center", gap:"10px", flexShrink:0, flexWrap:"wrap" }}>
-        <button onClick={()=>setVista("lista")} style={{ background:"none", border:"none", color:"#166534", fontSize:"13px", cursor:"pointer", padding:0 }}>â† Proyectos</button>
+        <button onClick={()=>setVista("lista")} style={{ background:"none", border:"none", color:"#166534", fontSize:"13px", cursor:"pointer", padding:0 }}>Volver a proyectos</button>
         <span style={{ color:"#d1d5db" }}>|</span>
-        <span style={{ fontWeight:"600", fontSize:"14px" }}>{proyectoActual?.nombre}</span>
+        <span style={{ fontWeight:"600", fontSize:"14px" }}>{textoVista(proyectoActual?.nombre)}</span>
         {proyectoActual?.codigo&&<span style={{ fontSize:"12px", color:"#6b7280" }}>({proyectoActual.codigo})</span>}
         <div style={{ display:"flex", gap:"4px", marginLeft:"12px" }}>
-          {[["jerarquica","Jerárquica"],["grupos","Por grupos"]].map(([k,label])=>(
+          {[["jerarquica","Jerarquica"],["grupos","Por grupos"]].map(([k,label])=>(
             <button key={k} onClick={()=>setPestana(k)}
               style={{ fontSize:"12px", padding:"4px 12px", border:"1px solid", borderRadius:"6px", cursor:"pointer", borderColor:pestana===k?"#166534":"#d1d5db", background:pestana===k?"#166534":"#fff", color:pestana===k?"#fff":"#374151" }}>
               {label}
@@ -644,15 +670,15 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
           {msgExito&&<span style={{ fontSize:"12px", color:"#16a34a", background:"#f0fdf4", border:"1px solid #86efac", borderRadius:"4px", padding:"3px 10px" }}>{msgExito}</span>}
           <button onClick={deshacer} disabled={!historial.length} title="Deshacer"
             style={{ fontSize:"12px", padding:"4px 10px", cursor:historial.length?"pointer":"not-allowed", opacity:historial.length?1:0.4, border:"1px solid #d1d5db", borderRadius:"6px", background:"#fff" }}>
-            â†© Deshacer
+            Deshacer
           </button>
           <button onClick={rehacer} disabled={!futuro.length} title="Rehacer"
             style={{ fontSize:"12px", padding:"4px 10px", cursor:futuro.length?"pointer":"not-allowed", opacity:futuro.length?1:0.4, border:"1px solid #d1d5db", borderRadius:"6px", background:"#fff" }}>
-            â†ª Rehacer
+            Rehacer
           </button>
           {nodosPlanos.length===0&&(
             <button onClick={()=>{setArchivoImport(null);setError("");setModalImportar(true);}}
-              style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:"6px", padding:"6px 14px", fontSize:"12px", cursor:"pointer" }}>â†‘ Importar Excel</button>
+              style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:"6px", padding:"6px 14px", fontSize:"12px", cursor:"pointer" }}>Importar Excel</button>
           )}
         </div>
       </div>
@@ -661,27 +687,29 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
       {nodosPlanos.length>0&&(
         <div style={{ background:"#f8fafc", borderBottom:"1px solid #e5e7eb", padding:"6px 20px", display:"flex", gap:"16px", fontSize:"11px", color:"#6b7280", flexShrink:0, flexWrap:"wrap" }}>
           <span>Rubros: <strong style={{ color:"#111827" }}>{rubros.length}</strong></span>
-          <span style={{ color:"#16a34a" }}>✓ {rubros.filter(r=>r.tipo_rubro==="VINCULADO").length} vinculados</span>
-          <span style={{ color:"#ca8a04" }}>⏳ {rubros.filter(r=>r.tipo_rubro==="PENDIENTE"&&r.observaciones!=="SIN_APU").length} pendientes</span>
-          <span style={{ color:"#dc2626" }}>✗ {rubros.filter(r=>r.observaciones==="SIN_APU").length} sin APU</span>
+          <span style={{ color:"#16a34a" }}>OK {rubros.filter(r=>r.tipo_rubro==="VINCULADO").length} vinculados</span>
+          <span style={{ color:"#ca8a04" }}>Pend. {rubros.filter(r=>r.tipo_rubro==="PENDIENTE"&&r.observaciones!=="SIN_APU").length} pendientes</span>
+          <span style={{ color:"#dc2626" }}>X {rubros.filter(r=>r.observaciones==="SIN_APU").length} sin APU</span>
           <span style={{ marginLeft:"auto", fontWeight:"600", color:"#111827" }}>
-            Ref: {fmtM(totalRef)}
-            {" "}· Meta {rubrosConMeta.length < rubros.length ? "parcial" : "total"}: <span style={{ color:"#166534" }}>{rubrosConMeta.length ? fmtM(totalMeta) : "—"}</span>
-            {" "}· Dif: <span style={{ color:colorDif(dif) }}>{fmtDifM(dif)}</span>
-            {" "}· Dif %: <span style={{ color:colorDif(dif) }}>{fmtPct(difPct)}</span>
+            Ref total: {fmtM(totalRef)}
+            {" | "}Meta parcial: <span style={{ color:"#166534" }}>{metricasConMeta.length ? fmtM(totalMeta) : "-"}</span>
+            {" | "}Ref comparable: <span>{fmtM(refComparable)}</span>
+            {" | "}Meta comparable: <span style={{ color:"#166534" }}>{fmtM(metaComparable)}</span>
+            {" | "}Dif comparable: <span style={{ color:colorDif(difComparable) }}>{fmtDifM(difComparable)}</span>
+            {" | "}Dif %: <span style={{ color:colorDif(difComparable) }}>{fmtPct(difComparablePct)}</span>
           </span>
         </div>
       )}
 
       <div style={{ flex:1, overflow:"hidden", display:"flex" }}>
 
-        {/* â•â•â• PESTAÃ‘A JERÃRQUICA â•â•â• */}
+        {/* Pestana jerarquica */}
         {pestana==="jerarquica"&&(
           <>
             {/* Sidebar */}
             <div style={{ width:"260px", borderRight:"1px solid #e5e7eb", display:"flex", flexDirection:"column", background:"#f9fafb", flexShrink:0 }}>
               <div style={{ padding:"8px" }}>
-                <input type="text" placeholder="Buscar sección..." value={buscarSidebar} onChange={e=>setBuscarSidebar(e.target.value)}
+                <input type="text" placeholder="Buscar seccion..." value={buscarSidebar} onChange={e=>setBuscarSidebar(e.target.value)}
                   style={{ width:"100%", fontSize:"11px", padding:"5px 8px", border:"1px solid #d1d5db", borderRadius:"6px", boxSizing:"border-box" }}/>
               </div>
               {/* Filtro pills */}
@@ -697,11 +725,11 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
                 <div style={{ padding:"0 8px 6px" }}>
                   <button onClick={()=>setNodoSeleccionado(null)}
                     style={{ fontSize:"10px", color:"#166534", background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:"4px", padding:"2px 8px", cursor:"pointer", width:"100%" }}>
-                    ✕ Mostrar todo el presupuesto
+                    Mostrar todo el presupuesto
                   </button>
                 </div>
               )}
-              {/* Ãrbol */}
+              {/* Arbol */}
               <div style={{ overflowY:"auto", flex:1 }}>
                 {nodosSidebar.map(n=>{
                   const cfg = COLORES_TIPO[n.tipo]||COLORES_TIPO.GRUPO;
@@ -714,21 +742,23 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
                         fontSize:"11px", cursor:"pointer", display:"flex", alignItems:"center", gap:"4px", color:"#1f2937",
                         background:seleccionado?"#dcfce7":"transparent", borderLeft:seleccionado?"3px solid #166534":"3px solid transparent" }}>
                       {tieneHijos
-                        ? <span onClick={e=>{e.stopPropagation();toggleColapsar(n.id);}} style={{ fontSize:"9px", color:"#6b7280", userSelect:"none", minWidth:"10px" }}>{colapsados[n.id]?"▶":"▼"}</span>
+                        ? <span onClick={e=>{e.stopPropagation();toggleColapsar(n.id);}} style={{ fontSize:"9px", color:"#6b7280", userSelect:"none", minWidth:"10px" }}>{colapsados[n.id]?">":"v"}</span>
                         : <span style={{ minWidth:"10px" }}/>}
-                      <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1 }} title={n.descripcion}>{n.descripcion}</span>
+                      <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1 }} title={textoVista(n.descripcion)}>{textoVista(n.descripcion)}</span>
                       <span style={{ width:"7px", height:"7px", borderRadius:"50%", background:DOT_COLOR[est], flexShrink:0 }}/>
                     </div>
                   );
                 })}
               </div>
-              {/* Totales sección */}
+              {/* Totales seccion */}
               {nodoSeleccionado&&(
                 <div style={{ borderTop:"1px solid #e5e7eb", padding:"8px", fontSize:"10px", color:"#6b7280", lineHeight:"1.7" }}>
-                  <div style={{ fontWeight:"600", color:"#111827", marginBottom:"2px" }}>{nodoSeleccionado.descripcion}</div>
-                  <div>{rubrosSeccion.length} rubros · {rubrosSeccion.filter(r=>r.tipo_rubro==="VINCULADO").length} vinculados</div>
+                  <div style={{ fontWeight:"600", color:"#111827", marginBottom:"2px" }}>{textoVista(nodoSeleccionado.descripcion)}</div>
+                  <div>{rubrosSeccion.length} rubros | {rubrosSeccion.filter(r=>r.tipo_rubro==="VINCULADO").length} vinculados</div>
                   <div>Ref: <strong>{fmtM(totalRefSeccion)}</strong></div>
-                  {totalMetaSeccion>0&&<div>Meta: <strong style={{ color:"#166534" }}>{fmtM(totalMetaSeccion)}</strong> · <span style={{ color: totalMetaSeccion<totalRefSeccion?"#16a34a":"#dc2626" }}>{fmtM(totalMetaSeccion-totalRefSeccion)}</span></div>}
+                  <div>Meta parcial: <strong style={{ color:"#166534" }}>{fmtM(totalMetaSeccion)}</strong></div>
+                  <div>Comparable: <strong>{fmtM(refComparableSeccion)}</strong> - <strong style={{ color:"#166534" }}>{fmtM(metaComparableSeccion)}</strong></div>
+                  <div>Dif comparable: <span style={{ color:colorDif(difComparableSeccion) }}>{fmtDifM(difComparableSeccion)}</span> | <span style={{ color:colorDif(difComparableSeccion) }}>{fmtPct(difComparablePctSeccion)}</span></div>
                 </div>
               )}
             </div>
@@ -738,7 +768,7 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
               {/* Barra filtros tabla */}
               <div style={{ padding:"6px 10px", borderBottom:"1px solid #e5e7eb", display:"flex", gap:"6px", alignItems:"center", flexWrap:"wrap", background:"#fff", flexShrink:0 }}>
                 {nodoSeleccionado
-                  ? <><span style={{ fontSize:"11px", color:"#6b7280" }}>Mostrando:</span><span style={{ fontSize:"11px", fontWeight:"500" }}>{nodoSeleccionado.descripcion}</span><span style={{ fontSize:"10px", color:"#9ca3af" }}>({rubrosSeccion.length} rubros)</span></>
+                  ? <><span style={{ fontSize:"11px", color:"#6b7280" }}>Mostrando:</span><span style={{ fontSize:"11px", fontWeight:"500" }}>{textoVista(nodoSeleccionado.descripcion)}</span><span style={{ fontSize:"10px", color:"#9ca3af" }}>({rubrosSeccion.length} rubros)</span></>
                   : <span style={{ fontSize:"11px", color:"#6b7280" }}>Presupuesto completo</span>}
                 <div style={{ display:"flex", gap:"3px", flexWrap:"wrap" }}>
                   {[
@@ -764,9 +794,9 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
               <div style={{ overflowY:"auto", flex:1 }}>
                 {nodosPlanos.length===0?(
                   <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", gap:"12px", color:"#9ca3af" }}>
-                    <div style={{ fontSize:"40px" }}>📄</div>
+                    <div style={{ fontSize:"40px" }}>Archivo</div>
                     <button onClick={()=>{setArchivoImport(null);setError("");setModalImportar(true);}}
-                      style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:"6px", padding:"8px 20px", fontSize:"13px", cursor:"pointer" }}>â†‘ Importar Excel</button>
+                      style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:"6px", padding:"8px 20px", fontSize:"13px", cursor:"pointer" }}>Importar Excel</button>
                   </div>
                 ):(
                   <table style={{ width:"100%", borderCollapse:"collapse", fontSize:"11px" }}>
@@ -797,8 +827,8 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
                                 return (
                                   <td key={col} style={{ padding:"5px 8px", paddingLeft:`${cfg.indent+8}px` }}>
                                     <div style={{ display:"flex", alignItems:"center", gap:"5px" }}>
-                                      {tieneHijos&&<span style={{ fontSize:"9px", opacity:0.7 }}>{colapsados[n.id]?"▶":"▼"}</span>}
-                                      <span style={{ color:esR?"#111827":cfg.text, fontWeight:esR?"400":"600", fontSize:"11px" }}>{n.descripcion}</span>
+                                      {tieneHijos&&<span style={{ fontSize:"9px", opacity:0.7 }}>{colapsados[n.id]?">":"v"}</span>}
+                                      <span style={{ color:esR?"#111827":cfg.text, fontWeight:esR?"400":"600", fontSize:"11px" }}>{textoVista(n.descripcion)}</span>
                                       {!esR&&mc.totalRef!=null&&<span style={{ fontSize:"9px", opacity:0.8 }}>total real</span>}
                                       {sinApu&&<span style={{ fontSize:"9px", background:"#fee2e2", color:"#991b1b", borderRadius:"3px", padding:"1px 4px" }}>SIN APU</span>}
                                     </div>
@@ -838,7 +868,7 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
           </>
         )}
 
-        {/* â•â•â• PESTAÃ‘A POR GRUPOS â•â•â• */}
+        {/* Pestana por grupos */}
         {pestana==="grupos"&&(
           <div style={{ flex:1, overflowY:"auto", padding:"16px 20px" }}>
             {nodosPlanos.length===0?(
@@ -868,7 +898,7 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
                 </div>
 
                 <TablaGrupos
-                  titulo={`Grupos automáticos · ${gruposFiltrados.length}`}
+                  titulo={`Grupos automaticos | ${gruposFiltrados.length}`}
                   grupos={gruposFiltrados} expandidos={gruposExp} onToggle={toggleGrupo}
                   onVincular={g=>abrirVincular(g,true)}
                   onDesvincularGrupo={async g=>{g.rubros.forEach(r=>registrarAccion({tipo:"desvincular",nodoId:r.id,apuId:r.apu_id}));await Promise.all(g.rubros.map(r=>fetch(`${API}/presupuestos/nodos/${r.id}/desvincular-apu`,{method:"PATCH"})));mostrarExito("APU desvinculado del grupo");cargarNodos(proyectoActual);}}
@@ -878,7 +908,7 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
                 {individualizados.length>0&&(
                   <div style={{ marginTop:"24px" }}>
                     <TablaGrupos
-                      titulo={`Rubros individualizados · ${individualizados.reduce((s,g)=>s+g.rubros.length,0)}`}
+                      titulo={`Rubros individualizados | ${individualizados.reduce((s,g)=>s+g.rubros.length,0)}`}
                       grupos={individualizados} expandidos={gruposExp} onToggle={toggleGrupo}
                       onVincular={g=>abrirVincular(g,true)}
                       onDesvincularGrupo={async g=>{g.rubros.forEach(r=>registrarAccion({tipo:"desvincular",nodoId:r.id,apuId:r.apu_id}));await Promise.all(g.rubros.map(r=>fetch(`${API}/presupuestos/nodos/${r.id}/desvincular-apu`,{method:"PATCH"})));mostrarExito("APU desvinculado");cargarNodos(proyectoActual);}}
@@ -928,7 +958,7 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
               <div>
               <h2 style={{ fontSize:"15px", fontWeight:"700", margin:0 }}>Vincular APU</h2>
               <div style={{ fontSize:"12px", color:"#6b7280", marginTop:"4px" }}>
-                {esGrupo?`Grupo: "${nodoVinculando?.descripcion}" (${nodoVinculando?.rubros?.length} rubros)`:`Rubro: "${nodoVinculando?.descripcion}"`}
+                {esGrupo?`Grupo: "${textoVista(nodoVinculando?.descripcion)}" (${nodoVinculando?.rubros?.length} rubros)`:`Rubro: "${textoVista(nodoVinculando?.descripcion)}"`}
                 {nodoVinculando?.unidad&&<span style={{ marginLeft:"6px", background:"#f3f4f6", padding:"1px 6px", borderRadius:"4px" }}>{nodoVinculando.unidad}</span>}
                 <span style={{ marginLeft:"8px" }}>Unidad solo referencial; no filtra resultados.</span>
               </div>
@@ -958,10 +988,10 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
                     {apusFiltrados.map(a=>(
                       <tr key={a.id} style={{ borderBottom:"1px solid #f1f5f9" }}>
                         <td style={{ padding:"7px 8px" }}>
-                          <div style={{ fontWeight:"500" }}>{a.nombre}</div>
-                          <div style={{ color:"#6b7280", fontSize:"11px" }}>{a.codigo||"—"}</div>
+                          <div style={{ fontWeight:"500" }}>{textoVista(a.nombre)}</div>
+                          <div style={{ color:"#6b7280", fontSize:"11px" }}>{a.codigo||"-"}</div>
                         </td>
-                        <td style={{ padding:"7px 8px", color:"#374151" }}>{a.unidad||"—"}</td>
+                        <td style={{ padding:"7px 8px", color:"#374151" }}>{a.unidad||"-"}</td>
                         <td style={{ padding:"7px 8px", textAlign:"right", fontVariantNumeric:"tabular-nums", color:"#166534", fontWeight:"600" }}>{fmtM(costosModalApu[a.id]?.precio_unitario ?? null)}</td>
                         <td style={{ padding:"7px 8px", color:"#374151" }}>{a.estado}</td>
                         <td style={{ padding:"7px 8px", textAlign:"center" }}>
