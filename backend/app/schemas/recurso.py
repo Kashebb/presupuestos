@@ -21,6 +21,9 @@ class RecursoCreate(RecursoBase):
 class RecursoUpdate(RecursoBase):
     pass
 
+class RecursoPrecioUpdate(BaseModel):
+    precio_unitario: float
+
 class RecursoOut(RecursoBase):
     id: int
 

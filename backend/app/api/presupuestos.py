@@ -384,7 +384,7 @@ def vincular_apu(
 ):
     """
     Vincula un APU a un nodo RUBRO.
-    Valida que la unidad del APU coincida con la del nodo.
+    La unidad del rubro queda como referencia visual; no bloquea la vinculacion.
     """
     nodo = db.query(NodoPresupuesto).filter(NodoPresupuesto.id == nodo_id).first()
     if not nodo:
@@ -397,19 +397,6 @@ def vincular_apu(
     apu = db.query(APU).filter(APU.id == data.apu_id).first()
     if not apu:
         raise HTTPException(status_code=404, detail="APU no encontrado")
-
-    # Validar coincidencia de unidad (ignorar mayúsculas/minúsculas y espacios)
-    if nodo.unidad and apu.unidad:
-        unidad_nodo = nodo.unidad.strip().lower()
-        unidad_apu = apu.unidad.strip().lower()
-        if unidad_nodo != unidad_apu:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Unidad del rubro ({nodo.unidad}) no coincide "
-                    f"con la unidad del APU ({apu.unidad})"
-                ),
-            )
 
     nodo.apu_id = data.apu_id
     nodo.tipo_rubro = "VINCULADO"

@@ -1,289 +1,377 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useState } from "react";
+import {
+  ActionButton,
+  DataTable,
+  ModalShell,
+  PageHeader,
+  ToolbarFilter,
+  fieldClass,
+  labelClass,
+} from "../components/ui";
 
-const API = 'http://127.0.0.1:8000'
+const API = "http://127.0.0.1:8000";
 
-const CATEGORIAS = ['mano_de_obra', 'material', 'equipo', 'transporte', 'otros']
+const CATEGORIAS = ["mano_de_obra", "material", "equipo", "transporte", "otros"];
 
 const ETIQUETAS = {
-  mano_de_obra: 'Mano de Obra',
-  material: 'Material',
-  equipo: 'Equipo',
-  transporte: 'Transporte',
-  otros: 'Otros'
+  mano_de_obra: "Mano de Obra",
+  material: "Material",
+  equipo: "Equipo",
+  transporte: "Transporte",
+  otros: "Otros",
+};
+
+const vacio = { codigo: "", descripcion: "", unidad: "", categoria: "material", precio_unitario: "" };
+
+function parseNumero(valor) {
+  if (valor === null || valor === undefined) return Number.NaN;
+  const normalizado = String(valor).trim().replace(",", ".");
+  if (!normalizado) return Number.NaN;
+  return Number(normalizado);
 }
 
-const vacío = { codigo: '', descripcion: '', unidad: '', categoria: 'material', precio_unitario: '' }
-
-// ── Toast simple ──────────────────────────────────────────────────────────────
 function Toast({ toasts }) {
   return (
-    <div style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 2000, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-      {toasts.map(t => (
-        <div key={t.id} style={{
-          padding: '12px 18px',
-          borderRadius: '6px',
-          fontSize: '14px',
-          color: 'white',
-          background: t.tipo === 'exito' ? '#16a34a' : t.tipo === 'alerta' ? '#d97706' : '#dc2626',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-          minWidth: '240px'
-        }}>
-          {t.tipo === 'exito' ? '✓ ' : t.tipo === 'alerta' ? '⚠ ' : '✕ '}{t.mensaje}
+    <div className="fixed bottom-5 right-5 z-[2000] flex flex-col gap-2">
+      {toasts.map((toast) => (
+        <div
+          key={toast.id}
+          className={`min-w-60 rounded-md px-4 py-2 text-xs font-medium text-white shadow-lg ${
+            toast.tipo === "exito" ? "bg-green-600" : toast.tipo === "alerta" ? "bg-amber-600" : "bg-red-600"
+          }`}
+        >
+          {toast.mensaje}
         </div>
       ))}
     </div>
-  )
+  );
 }
 
 export default function Recursos() {
-  const [recursos, setRecursos] = useState([])
-  const [busqueda, setBusqueda] = useState('')
-  const [filtroCategoria, setFiltroCategoria] = useState('todos')
-  const [cargando, setCargando] = useState(true)
-  const [modal, setModal] = useState(false)
-  const [form, setForm] = useState(vacío)
-  const [editandoId, setEditandoId] = useState(null)
-  const [guardando, setGuardando] = useState(false)
-  const [error, setError] = useState('')
-  const [toasts, setToasts] = useState([])
+  const [recursos, setRecursos] = useState([]);
+  const [busqueda, setBusqueda] = useState("");
+  const [filtroCategoria, setFiltroCategoria] = useState("todos");
+  const [cargando, setCargando] = useState(true);
+  const [modal, setModal] = useState(false);
+  const [modoModal, setModoModal] = useState("crear");
+  const [codigoBase, setCodigoBase] = useState("");
+  const [form, setForm] = useState(vacio);
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState("");
+  const [precioEdits, setPrecioEdits] = useState({});
+  const [precioErrores, setPrecioErrores] = useState({});
+  const [toasts, setToasts] = useState([]);
 
-  useEffect(() => { fetchRecursos() }, [])
+  useEffect(() => {
+    fetchRecursos();
+  }, []);
 
-  function mostrarToast(mensaje, tipo = 'exito') {
-    const id = Date.now()
-    setToasts(prev => [...prev, { id, mensaje, tipo }])
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500)
+  useEffect(() => {
+    if (!modal) return;
+    generarCodigo(form.categoria, codigoBase);
+  }, [form.categoria, codigoBase, modal]);
+
+  function mostrarToast(mensaje, tipo = "exito") {
+    const id = Date.now();
+    setToasts((prev) => [...prev, { id, mensaje, tipo }]);
+    setTimeout(() => setToasts((prev) => prev.filter((toast) => toast.id !== id)), 3500);
   }
 
   async function fetchRecursos() {
-    setCargando(true)
-    const res = await fetch(`${API}/recursos/?limit=500`)
-    const data = await res.json()
-    setRecursos(data)
-    setCargando(false)
+    setCargando(true);
+    const res = await fetch(`${API}/recursos/?limit=500`);
+    const data = await res.json();
+    setRecursos(data);
+    setCargando(false);
+  }
+
+  async function generarCodigo(categoria, base = "") {
+    if (!categoria) return;
+    const params = new URLSearchParams({ categoria });
+    if (base) params.append("codigo_base", base);
+    const res = await fetch(`${API}/recursos/siguiente-codigo?${params}`);
+    if (!res.ok) {
+      const err = await res.json();
+      setForm((prev) => ({ ...prev, codigo: "" }));
+      setError(err.detail || "No se pudo generar el codigo para esta categoria.");
+      return;
+    }
+    const data = await res.json();
+    setForm((prev) => ({ ...prev, codigo: data.codigo }));
+    setError("");
   }
 
   function abrirCrear() {
-    setForm(vacío)
-    setEditandoId(null)
-    setError('')
-    setModal(true)
+    setModoModal("crear");
+    setCodigoBase("");
+    setForm(vacio);
+    setError("");
+    setModal(true);
   }
 
-  function abrirEditar(r) {
+  function abrirDuplicar(recurso) {
+    setModoModal("duplicar");
+    setCodigoBase(recurso.codigo || "");
     setForm({
-      codigo: r.codigo || '',
-      descripcion: r.descripcion || '',
-      unidad: r.unidad || '',
-      categoria: r.categoria || 'material',
-      precio_unitario: r.precio_unitario || ''
-    })
-    setEditandoId(r.id)
-    setError('')
-    setModal(true)
+      codigo: "",
+      descripcion: `${recurso.descripcion || ""} copia`,
+      unidad: recurso.unidad || "",
+      categoria: recurso.categoria || "material",
+      precio_unitario: recurso.precio_unitario ?? "",
+    });
+    setError("");
+    setModal(true);
   }
 
   async function guardar() {
-    if (!form.descripcion.trim()) { setError('El nombre es obligatorio.'); return }
-    if (!form.unidad.trim()) { setError('La unidad es obligatoria.'); return }
-    if (form.precio_unitario === '' || isNaN(Number(form.precio_unitario))) { setError('Ingresa un precio válido.'); return }
+    if (!form.codigo.trim()) {
+      setError("No hay codigo automatico disponible para esta categoria.");
+      return;
+    }
+    if (!form.descripcion.trim()) {
+      setError("El nombre es obligatorio.");
+      return;
+    }
+    if (!form.unidad.trim()) {
+      setError("La unidad es obligatoria.");
+      return;
+    }
+    const precio = parseNumero(form.precio_unitario);
+    if (!Number.isFinite(precio) || precio < 0) {
+      setError("Ingresa un precio valido.");
+      return;
+    }
 
-    setGuardando(true)
-    setError('')
+    setGuardando(true);
+    setError("");
 
-    const body = { ...form, precio_unitario: Number(form.precio_unitario) }
-    const url = editandoId ? `${API}/recursos/${editandoId}` : `${API}/recursos/`
-    const method = editandoId ? 'PUT' : 'POST'
+    const body = { ...form, precio_unitario: precio, activo: true };
+    const res = await fetch(`${API}/recursos/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
 
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    })
-
-    setGuardando(false)
+    setGuardando(false);
 
     if (res.ok) {
-      setModal(false)
-      fetchRecursos()
-      mostrarToast(editandoId ? 'Recurso actualizado correctamente.' : 'Recurso creado correctamente.')
+      setModal(false);
+      fetchRecursos();
+      mostrarToast(modoModal === "duplicar" ? "Recurso duplicado correctamente." : "Recurso creado correctamente.");
     } else {
-      const err = await res.json()
-      setError(err.detail || 'Error al guardar.')
+      const err = await res.json();
+      setError(err.detail || "Error al guardar.");
     }
   }
 
-  async function desactivar(r) {
-    if (!confirm(`¿Desactivar "${r.descripcion}"?`)) return
-    const res = await fetch(`${API}/recursos/${r.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...r, activo: false })
-    })
+  async function guardarPrecioInline(recurso) {
+    const editado = precioEdits[recurso.id];
+    if (editado === undefined) return;
+
+    const precio = parseNumero(editado);
+    const anterior = Number(recurso.precio_unitario || 0);
+    if (!Number.isFinite(precio) || precio < 0) {
+      setPrecioErrores((prev) => ({ ...prev, [recurso.id]: "Precio invalido." }));
+      return;
+    }
+    if (Math.abs(precio - anterior) < 0.000001) {
+      setPrecioEdits((prev) => {
+        const next = { ...prev };
+        delete next[recurso.id];
+        return next;
+      });
+      setPrecioErrores((prev) => {
+        const next = { ...prev };
+        delete next[recurso.id];
+        return next;
+      });
+      return;
+    }
+
+    const res = await fetch(`${API}/recursos/${recurso.id}/precio`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ precio_unitario: precio }),
+    });
+
     if (res.ok) {
-      fetchRecursos()
-      mostrarToast(`"${r.descripcion}" desactivado.`, 'alerta')
+      const actualizado = await res.json();
+      setRecursos((prev) => prev.map((item) => (item.id === recurso.id ? actualizado : item)));
+      setPrecioEdits((prev) => {
+        const next = { ...prev };
+        delete next[recurso.id];
+        return next;
+      });
+      setPrecioErrores((prev) => {
+        const next = { ...prev };
+        delete next[recurso.id];
+        return next;
+      });
+      mostrarToast("Precio actualizado.");
     } else {
-      mostrarToast('Error al desactivar el recurso.', 'error')
+      setPrecioEdits((prev) => ({ ...prev, [recurso.id]: anterior.toFixed(2) }));
+      setPrecioErrores((prev) => ({ ...prev, [recurso.id]: "No se pudo guardar. Se restauro el valor anterior." }));
+      mostrarToast("No se pudo actualizar el precio.", "error");
     }
   }
 
-  const filtrados = recursos.filter(r => {
-    const coincideBusqueda =
-      (r.descripcion || '').toLowerCase().includes(busqueda.toLowerCase()) ||
-      (r.codigo || '').toLowerCase().includes(busqueda.toLowerCase())
-    const coincideCategoria = filtroCategoria === 'todos' || r.categoria === filtroCategoria
-    return coincideBusqueda && coincideCategoria
-  })
+  async function desactivar(recurso) {
+    if (!confirm(`Desactivar "${recurso.descripcion}"?`)) return;
+    const res = await fetch(`${API}/recursos/${recurso.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...recurso, activo: false }),
+    });
+    if (res.ok) {
+      fetchRecursos();
+      mostrarToast(`"${recurso.descripcion}" desactivado.`, "alerta");
+    } else {
+      mostrarToast("Error al desactivar el recurso.", "error");
+    }
+  }
+
+  const filtrados = useMemo(() => {
+    return recursos.filter((recurso) => {
+      const coincideBusqueda =
+        (recurso.descripcion || "").toLowerCase().includes(busqueda.toLowerCase()) ||
+        (recurso.codigo || "").toLowerCase().includes(busqueda.toLowerCase());
+      const coincideCategoria = filtroCategoria === "todos" || recurso.categoria === filtroCategoria;
+      return coincideBusqueda && coincideCategoria;
+    });
+  }, [recursos, busqueda, filtroCategoria]);
+
+  const grupos = useMemo(() => {
+    const orden = [...CATEGORIAS, ...new Set(filtrados.map((r) => r.categoria).filter(Boolean))];
+    return [...new Set(orden)]
+      .map((categoria) => ({
+        categoria,
+        recursos: filtrados.filter((recurso) => recurso.categoria === categoria),
+      }))
+      .filter((grupo) => grupo.recursos.length > 0);
+  }, [filtrados]);
+
+  const columns = [
+    { key: "codigo", label: "Codigo", width: "13%", render: (recurso) => recurso.codigo || "-" },
+    { key: "descripcion", label: "Nombre", render: (recurso) => <span className="font-medium text-slate-900">{recurso.descripcion}</span> },
+    { key: "unidad", label: "Unidad", width: "9%" },
+    {
+      key: "precio_unitario",
+      label: "Precio",
+      align: "right",
+      width: "14%",
+      render: (recurso) => (
+        <div>
+          <input
+            type="text"
+            inputMode="decimal"
+            value={precioEdits[recurso.id] ?? Number(recurso.precio_unitario || 0).toFixed(2)}
+            onChange={(e) => setPrecioEdits((prev) => ({ ...prev, [recurso.id]: e.target.value }))}
+            onBlur={() => guardarPrecioInline(recurso)}
+            className={`${fieldClass} ml-auto max-w-28 text-right tabular-nums`}
+          />
+          {precioErrores[recurso.id] && <div className="mt-1 text-[10px] text-red-600">{precioErrores[recurso.id]}</div>}
+        </div>
+      ),
+    },
+    {
+      key: "acciones",
+      label: "Acciones",
+      align: "center",
+      width: "22%",
+      render: (recurso) => (
+        <div className="flex justify-center gap-1">
+          <ActionButton onClick={() => abrirDuplicar(recurso)}>Duplicar</ActionButton>
+          {recurso.activo && <ActionButton variant="danger" onClick={() => desactivar(recurso)}>Desactivar</ActionButton>}
+        </div>
+      ),
+    },
+  ];
+
+  const filtros = [
+    { value: "todos", label: "Todos" },
+    ...CATEGORIAS.map((categoria) => ({ value: categoria, label: ETIQUETAS[categoria] })),
+  ];
 
   return (
-    <div style={{ padding: '24px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <h1 style={{ fontSize: '24px', margin: 0 }}>Recursos</h1>
-        <button onClick={abrirCrear} style={btnPrimario}>+ Nuevo recurso</button>
-      </div>
+    <div className="p-5">
+      <PageHeader
+        title="Recursos"
+        subtitle="Biblioteca base de mano de obra, materiales, equipos y transporte."
+        actions={<ActionButton variant="primary" onClick={abrirCrear}>Nuevo recurso</ActionButton>}
+      />
 
-      {/* Barra de búsqueda + filtros */}
-      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap' }}>
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-white p-2">
         <input
           type="text"
-          placeholder="Buscar por nombre o código..."
+          placeholder="Buscar por nombre o codigo..."
           value={busqueda}
-          onChange={e => setBusqueda(e.target.value)}
-          style={{ padding: '8px 12px', width: '260px', border: '1px solid #ccc', borderRadius: '4px', fontSize: '14px' }}
+          onChange={(e) => setBusqueda(e.target.value)}
+          className={`${fieldClass} max-w-xs`}
         />
-
-        {/* Botones de filtro */}
-        {['todos', ...CATEGORIAS].map(cat => (
-          <button
-            key={cat}
-            onClick={() => setFiltroCategoria(cat)}
-            style={{
-              padding: '6px 14px',
-              fontSize: '13px',
-              borderRadius: '20px',
-              border: '1px solid',
-              cursor: 'pointer',
-              borderColor: filtroCategoria === cat ? '#2563eb' : '#d1d5db',
-              background: filtroCategoria === cat ? '#2563eb' : 'white',
-              color: filtroCategoria === cat ? 'white' : '#374151',
-              fontWeight: filtroCategoria === cat ? '600' : '400',
-              transition: 'all 0.15s'
-            }}
-          >
-            {cat === 'todos' ? 'Todos' : ETIQUETAS[cat]}
-          </button>
-        ))}
+        <ToolbarFilter options={filtros} value={filtroCategoria} onChange={setFiltroCategoria} />
       </div>
 
-      {cargando ? <p>Cargando...</p> : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', background: 'white' }}>
-          <thead>
-            <tr style={{ background: '#f0f0f0' }}>
-              <th style={th}>Código</th>
-              <th style={th}>Nombre</th>
-              <th style={th}>Unidad</th>
-              <th style={th}>Tipo</th>
-              <th style={th}>Precio</th>
-              <th style={th}>Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtrados.map(r => (
-              <tr key={r.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={td}>{r.codigo}</td>
-                <td style={td}>{r.descripcion}</td>
-                <td style={td}>{r.unidad}</td>
-                <td style={td}>
-                  <span style={{
-                    padding: '2px 8px',
-                    borderRadius: '12px',
-                    fontSize: '12px',
-                    background: COLORES_CAT[r.categoria]?.bg || '#f3f4f6',
-                    color: COLORES_CAT[r.categoria]?.text || '#374151'
-                  }}>
-                    {ETIQUETAS[r.categoria] || r.categoria}
-                  </span>
-                </td>
-                <td style={td}>${Number(r.precio_unitario).toFixed(2)}</td>
-                <td style={td}>
-                  <button onClick={() => abrirEditar(r)} style={btnEditar}>Editar</button>
-                  <button onClick={() => desactivar(r)} style={btnDesactivar}>Desactivar</button>
-                </td>
-              </tr>
-            ))}
-            {filtrados.length === 0 && (
-              <tr>
-                <td colSpan={6} style={{ ...td, textAlign: 'center', color: '#888', padding: '24px' }}>
-                  No se encontraron recursos.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      {cargando ? (
+        <div className="rounded-md border border-slate-200 bg-white p-8 text-center text-xs text-slate-400">Cargando...</div>
+      ) : grupos.length === 0 ? (
+        <div className="rounded-md border border-slate-200 bg-white p-8 text-center text-xs text-slate-400">No se encontraron recursos.</div>
+      ) : (
+        <div className="space-y-4">
+          {grupos.map((grupo) => (
+            <section key={grupo.categoria}>
+              <div className="mb-1 flex items-center justify-between rounded-t-md border border-slate-200 bg-slate-100 px-3 py-2">
+                <h2 className="text-xs font-semibold text-slate-800">{ETIQUETAS[grupo.categoria] || grupo.categoria}</h2>
+                <span className="text-[11px] text-slate-500">{grupo.recursos.length} recurso{grupo.recursos.length !== 1 ? "s" : ""}</span>
+              </div>
+              <DataTable columns={columns} rows={grupo.recursos} rowKey={(recurso) => recurso.id} emptyText="No se encontraron recursos." />
+            </section>
+          ))}
+        </div>
       )}
 
-      <p style={{ marginTop: '12px', fontSize: '13px', color: '#888' }}>
-        {filtrados.length} recurso{filtrados.length !== 1 ? 's' : ''} encontrado{filtrados.length !== 1 ? 's' : ''}
+      <p className="mt-2 text-[11px] text-slate-500">
+        {filtrados.length} recurso{filtrados.length !== 1 ? "s" : ""} encontrado{filtrados.length !== 1 ? "s" : ""}
       </p>
 
-      {/* MODAL */}
       {modal && (
-        <div style={overlay}>
-          <div style={modalBox}>
-            <h2 style={{ marginTop: 0, fontSize: '18px' }}>
-              {editandoId ? 'Editar recurso' : 'Nuevo recurso'}
-            </h2>
+        <ModalShell
+          title={modoModal === "duplicar" ? "Duplicar recurso" : "Nuevo recurso"}
+          footer={
+            <>
+              <ActionButton onClick={() => setModal(false)}>Cancelar</ActionButton>
+              <ActionButton variant="primary" disabled={guardando} onClick={guardar}>
+                {guardando ? "Guardando..." : "Guardar"}
+              </ActionButton>
+            </>
+          }
+        >
+          <label className={labelClass}>Codigo automatico</label>
+          <input className={`${fieldClass} bg-slate-100`} value={form.codigo} readOnly placeholder="Se genera desde codigos existentes" />
 
-            <label style={labelStyle}>Código</label>
-            <input style={inputStyle} value={form.codigo} onChange={e => setForm({ ...form, codigo: e.target.value })} placeholder="Ej: MO-001" />
+          <label className={`${labelClass} mt-3`}>Nombre *</label>
+          <input className={fieldClass} value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} placeholder="Nombre del recurso" />
 
-            <label style={labelStyle}>Nombre *</label>
-            <input style={inputStyle} value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} placeholder="Nombre del recurso" />
+          <label className={`${labelClass} mt-3`}>Unidad *</label>
+          <input className={fieldClass} value={form.unidad} onChange={(e) => setForm({ ...form, unidad: e.target.value })} placeholder="Ej: m3, kg, gl, u" />
 
-            <label style={labelStyle}>Unidad *</label>
-            <input style={inputStyle} value={form.unidad} onChange={e => setForm({ ...form, unidad: e.target.value })} placeholder="Ej: m3, kg, gl, u" />
+          <label className={`${labelClass} mt-3`}>Tipo *</label>
+          <select
+            className={fieldClass}
+            value={form.categoria}
+            disabled={modoModal === "duplicar"}
+            onChange={(e) => setForm({ ...form, categoria: e.target.value })}
+          >
+            {CATEGORIAS.map((categoria) => <option key={categoria} value={categoria}>{ETIQUETAS[categoria]}</option>)}
+          </select>
 
-            <label style={labelStyle}>Tipo *</label>
-            <select style={inputStyle} value={form.categoria} onChange={e => setForm({ ...form, categoria: e.target.value })}>
-              {CATEGORIAS.map(c => <option key={c} value={c}>{ETIQUETAS[c]}</option>)}
-            </select>
+          <label className={`${labelClass} mt-3`}>Precio unitario *</label>
+          <input className={fieldClass} type="text" inputMode="decimal" value={form.precio_unitario} onChange={(e) => setForm({ ...form, precio_unitario: e.target.value })} placeholder="0.00" />
 
-            <label style={labelStyle}>Precio unitario *</label>
-            <input style={inputStyle} type="number" step="0.01" value={form.precio_unitario} onChange={e => setForm({ ...form, precio_unitario: e.target.value })} placeholder="0.00" />
-
-            {error && <p style={{ color: 'red', fontSize: '13px', margin: '8px 0 0' }}>{error}</p>}
-
-            <div style={{ display: 'flex', gap: '8px', marginTop: '20px', justifyContent: 'flex-end' }}>
-              <button onClick={() => setModal(false)} style={btnCancelar}>Cancelar</button>
-              <button onClick={guardar} disabled={guardando} style={btnPrimario}>
-                {guardando ? 'Guardando...' : 'Guardar'}
-              </button>
-            </div>
-          </div>
-        </div>
+          {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+        </ModalShell>
       )}
 
       <Toast toasts={toasts} />
     </div>
-  )
+  );
 }
-
-const COLORES_CAT = {
-  mano_de_obra: { bg: '#dbeafe', text: '#1d4ed8' },
-  material:     { bg: '#dcfce7', text: '#15803d' },
-  equipo:       { bg: '#fef9c3', text: '#a16207' },
-  transporte:   { bg: '#ede9fe', text: '#6d28d9' },
-  otros:        { bg: '#f3f4f6', text: '#374151' }
-}
-
-const th = { padding: '10px 12px', textAlign: 'left', fontSize: '13px', fontWeight: '600', borderBottom: '2px solid #ddd' }
-const td = { padding: '8px 12px', fontSize: '13px' }
-const labelStyle = { display: 'block', fontSize: '13px', fontWeight: '600', marginBottom: '4px', marginTop: '12px' }
-const inputStyle = { width: '100%', padding: '8px 10px', border: '1px solid #ccc', borderRadius: '4px', fontSize: '14px', boxSizing: 'border-box' }
-const overlay = { position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }
-const modalBox = { background: 'white', borderRadius: '8px', padding: '28px', width: '420px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 4px 24px rgba(0,0,0,0.15)' }
-const btnPrimario = { padding: '8px 16px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '14px' }
-const btnCancelar = { padding: '8px 16px', background: '#f3f4f6', color: '#333', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', fontSize: '14px' }
-const btnEditar = { padding: '4px 10px', background: '#f3f4f6', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', marginRight: '6px' }
-const btnDesactivar = { padding: '4px 10px', background: '#fee2e2', color: '#b91c1c', border: '1px solid #fca5a5', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }

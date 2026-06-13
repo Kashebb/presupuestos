@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 
 const API = "http://127.0.0.1:8000";
 
@@ -164,7 +164,7 @@ function TablaGrupos({ titulo, grupos, expandidos, onToggle, onVincular, onDesvi
 // ════════════════════════════════════════════════════════════
 // Componente principal
 // ════════════════════════════════════════════════════════════
-export default function Presupuestos() {
+export default function Presupuestos({ initialFilter = "todos" }) {
   const [vista, setVista] = useState("lista");
   const [pestana, setPestana] = useState("jerarquica");
   const [proyectos, setProyectos] = useState([]);
@@ -208,12 +208,24 @@ export default function Presupuestos() {
   const [msgExito, setMsgExito] = useState("");
   const fileRef = useRef();
 
+  useEffect(() => {
+    setFiltroEstado(initialFilter || "todos");
+    setPestana("jerarquica");
+  }, [initialFilter]);
+
   // ── Cargar proyectos ──────────────────────────────────────
   const cargarProyectos = async () => { const r = await fetch(`${API}/presupuestos/proyectos/`); setProyectos(await r.json()); };
   useEffect(() => { cargarProyectos(); }, []);
 
   // ── Cargar nodos ──────────────────────────────────────────
-  const cargarNodos = async (proyecto) => {
+  const cargarCostosApu = useCallback(async (planos) => {
+    const apuIds = [...new Set(planos.filter(n=>n.apu_id).map(n=>n.apu_id))];
+    const nuevos = {};
+    await Promise.all(apuIds.map(async id => { nuevos[id] = await fetchCostoApu(id); }));
+    setCostosApu(prev => ({ ...prev, ...nuevos }));
+  }, []);
+
+  const cargarNodos = useCallback(async (proyecto) => {
     const r = await fetch(`${API}/presupuestos/proyectos/${proyecto.id}/nodos`);
     const data = await r.json();
     const planos = aplanar(construirArbol(data));
@@ -222,14 +234,13 @@ export default function Presupuestos() {
     setProyectoActual(proyecto); setVista("detalle");
     // Cargar costos de APUs vinculados
     cargarCostosApu(planos);
-  };
+  }, [cargarCostosApu]);
 
-  const cargarCostosApu = async (planos) => {
-    const apuIds = [...new Set(planos.filter(n=>n.apu_id).map(n=>n.apu_id))];
-    const nuevos = {};
-    await Promise.all(apuIds.map(async id => { nuevos[id] = await fetchCostoApu(id); }));
-    setCostosApu(prev => ({ ...prev, ...nuevos }));
-  };
+  useEffect(() => {
+    if (initialFilter !== "todos" && vista === "lista" && proyectos.length === 1) {
+      cargarNodos(proyectos[0]);
+    }
+  }, [cargarNodos, initialFilter, proyectos, vista]);
 
   // ── Filtrar APUs para modal ───────────────────────────────
   useEffect(() => {
@@ -239,13 +250,18 @@ export default function Presupuestos() {
 
   useEffect(() => {
     if (!nodoVinculando) return;
-    const unidad = (esGrupo ? nodoVinculando.unidad : nodoVinculando.unidad||"").toLowerCase().trim();
-    const busq = buscarApu.toLowerCase();
+    const busq = buscarApu.toLowerCase().trim();
+    if (!busq) {
+      setApusFiltrados([]);
+      return;
+    }
     setApusFiltrados(apus.filter(a => {
-      const u = (a.unidad||"").toLowerCase().trim();
-      return (!unidad||u===unidad) && (!busq||a.nombre.toLowerCase().includes(busq)||(a.codigo||"").toLowerCase().includes(busq)) && a.estado==="activo";
+      const nombre = (a.nombre || "").toLowerCase();
+      const codigo = (a.codigo || "").toLowerCase();
+      const categoria = (a.categoria || "").toLowerCase();
+      return a.estado !== "inactivo" && (nombre.includes(busq) || codigo.includes(busq) || categoria.includes(busq));
     }));
-  }, [apus, buscarApu, nodoVinculando, esGrupo]);
+  }, [apus, buscarApu, nodoVinculando]);
 
   // ── CRUD proyectos ────────────────────────────────────────
   const crearProyecto = async () => {
@@ -328,7 +344,7 @@ export default function Presupuestos() {
       fetch(`${API}/presupuestos/nodos/${r.id}/vincular-apu`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({apu_id:apu.id}) })
     ));
     const errores = resultados.filter(r=>!r.ok);
-    if (errores.length) { setError(`${errores.length} rubro(s) no vinculados (unidad incompatible)`); return; }
+    if (errores.length) { setError(`${errores.length} rubro(s) no vinculados. Revisa el detalle del servidor.`); return; }
     // Registrar en historial
     rubros.forEach(r => registrarAccion({ tipo:"vincular", nodoId:r.id, apuId:apu.id }));
     setModalVincular(false); mostrarExito("APU vinculado"); cargarNodos(proyectoActual);
@@ -749,34 +765,35 @@ export default function Presupuestos() {
         </div>
       )}
 
-      {/* Modal Vincular APU */}
+      {/* Panel fijo Vincular APU */}
       {modalVincular&&(
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.4)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:50 }}>
-          <div style={{ background:"#fff", borderRadius:"10px", padding:"24px", width:"100%", maxWidth:"500px", maxHeight:"80vh", display:"flex", flexDirection:"column" }}>
+        <div style={{ position:"fixed", left:0, right:0, bottom:0, background:"#fff", borderTop:"1px solid #cbd5e1", boxShadow:"0 -8px 24px rgba(15,23,42,0.14)", zIndex:60, padding:"12px 20px" }}>
+          <div style={{ background:"#fff", width:"100%", maxWidth:"1100px", maxHeight:"42vh", margin:"0 auto", display:"flex", flexDirection:"column" }}>
             <div style={{ marginBottom:"12px" }}>
               <h2 style={{ fontSize:"15px", fontWeight:"700", margin:0 }}>Vincular APU</h2>
               <div style={{ fontSize:"12px", color:"#6b7280", marginTop:"4px" }}>
                 {esGrupo?`Grupo: "${nodoVinculando?.descripcion}" (${nodoVinculando?.rubros?.length} rubros)`:`Rubro: "${nodoVinculando?.descripcion}"`}
                 {nodoVinculando?.unidad&&<span style={{ marginLeft:"6px", background:"#f3f4f6", padding:"1px 6px", borderRadius:"4px" }}>{nodoVinculando.unidad}</span>}
+                <span style={{ marginLeft:"8px" }}>Unidad solo referencial; no filtra resultados.</span>
               </div>
             </div>
-            <input type="text" placeholder="Buscar APU..." value={buscarApu} onChange={e=>setBuscarApu(e.target.value)}
+            <input type="text" placeholder="Buscar APU por nombre, codigo o categoria..." value={buscarApu} onChange={e=>setBuscarApu(e.target.value)}
               style={{ border:"1px solid #d1d5db", borderRadius:"6px", padding:"7px 10px", fontSize:"13px", marginBottom:"8px" }}/>
-            <div style={{ fontSize:"11px", color:"#6b7280", marginBottom:"6px" }}>{apusFiltrados.length} APU(s) activos con esa unidad</div>
+            <div style={{ fontSize:"11px", color:"#6b7280", marginBottom:"6px" }}>{buscarApu.trim()?`${apusFiltrados.length} coincidencia(s) no inactivas`:"Escribe para buscar APUs"}</div>
             <div style={{ overflowY:"auto", flex:1, display:"flex", flexDirection:"column", gap:"4px" }}>
-              {apusFiltrados.length===0&&<div style={{ textAlign:"center", padding:"24px", color:"#9ca3af", fontSize:"13px" }}>No hay APUs activos con esa unidad.</div>}
+              {buscarApu.trim()&&apusFiltrados.length===0&&<div style={{ textAlign:"center", padding:"24px", color:"#9ca3af", fontSize:"13px" }}>No hay APUs coincidentes no inactivos.</div>}
               {apusFiltrados.map(a=>(
                 <div key={a.id} style={{ border:"1px solid #e5e7eb", borderRadius:"6px", padding:"8px 12px", display:"flex", justifyContent:"space-between", alignItems:"center", fontSize:"12px" }}>
                   <div>
                     <div style={{ fontWeight:"500" }}>{a.nombre}</div>
                     <div style={{ color:"#6b7280", fontSize:"11px" }}>{a.codigo||"—"} · {a.unidad}</div>
                   </div>
-                  <button onClick={()=>vincularApu(a)} style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:"4px", padding:"4px 12px", fontSize:"11px", cursor:"pointer" }}>Seleccionar</button>
+                  <button onClick={()=>vincularApu(a)} style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:"4px", padding:"4px 12px", fontSize:"11px", cursor:"pointer" }}>Vincular</button>
                 </div>
               ))}
             </div>
             {error&&<p style={{ color:"#dc2626", fontSize:"12px", marginTop:"8px" }}>{error}</p>}
-            <button onClick={()=>{setModalVincular(false);setError("");}} style={{ marginTop:"12px", border:"1px solid #d1d5db", borderRadius:"6px", padding:"6px", fontSize:"13px", cursor:"pointer" }}>Cancelar</button>
+            <button onClick={()=>{setModalVincular(false);setError("");}} style={{ marginTop:"12px", border:"1px solid #d1d5db", borderRadius:"6px", padding:"6px", fontSize:"13px", cursor:"pointer" }}>Cerrar panel</button>
           </div>
         </div>
       )}

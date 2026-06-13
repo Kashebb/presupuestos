@@ -1,69 +1,123 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ActionButton,
+  DataTable,
+  MetricStrip,
+  ModalShell,
+  PageHeader,
+  StatusBadge,
+  ToolbarFilter,
+  fieldClass,
+  labelClass,
+} from "../components/ui";
 
 const API = "http://127.0.0.1:8000";
 
 const ESTADOS = ["activo", "en_revision", "inactivo"];
-const CATEGORIAS = ["Obras Preliminares", "Movimiento de Tierras", "Estructura", "Mampostería", "Cubierta", "Instalaciones", "Acabados", "Vías", "Otros"];
+const CATEGORIAS = ["Obras Preliminares", "Movimiento de Tierras", "Estructura", "Mamposteria", "Cubierta", "Instalaciones", "Acabados", "Vias", "Otros"];
 
 const modalBase = {
-  codigo: "", nombre: "", unidad: "", rendimiento: 1.0,
-  categoria: "", subcategoria: "", descripcion: "",
-  estado: "en_revision", observacion: ""
+  codigo: "",
+  nombre: "",
+  unidad: "",
+  rendimiento: 1.0,
+  categoria: "",
+  subcategoria: "",
+  descripcion: "",
+  estado: "en_revision",
+  observacion: "",
 };
 
-export default function Apus(props) {
+function estadoTone(estado) {
+  if (estado === "activo") return "green";
+  if (estado === "en_revision") return "amber";
+  return "gray";
+}
+
+function fmtPrecio(valor) {
+  if (valor === undefined || valor === null) return "-";
+  return `$${Number(valor).toFixed(2)}`;
+}
+
+export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
   const [apus, setApus] = useState([]);
   const [buscar, setBuscar] = useState("");
   const [modalAbierto, setModalAbierto] = useState(false);
   const [form, setForm] = useState(modalBase);
-  const [editandoId, setEditandoId] = useState(null);
+  const [editandoRapidoId, setEditandoRapidoId] = useState(null);
+  const [formRapido, setFormRapido] = useState({ nombre: "", unidad: "" });
   const [error, setError] = useState("");
   const [costos, setCostos] = useState({});
+  const [filtro, setFiltro] = useState(initialFilter);
+
+  useEffect(() => {
+    setFiltro(initialFilter || "todos");
+  }, [initialFilter]);
 
   const cargarApus = useCallback(async () => {
     const params = new URLSearchParams({ limit: 500 });
     if (buscar) params.append("buscar", buscar);
     const [res, resCostos] = await Promise.all([
       fetch(`${API}/apus/?${params}`),
-      fetch(`${API}/apus/costos/resumen?limit=500`)
+      fetch(`${API}/apus/costos/resumen?limit=500`),
     ]);
     const data = await res.json();
     const dataCostos = await resCostos.json();
-    const costosPorApu = Object.fromEntries(dataCostos.map(c => [c.apu_id, c]));
+    const costosPorApu = Object.fromEntries(dataCostos.map((c) => [c.apu_id, c]));
     setApus(data);
     setCostos(costosPorApu);
   }, [buscar]);
 
-  useEffect(() => { cargarApus(); }, [cargarApus]);
+  useEffect(() => {
+    cargarApus();
+  }, [cargarApus]);
+
+  const controlApu = useCallback((apu) => costos[apu.id]?.control_costo || "ok", [costos]);
+
+  const apusFiltrados = useMemo(() => {
+    return apus.filter((apu) => {
+      const control = controlApu(apu);
+      if (filtro === "revisar_costo") return control === "revisar_costo";
+      if (filtro === "ok") return control !== "revisar_costo";
+      if (["activo", "en_revision", "inactivo"].includes(filtro)) return apu.estado === filtro;
+      return true;
+    });
+  }, [apus, controlApu, filtro]);
+
+  const resumen = useMemo(() => {
+    const revisar = apus.filter((apu) => controlApu(apu) === "revisar_costo").length;
+    return {
+      total: apus.length,
+      ok: apus.length - revisar,
+      revisar,
+      enRevision: apus.filter((apu) => apu.estado === "en_revision").length,
+    };
+  }, [apus, controlApu]);
 
   const abrirNuevo = () => {
     setForm(modalBase);
-    setEditandoId(null);
     setError("");
     setModalAbierto(true);
   };
 
-  const abrirEditar = (apu) => {
-    setForm({
-      codigo: apu.codigo || "", nombre: apu.nombre, unidad: apu.unidad,
-      rendimiento: apu.rendimiento, categoria: apu.categoria || "",
-      subcategoria: apu.subcategoria || "", descripcion: apu.descripcion || "",
-      estado: apu.estado, observacion: apu.observacion || ""
-    });
-    setEditandoId(apu.id);
-    setError("");
-    setModalAbierto(true);
+  const abrirEditarRapido = (apu) => {
+    setEditandoRapidoId(apu.id);
+    setFormRapido({ nombre: apu.nombre || "", unidad: apu.unidad || "" });
   };
 
   const guardar = async () => {
-    if (!form.nombre.trim()) { setError("El nombre es obligatorio."); return; }
-    if (!form.unidad.trim()) { setError("La unidad es obligatoria."); return; }
-    const url = editandoId ? `${API}/apus/${editandoId}` : `${API}/apus/`;
-    const method = editandoId ? "PUT" : "POST";
-    const res = await fetch(url, {
-      method,
+    if (!form.nombre.trim()) {
+      setError("El nombre es obligatorio.");
+      return;
+    }
+    if (!form.unidad.trim()) {
+      setError("La unidad es obligatoria.");
+      return;
+    }
+    const res = await fetch(`${API}/apus/`, {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, rendimiento: parseFloat(form.rendimiento) || 1.0, items: [] })
+      body: JSON.stringify({ ...form, rendimiento: parseFloat(form.rendimiento) || 1.0, items: [] }),
     });
     if (res.ok) {
       setModalAbierto(false);
@@ -73,160 +127,191 @@ export default function Apus(props) {
     }
   };
 
+  const guardarEdicionRapida = async (apu) => {
+    if (!formRapido.nombre.trim() || !formRapido.unidad.trim()) return;
+    const res = await fetch(`${API}/apus/${apu.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nombre: formRapido.nombre.trim(), unidad: formRapido.unidad.trim() }),
+    });
+    if (res.ok) {
+      const actualizado = await res.json();
+      setApus((prev) => prev.map((item) => (item.id === apu.id ? actualizado : item)));
+      setEditandoRapidoId(null);
+    } else {
+      setError("No se pudo guardar la edicion rapida.");
+    }
+  };
+
   const desactivar = async (id) => {
-    if (!confirm("¿Desactivar este APU?")) return;
-    const apu = apus.find(a => a.id === id);
+    if (!confirm("Desactivar este APU?")) return;
+    const apu = apus.find((a) => a.id === id);
     await fetch(`${API}/apus/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...apu, estado: "inactivo", items: [] })
+      body: JSON.stringify({ ...apu, estado: "inactivo", items: [] }),
     });
     cargarApus();
   };
 
-  const estadoBadge = (estado) => {
-    const colores = {
-      activo: "bg-green-100 text-green-800",
-      en_revision: "bg-yellow-100 text-yellow-800",
-      inactivo: "bg-gray-100 text-gray-500"
-    };
-    return <span className={`px-2 py-0.5 rounded text-xs font-medium ${colores[estado] || "bg-gray-100"}`}>{estado}</span>;
-  };
-
   const controlBadge = (apu) => {
-    const control = costos[apu.id]?.control_costo;
-    if (control === "revisar_costo") {
-      return <span className="px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">Revisar costo</span>;
-    }
-    if (apu.estado === "en_revision") {
-      return <span className="px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">En revisión</span>;
-    }
-    return <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">OK</span>;
+    const control = controlApu(apu);
+    if (control === "revisar_costo") return <StatusBadge tone="red">Revisar costo</StatusBadge>;
+    return <StatusBadge tone="green">OK</StatusBadge>;
   };
 
-  const fmtPrecio = (valor) => {
-    if (valor === undefined || valor === null) return "—";
-    return `$${Number(valor).toFixed(2)}`;
-  };
+  const filtros = [
+    { value: "todos", label: `Todos (${resumen.total})` },
+    { value: "revisar_costo", label: `Revisar costo (${resumen.revisar})` },
+    { value: "ok", label: `OK (${resumen.ok})` },
+    { value: "activo", label: "Activo" },
+    { value: "en_revision", label: "En revision" },
+    { value: "inactivo", label: "Inactivo" },
+  ];
+
+  const columns = [
+    { key: "codigo", label: "Codigo", width: "12%", render: (apu) => apu.codigo || "-" },
+    {
+      key: "nombre",
+      label: "Nombre",
+      render: (apu) => (
+        <div>
+          {editandoRapidoId === apu.id ? (
+            <input
+              value={formRapido.nombre}
+              onChange={(e) => setFormRapido({ ...formRapido, nombre: e.target.value })}
+              className={fieldClass}
+              autoFocus
+            />
+          ) : (
+            <div className="font-medium text-slate-900">{apu.nombre}</div>
+          )}
+          {apu.categoria && <div className="text-[11px] text-slate-500">{apu.categoria}</div>}
+        </div>
+      ),
+    },
+    {
+      key: "unidad",
+      label: "Unidad",
+      width: "10%",
+      render: (apu) => (
+        editandoRapidoId === apu.id ? (
+          <input
+            value={formRapido.unidad}
+            onChange={(e) => setFormRapido({ ...formRapido, unidad: e.target.value })}
+            className={fieldClass}
+          />
+        ) : apu.unidad
+      ),
+    },
+    { key: "precio", label: "PU Calc.", align: "right", width: "10%", render: (apu) => fmtPrecio(costos[apu.id]?.precio_unitario) },
+    { key: "control", label: "Control", width: "12%", render: (apu) => controlBadge(apu) },
+    { key: "estado", label: "Estado", width: "12%", render: (apu) => <StatusBadge tone={estadoTone(apu.estado)}>{apu.estado}</StatusBadge> },
+    {
+      key: "acciones",
+      label: "Acciones",
+      align: "center",
+      width: "18%",
+      render: (apu) => (
+        <div className="flex justify-center gap-1">
+          <ActionButton variant="ghost" onClick={() => onVerDetalle(apu)}>Ver</ActionButton>
+          {editandoRapidoId === apu.id ? (
+            <>
+              <ActionButton variant="primary" onClick={() => guardarEdicionRapida(apu)}>Guardar</ActionButton>
+              <ActionButton onClick={() => setEditandoRapidoId(null)}>Cancelar</ActionButton>
+            </>
+          ) : (
+            <ActionButton onClick={() => abrirEditarRapido(apu)}>Editar</ActionButton>
+          )}
+          {apu.estado !== "inactivo" && <ActionButton variant="danger" onClick={() => desactivar(apu.id)}>Desactivar</ActionButton>}
+        </div>
+      ),
+    },
+  ];
 
   return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold text-gray-800">APUs</h1>
-        <button onClick={abrirNuevo} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm">
-          + Nuevo APU
-        </button>
-      </div>
-
-      <input
-        type="text"
-        placeholder="Buscar por nombre o código..."
-        value={buscar}
-        onChange={e => setBuscar(e.target.value)}
-        className="border border-gray-300 rounded px-3 py-2 w-full max-w-md mb-4 text-sm"
+    <div className="p-5">
+      <PageHeader
+        title="APUs"
+        subtitle="Biblioteca reutilizable de analisis de precios unitarios."
+        actions={<ActionButton variant="primary" onClick={abrirNuevo}>Nuevo APU</ActionButton>}
       />
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm border-collapse">
-          <thead>
-            <tr className="bg-gray-100 text-gray-700 text-left">
-              <th className="px-3 py-2 border">Código</th>
-              <th className="px-3 py-2 border">Nombre</th>
-              <th className="px-3 py-2 border">Unidad</th>
-              <th className="px-3 py-2 border text-right">PU Calc.</th>
-              <th className="px-3 py-2 border">Rendimiento</th>
-              <th className="px-3 py-2 border">Categoría</th>
-              <th className="px-3 py-2 border">Estado</th>
-              <th className="px-3 py-2 border">Control</th>
-              <th className="px-3 py-2 border">Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {apus.length === 0 && (
-              <tr><td colSpan={9} className="text-center py-6 text-gray-400">No hay APUs registrados.</td></tr>
-            )}
-            {apus.map(apu => (
-              <tr key={apu.id} className="hover:bg-gray-50">
-                <td className="px-3 py-2 border text-gray-500">{apu.codigo || "—"}</td>
-                <td className="px-3 py-2 border font-medium">{apu.nombre}</td>
-                <td className="px-3 py-2 border">{apu.unidad}</td>
-                <td className="px-3 py-2 border text-right font-medium tabular-nums">{fmtPrecio(costos[apu.id]?.precio_unitario)}</td>
-                <td className="px-3 py-2 border text-right">{apu.rendimiento}</td>
-                <td className="px-3 py-2 border">{apu.categoria || "—"}</td>
-                <td className="px-3 py-2 border">{estadoBadge(apu.estado)}</td>
-                <td className="px-3 py-2 border">{controlBadge(apu)}</td>
-                <td className="px-3 py-2 border">
-                  <button onClick={() => props.onVerDetalle(apu)} className="text-green-600 hover:underline text-xs mr-3">Ver</button>
-                  <button onClick={() => abrirEditar(apu)} className="text-blue-600 hover:underline text-xs mr-3">Editar</button>
-                  {apu.estado !== "inactivo" && (
-                    <button onClick={() => desactivar(apu.id)} className="text-red-500 hover:underline text-xs">Desactivar</button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="mb-3">
+        <MetricStrip
+          items={[
+            { label: "Total APUs", value: resumen.total, detail: `${apusFiltrados.length} visibles`, tone: "blue" },
+            { label: "OK", value: resumen.ok, detail: "Sin alerta de costo", tone: "green" },
+            { label: "Revisar costo", value: resumen.revisar, detail: "Bloquear automatizacion", tone: resumen.revisar > 0 ? "red" : "green", onClick: () => setFiltro("revisar_costo") },
+            { label: "En revision", value: resumen.enRevision, detail: "Estado tecnico", tone: resumen.enRevision > 0 ? "amber" : "green", onClick: () => setFiltro("en_revision") },
+          ]}
+        />
       </div>
 
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-white p-2">
+        <input
+          type="text"
+          placeholder="Buscar por nombre o codigo..."
+          value={buscar}
+          onChange={(e) => setBuscar(e.target.value)}
+          className={`${fieldClass} max-w-xs`}
+        />
+        <ToolbarFilter options={filtros} value={filtro} onChange={setFiltro} />
+      </div>
+
+      <DataTable columns={columns} rows={apusFiltrados} rowKey={(apu) => apu.id} emptyText="No hay APUs con ese filtro." />
+
       {modalAbierto && (
-        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg p-6">
-            <h2 className="text-lg font-bold mb-4">{editandoId ? "Editar APU" : "Nuevo APU"}</h2>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <label className="block text-gray-600 mb-1">Código</label>
-                <input value={form.codigo} onChange={e => setForm({...form, codigo: e.target.value})}
-                  className="border rounded px-2 py-1.5 w-full" placeholder="Ej: APU-001" />
-              </div>
-              <div>
-                <label className="block text-gray-600 mb-1">Unidad *</label>
-                <input value={form.unidad} onChange={e => setForm({...form, unidad: e.target.value})}
-                  className="border rounded px-2 py-1.5 w-full" placeholder="m3, m2, kg..." />
-              </div>
-              <div className="col-span-2">
-                <label className="block text-gray-600 mb-1">Nombre *</label>
-                <input value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})}
-                  className="border rounded px-2 py-1.5 w-full" placeholder="Descripción del rubro" />
-              </div>
-              <div>
-                <label className="block text-gray-600 mb-1">Rendimiento (h/unidad)</label>
-                <input type="number" step="0.01" value={form.rendimiento}
-                  onChange={e => setForm({...form, rendimiento: e.target.value})}
-                  className="border rounded px-2 py-1.5 w-full" />
-              </div>
-              <div>
-                <label className="block text-gray-600 mb-1">Estado</label>
-                <select value={form.estado} onChange={e => setForm({...form, estado: e.target.value})}
-                  className="border rounded px-2 py-1.5 w-full">
-                  {ESTADOS.map(e => <option key={e} value={e}>{e}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-gray-600 mb-1">Categoría</label>
-                <select value={form.categoria} onChange={e => setForm({...form, categoria: e.target.value})}
-                  className="border rounded px-2 py-1.5 w-full">
-                  <option value="">— Sin categoría —</option>
-                  {CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-gray-600 mb-1">Subcategoría</label>
-                <input value={form.subcategoria} onChange={e => setForm({...form, subcategoria: e.target.value})}
-                  className="border rounded px-2 py-1.5 w-full" />
-              </div>
-              <div className="col-span-2">
-                <label className="block text-gray-600 mb-1">Observación</label>
-                <textarea value={form.observacion} onChange={e => setForm({...form, observacion: e.target.value})}
-                  className="border rounded px-2 py-1.5 w-full" rows={2} />
-              </div>
+        <ModalShell
+          title="Nuevo APU"
+          footer={
+            <>
+              <ActionButton onClick={() => setModalAbierto(false)}>Cancelar</ActionButton>
+              <ActionButton variant="primary" onClick={guardar}>Guardar</ActionButton>
+            </>
+          }
+        >
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div>
+              <label className={labelClass}>Codigo</label>
+              <input value={form.codigo} onChange={(e) => setForm({ ...form, codigo: e.target.value })} className={fieldClass} placeholder="Ej: APU-001" />
             </div>
-            {error && <p className="text-red-500 text-xs mt-2">{error}</p>}
-            <div className="flex justify-end gap-2 mt-4">
-              <button onClick={() => setModalAbierto(false)} className="px-4 py-2 text-sm border rounded hover:bg-gray-50">Cancelar</button>
-              <button onClick={guardar} className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">Guardar</button>
+            <div>
+              <label className={labelClass}>Unidad *</label>
+              <input value={form.unidad} onChange={(e) => setForm({ ...form, unidad: e.target.value })} className={fieldClass} placeholder="m3, m2, kg..." />
+            </div>
+            <div className="col-span-2">
+              <label className={labelClass}>Nombre *</label>
+              <input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} className={fieldClass} placeholder="Descripcion del rubro" />
+            </div>
+            <div>
+              <label className={labelClass}>Rendimiento (h/unidad)</label>
+              <input type="number" step="0.01" value={form.rendimiento} onChange={(e) => setForm({ ...form, rendimiento: e.target.value })} className={fieldClass} />
+            </div>
+            <div>
+              <label className={labelClass}>Estado</label>
+              <select value={form.estado} onChange={(e) => setForm({ ...form, estado: e.target.value })} className={fieldClass}>
+                {ESTADOS.map((estado) => <option key={estado} value={estado}>{estado}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={labelClass}>Categoria</label>
+              <select value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value })} className={fieldClass}>
+                <option value="">Sin categoria</option>
+                {CATEGORIAS.map((categoria) => <option key={categoria} value={categoria}>{categoria}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={labelClass}>Subcategoria</label>
+              <input value={form.subcategoria} onChange={(e) => setForm({ ...form, subcategoria: e.target.value })} className={fieldClass} />
+            </div>
+            <div className="col-span-2">
+              <label className={labelClass}>Observacion</label>
+              <textarea value={form.observacion} onChange={(e) => setForm({ ...form, observacion: e.target.value })} className={fieldClass} rows={2} />
             </div>
           </div>
-        </div>
+          {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+        </ModalShell>
       )}
     </div>
   );

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ActionButton, PageHeader } from "../components/ui";
 
 const API = "http://127.0.0.1:8000";
 
@@ -52,6 +53,10 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
   const [error, setError]                   = useState("");
   const [cargando, setCargando]             = useState(true);
   const [seccionesContraidas, setSeccionesContraidas] = useState(new Set());
+  const [rendimientoExpandido, setRendimientoExpandido] = useState(false);
+  const [laboral, setLaboral] = useState({ horasDia: 8, diasSemana: 5, semanasMes: 4 });
+  const [rendimientoCampoActivo, setRendimientoCampoActivo] = useState(null);
+  const [rendimientoCampoValor, setRendimientoCampoValor] = useState("");
 
   useEffect(() => {
     const cargar = async () => {
@@ -112,14 +117,18 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
     });
   };
 
-  const guardarRendimiento = async () => {
-    const nuevoR = parseFloat(rendimientoEdit);
+  const guardarRendimientoBase = async (valorBase) => {
+    const nuevoR = Number(valorBase);
     const valido = !isNaN(nuevoR) && nuevoR > 0;
     const valorFinal = valido ? nuevoR : apu.rendimiento;
     const apuActualizado = { ...apu, rendimiento: valorFinal };
     setApu(apuActualizado);
     setRendimientoEdit(valorFinal);
     await guardarItems(items, valorFinal);
+  };
+
+  const guardarRendimiento = async () => {
+    await guardarRendimientoBase(parseFloat(String(rendimientoEdit).replace(",", ".")));
   };
 
   // ── Agregar ítem ──────────────────────────────────────────────────────────
@@ -179,9 +188,64 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
+  const horasDia = Math.max(parseFloat(laboral.horasDia) || 0, 0);
+  const diasSemana = Math.max(parseFloat(laboral.diasSemana) || 0, 0);
+  const semanasMes = Math.max(parseFloat(laboral.semanasMes) || 0, 0);
+  const horasSemana = horasDia * diasSemana;
+  const horasMes = horasSemana * semanasMes;
+
+  const rendimientoBaseActual = parseFloat(String(rendimientoEdit).replace(",", "."));
+  const baseRendimiento = Number.isFinite(rendimientoBaseActual) && rendimientoBaseActual > 0 ? rendimientoBaseActual : apu.rendimiento;
+
+  const rendimientoValores = {
+    h_unidad: baseRendimiento,
+    dia_unidad: horasDia ? baseRendimiento / horasDia : 0,
+    semana_unidad: horasSemana ? baseRendimiento / horasSemana : 0,
+    mes_unidad: horasMes ? baseRendimiento / horasMes : 0,
+    unidad_h: baseRendimiento ? 1 / baseRendimiento : 0,
+    unidad_dia: baseRendimiento ? horasDia / baseRendimiento : 0,
+    unidad_semana: baseRendimiento ? horasSemana / baseRendimiento : 0,
+    unidad_mes: baseRendimiento ? horasMes / baseRendimiento : 0,
+  };
+
+  const baseDesdeRendimiento = (key, valor) => {
+    const n = parseFloat(String(valor).replace(",", "."));
+    if (!Number.isFinite(n) || n <= 0) return null;
+    if (key === "h_unidad") return n;
+    if (key === "dia_unidad") return horasDia ? n * horasDia : null;
+    if (key === "semana_unidad") return horasSemana ? n * horasSemana : null;
+    if (key === "mes_unidad") return horasMes ? n * horasMes : null;
+    if (key === "unidad_h") return 1 / n;
+    if (key === "unidad_dia") return horasDia ? horasDia / n : null;
+    if (key === "unidad_semana") return horasSemana ? horasSemana / n : null;
+    if (key === "unidad_mes") return horasMes ? horasMes / n : null;
+    return null;
+  };
+
+  const confirmarRendimientoCampo = async (key) => {
+    const base = baseDesdeRendimiento(key, rendimientoCampoValor);
+    setRendimientoCampoActivo(null);
+    setRendimientoCampoValor("");
+    if (!base) return;
+    await guardarRendimientoBase(base);
+  };
+
   const fmt  = (n) => (n || 0).toFixed(4);
+  const rendimientoValue = (key) => (
+    rendimientoCampoActivo === key ? rendimientoCampoValor : fmt(rendimientoValores[key])
+  );
   const fmt2 = (n) => (n || 0).toFixed(2);
   const recursosDe = (key) => recursos.filter(r => r.categoria === key);
+  const rendimientoCampos = [
+    ["h_unidad", `h/${apu.unidad}`],
+    ["dia_unidad", `dia/${apu.unidad}`],
+    ["semana_unidad", `semana/${apu.unidad}`],
+    ["mes_unidad", `mes/${apu.unidad}`],
+    ["unidad_h", `${apu.unidad}/h`],
+    ["unidad_dia", `${apu.unidad}/dia`],
+    ["unidad_semana", `${apu.unidad}/semana`],
+    ["unidad_mes", `${apu.unidad}/mes`],
+  ];
 
   if (cargando) return (
     <div style={{ padding: "48px", textAlign: "center", color: "#9ca3af" }}>
@@ -200,37 +264,84 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
   const tdR    = { ...tdBase, textAlign: "right", fontVariantNumeric: "tabular-nums" };
 
   return (
-    <div style={{ padding: "24px 32px", maxWidth: "1100px", margin: "0 auto" }}>
-
-      <button onClick={onVolver}
-        style={{ background: "none", border: "none", color: "#3b82f6", cursor: "pointer", fontSize: "0.875rem", padding: 0, marginBottom: "16px" }}>
-        ← Volver a APUs
-      </button>
+    <div className="p-5">
+      <PageHeader
+        title={apu.nombre}
+        subtitle="Detalle tecnico y composicion del APU."
+        actions={<ActionButton onClick={onVolver}>Volver a APUs</ActionButton>}
+      />
 
       {/* Cabecera del APU */}
-      <div style={{ ...card, padding: "20px 28px", marginBottom: "24px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
-          <h1 style={{ fontSize: "1.25rem", fontWeight: 700, color: "#111827", margin: 0 }}>{apu.nombre}</h1>
+      <div style={{ ...card, padding: "14px 18px", marginBottom: "16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
+          <div style={{ fontSize: "0.75rem", fontWeight: 600, color: "#6b7280", textTransform: "uppercase" }}>Resumen APU</div>
           {estadoBadge(apu.estado)}
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "40px" }}>
-          {[["Código", apu.codigo || "—"], ["Unidad", apu.unidad], ["Categoría", apu.categoria || "—"]].map(([lbl, val]) => (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "32px" }}>
+          {[["Codigo", apu.codigo || "-"], ["Unidad", apu.unidad], ["Categoria", apu.categoria || "-"]].map(([lbl, val]) => (
             <div key={lbl}>
               <div style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "#9ca3af", marginBottom: "4px" }}>{lbl}</div>
               <div style={{ fontWeight: 600, color: "#1f2937", fontSize: "0.95rem" }}>{val}</div>
             </div>
           ))}
-          <div>
-            <div style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "#9ca3af", marginBottom: "4px" }}>Rendimiento</div>
+          <div style={{ flex: "1 1 420px", minWidth: "320px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+              <div style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "#9ca3af" }}>Rendimiento</div>
+              <button
+                onClick={() => setRendimientoExpandido(v => !v)}
+                style={{ border: "1px solid #d1d5db", borderRadius: "5px", background: "#fff", color: "#2563eb", fontSize: "0.7rem", padding: "2px 7px", cursor: "pointer" }}
+              >
+                {rendimientoExpandido ? "Ocultar" : "Expandir"}
+              </button>
+            </div>
             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <input type="number" step="0.01" min="0"
+              <input type="text" inputMode="decimal"
                 value={rendimientoEdit}
                 onChange={e => setRendimientoEdit(e.target.value)}
                 onBlur={guardarRendimiento}
-                style={{ border: "1px solid #d1d5db", borderRadius: "6px", padding: "3px 8px", width: "80px", fontSize: "0.95rem", fontWeight: 600, color: "#1f2937", outline: "none" }}
+                style={{ border: "1px solid #d1d5db", borderRadius: "6px", padding: "3px 8px", width: "86px", fontSize: "0.95rem", fontWeight: 600, color: "#1f2937", outline: "none" }}
               />
               <span style={{ color: "#6b7280", fontSize: "0.875rem" }}>h/{apu.unidad}</span>
             </div>
+            {rendimientoExpandido && (
+              <div style={{ marginTop: "10px", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "10px", background: "#f8fafc" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(90px, 1fr))", gap: "8px", marginBottom: "10px" }}>
+                  {[
+                    ["horasDia", "Horas/dia"],
+                    ["diasSemana", "Dias/semana"],
+                    ["semanasMes", "Semanas/mes"],
+                  ].map(([key, label]) => (
+                    <label key={key} style={{ fontSize: "0.68rem", color: "#6b7280", fontWeight: 600 }}>
+                      {label}
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={laboral[key]}
+                        onChange={e => setLaboral(prev => ({ ...prev, [key]: e.target.value }))}
+                        style={{ marginTop: "3px", border: "1px solid #d1d5db", borderRadius: "5px", padding: "4px 6px", width: "100%", fontSize: "0.78rem", color: "#111827" }}
+                      />
+                    </label>
+                  ))}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(96px, 1fr))", gap: "8px" }}>
+                  {rendimientoCampos.map(([key, label]) => (
+                    <label key={key} style={{ fontSize: "0.68rem", color: "#6b7280", fontWeight: 600 }}>
+                      {label}
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={rendimientoValue(key)}
+                        onFocus={() => { setRendimientoCampoActivo(key); setRendimientoCampoValor(fmt(rendimientoValores[key])); }}
+                        onChange={e => setRendimientoCampoValor(e.target.value)}
+                        onBlur={() => confirmarRendimientoCampo(key)}
+                        style={{ marginTop: "3px", border: "1px solid #d1d5db", borderRadius: "5px", padding: "4px 6px", width: "100%", fontSize: "0.78rem", color: "#111827" }}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
