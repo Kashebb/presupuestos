@@ -50,6 +50,13 @@ class NodoPresupuesto(Base):
     # True cuando el usuario sacó este rubro de su grupo automático
     individualizado = Column(Boolean, default=False, nullable=True)
 
+    estado_actualizacion = Column(String(20), default="activo", nullable=True)
+    actualizacion_lote_id = Column(Integer, ForeignKey("actualizaciones_presupuesto_lotes.id", ondelete="SET NULL"), nullable=True)
+    excel_fila = Column(Integer, nullable=True)
+    excel_hoja = Column(String(120), nullable=True)
+    excel_archivo = Column(String(260), nullable=True)
+    fecha_actualizacion_fuente = Column(DateTime, nullable=True)
+
     proyecto = relationship(
         "Proyecto",
         back_populates="nodos",
@@ -64,5 +71,27 @@ class NodoPresupuesto(Base):
     )
 
     apu = relationship("APU", foreign_keys=[apu_id], lazy="select")
+
+
+class ActualizacionPresupuestoLote(Base):
+    __tablename__ = "actualizaciones_presupuesto_lotes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    proyecto_id = Column(Integer, ForeignKey("proyectos.id", ondelete="CASCADE"), nullable=False)
+    archivo = Column(String(260), nullable=True)
+    hoja = Column(String(120), nullable=False)
+    estado = Column(String(20), default="aplicado", nullable=False)
+    total_nodos_excel = Column(Integer, default=0)
+    total_rubros_excel = Column(Integer, default=0)
+    total_nodos_antes = Column(Integer, default=0)
+    total_rubros_antes = Column(Integer, default=0)
+    total_nodos_creados = Column(Integer, default=0)
+    total_rubros_actualizados = Column(Integer, default=0)
+    total_obsoletos_marcados = Column(Integer, default=0)
+    total_excepciones = Column(Integer, default=0)
+    resumen_json = Column(Text, nullable=True)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    proyecto = relationship("Proyecto", foreign_keys=[proyecto_id], lazy="select")
 
     

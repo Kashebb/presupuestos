@@ -19,6 +19,7 @@ const BADGE = {
   VINCULADO: { bg: "#dcfce7", text: "#166534", label: "Vinculado" },
   PENDIENTE: { bg: "#fef9c3", text: "#854d0e", label: "Pendiente" },
   SIN_APU:   { bg: "#fee2e2", text: "#991b1b", label: "Sin APU"   },
+  OBSOLETO:  { bg: "#e5e7eb", text: "#374151", label: "Obsoleto"  },
 };
 
 function normalizar(t) {
@@ -228,6 +229,13 @@ export default function Presupuestos({ initialFilter = "todos" }) {
   const [hojaImport, setHojaImport] = useState("PPTO META");
   const [archivoImport, setArchivoImport] = useState(null);
   const [importando, setImportando] = useState(false);
+  const [modalActualizar, setModalActualizar] = useState(false);
+  const [hojaActualizacion, setHojaActualizacion] = useState("PPTO 260615");
+  const [archivoActualizacion, setArchivoActualizacion] = useState(null);
+  const [previewActualizacion, setPreviewActualizacion] = useState(null);
+  const [previewCargando, setPreviewCargando] = useState(false);
+  const [applyCargando, setApplyCargando] = useState(false);
+  const [paqueteActualizacionAbierto, setPaqueteActualizacionAbierto] = useState("automatico");
   const [modalVincular, setModalVincular] = useState(false);
   const [nodoVinculando, setNodoVinculando] = useState(null);
   const [esGrupo, setEsGrupo] = useState(false);
@@ -327,6 +335,56 @@ export default function Presupuestos({ initialFilter = "todos" }) {
     setImportando(false);
     if (r.ok) { const d=await r.json(); setModalImportar(false); setArchivoImport(null); mostrarExito(d.mensaje); cargarNodos(proyectoActual); }
     else { const e=await r.json(); setError(e.detail||"Error."); }
+  };
+
+  const abrirActualizarExcel = () => {
+    setArchivoActualizacion(null);
+    setHojaActualizacion("PPTO 260615");
+    setPreviewActualizacion(null);
+    setPaqueteActualizacionAbierto("automatico");
+    setError("");
+    setModalActualizar(true);
+  };
+
+  const generarPreviewActualizacion = async () => {
+    if (!archivoActualizacion) { setError("Selecciona un archivo."); return; }
+    setPreviewCargando(true); setError("");
+    const fd = new FormData();
+    fd.append("archivo", archivoActualizacion);
+    fd.append("hoja", hojaActualizacion);
+    const r = await fetch(`${API}/presupuestos/proyectos/${proyectoActual.id}/actualizaciones/preview`, { method:"POST", body:fd });
+    setPreviewCargando(false);
+    if (r.ok) {
+      setPreviewActualizacion(await r.json());
+      setPaqueteActualizacionAbierto("automatico");
+    } else {
+      const e = await r.json();
+      setError(e.detail || "No se pudo generar la previsualizacion.");
+    }
+  };
+
+  const aplicarActualizacion = async () => {
+    if (!archivoActualizacion || !previewActualizacion) return;
+    const resumen = previewActualizacion.resumen;
+    const ok = confirm(`Aplicar actualizacion segura?\n\nSe crearan ${resumen.rubros_nuevos} rubro(s) nuevo(s), se actualizaran ${resumen.rubros_actualizacion_segura} rubro(s) existente(s) y se marcaran ${resumen.rubros_obsoletos} rubro(s) como obsoletos. Las excepciones no se aplican.`);
+    if (!ok) return;
+    setApplyCargando(true); setError("");
+    const fd = new FormData();
+    fd.append("archivo", archivoActualizacion);
+    fd.append("hoja", hojaActualizacion);
+    const r = await fetch(`${API}/presupuestos/proyectos/${proyectoActual.id}/actualizaciones/apply`, { method:"POST", body:fd });
+    setApplyCargando(false);
+    if (r.ok) {
+      const d = await r.json();
+      setModalActualizar(false);
+      setArchivoActualizacion(null);
+      setPreviewActualizacion(null);
+      mostrarExito(`Actualizacion aplicada. Lote ${d.lote_id}`);
+      cargarNodos(proyectoActual);
+    } else {
+      const e = await r.json();
+      setError(e.detail || "No se pudo aplicar la actualizacion.");
+    }
   };
 
   // Historial para deshacer/rehacer
@@ -468,7 +526,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
     });
 
     const rubrosPorContenedorLocal = new Map();
-    rubrosLocal.forEach(rubro => {
+    rubrosLocal.filter(rubro => rubro.estado_actualizacion !== "obsoleto").forEach(rubro => {
       let padreId = rubro.padre_id;
       while (padreId) {
         if (!rubrosPorContenedorLocal.has(padreId)) rubrosPorContenedorLocal.set(padreId, []);
@@ -517,8 +575,9 @@ export default function Presupuestos({ initialFilter = "todos" }) {
     const t0 = startPerf();
     const mapa = new Map();
     rubros.forEach(r => {
-      const puRef = r.precio_unitario_ref ?? null;
-      const metrado = r.metrado ?? null;
+      const obsoleto = r.estado_actualizacion === "obsoleto";
+      const puRef = obsoleto ? null : (r.precio_unitario_ref ?? null);
+      const metrado = obsoleto ? null : (r.metrado ?? null);
       const costo = r?.apu_id ? costosApu[r.apu_id] : null;
       const puMeta = costo?.precio_unitario ?? null;
       const totalRefR = puRef != null && metrado != null ? puRef * metrado : null;
@@ -678,9 +737,10 @@ export default function Presupuestos({ initialFilter = "todos" }) {
   }, [rubros, metricasRubroPorId]);
 
   const resumenEstados = useMemo(() => ({
-    vinculados: rubros.filter(r=>r.tipo_rubro==="VINCULADO").length,
-    pendientes: rubros.filter(r=>r.tipo_rubro==="PENDIENTE"&&r.observaciones!=="SIN_APU").length,
-    sinApu: rubros.filter(r=>r.observaciones==="SIN_APU").length,
+    vinculados: rubros.filter(r=>r.estado_actualizacion!=="obsoleto"&&r.tipo_rubro==="VINCULADO").length,
+    pendientes: rubros.filter(r=>r.estado_actualizacion!=="obsoleto"&&r.tipo_rubro==="PENDIENTE"&&r.observaciones!=="SIN_APU").length,
+    sinApu: rubros.filter(r=>r.estado_actualizacion!=="obsoleto"&&r.observaciones==="SIN_APU").length,
+    obsoletos: rubros.filter(r=>r.estado_actualizacion==="obsoleto").length,
   }), [rubros]);
 
   // Stats seccion seleccionada
@@ -999,6 +1059,10 @@ export default function Presupuestos({ initialFilter = "todos" }) {
             <button onClick={()=>{setArchivoImport(null);setError("");setModalImportar(true);}}
               style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:"6px", padding:"6px 14px", fontSize:"12px", cursor:"pointer" }}>Importar Excel</button>
           )}
+          {nodosPlanos.length>0&&(
+            <button onClick={abrirActualizarExcel}
+              style={{ background:"#0f766e", color:"#fff", border:"none", borderRadius:"6px", padding:"6px 14px", fontSize:"12px", cursor:"pointer" }}>Actualizar desde Excel</button>
+          )}
         </div>
       </div>
 
@@ -1009,6 +1073,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
           <span style={{ color:"#16a34a" }}>OK {resumenEstados.vinculados} vinculados</span>
           <span style={{ color:"#ca8a04" }}>Pend. {resumenEstados.pendientes} pendientes</span>
           <span style={{ color:"#dc2626" }}>X {resumenEstados.sinApu} sin APU</span>
+          {resumenEstados.obsoletos>0&&<span style={{ color:"#6b7280" }}>Obsoletos {resumenEstados.obsoletos}</span>}
           <span style={{ marginLeft:"auto", fontWeight:"600", color:"#111827" }}>
             Ref total: {fmtM(totalRef)}
             {" | "}Meta parcial: <span style={{ color:"#166534" }}>{metricasConMeta.length ? fmtM(totalMeta) : "-"}</span>
@@ -1184,13 +1249,14 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                         const cfg = COLORES_TIPO[n.tipo]||COLORES_TIPO.RUBRO;
                         const esR = n.tipo==="RUBRO";
                         const sinApu = n.observaciones==="SIN_APU";
-                        const badge = esR?(sinApu?BADGE.SIN_APU:BADGE[n.tipo_rubro]||BADGE.PENDIENTE):null;
+                        const obsoleto = n.estado_actualizacion==="obsoleto";
+                        const badge = esR?(obsoleto?BADGE.OBSOLETO:(sinApu?BADGE.SIN_APU:BADGE[n.tipo_rubro]||BADGE.PENDIENTE)):null;
                         const tieneHijos = !esR&&Boolean(hijosPorPadre.get(n.id)?.length);
                         const m = esR ? rubroMetricas(n) : {};
                         const mc = !esR ? metricasContenedor(n) : {};
                         const estaSeleccionado = esR && idsSeleccionados.has(n.id);
                         return (
-                          <tr key={n.id} style={{ background:estaSeleccionado?"#ecfdf5":(esR?"#fff":cfg.bg), borderBottom:estaSeleccionado?"1px solid #bbf7d0":"1px solid #e5e7eb", cursor:tieneHijos?"pointer":"default" }}
+                          <tr key={n.id} style={{ background:estaSeleccionado?"#ecfdf5":(esR?(obsoleto?"#f3f4f6":"#fff"):cfg.bg), borderBottom:estaSeleccionado?"1px solid #bbf7d0":"1px solid #e5e7eb", cursor:tieneHijos?"pointer":"default", opacity:obsoleto?0.72:1 }}
                             onClick={()=>tieneHijos&&toggleColapsar(n.id)}>
                             <td style={{ padding:"5px 3px", textAlign:"center", width:"24px", minWidth:"24px", maxWidth:"24px", borderLeft:estaSeleccionado?"3px solid #16a34a":"3px solid transparent" }} onClick={e=>e.stopPropagation()}>
                               {esR&&(
@@ -1214,6 +1280,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                                       <span style={{ color:esR?"#111827":cfg.text, fontWeight:esR?"400":"600", fontSize:"11px" }}>{textoVista(n.descripcion)}</span>
                                       {!esR&&mc.totalRef!=null&&<span style={{ fontSize:"9px", opacity:0.8 }}>total real</span>}
                                       {sinApu&&<span style={{ fontSize:"9px", background:"#fee2e2", color:"#991b1b", borderRadius:"3px", padding:"1px 4px" }}>SIN APU</span>}
+                                      {obsoleto&&<span style={{ fontSize:"9px", background:"#e5e7eb", color:"#374151", borderRadius:"3px", padding:"1px 4px" }}>OBSOLETO</span>}
                                     </div>
                                   </td>
                                 );
@@ -1365,6 +1432,135 @@ export default function Presupuestos({ initialFilter = "todos" }) {
           </div>
         )}
       </div>
+      )}
+
+      {/* Modal Actualizar */}
+      {modalActualizar&&(
+        <div className="modal-overlay">
+          <div className="modal-shell" style={{ maxWidth:"980px", maxHeight:"88vh", overflowY:"auto" }}>
+            <h2 className="modal-title">Actualizar desde Excel</h2>
+            <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr auto", gap:"10px", alignItems:"end", marginBottom:"12px" }}>
+              <div>
+                <label className={labelClass}>Archivo Excel *</label>
+                <input type="file" accept=".xlsx" onChange={e=>{setArchivoActualizacion(e.target.files[0]);setPreviewActualizacion(null);}} className={fieldClass}/>
+              </div>
+              <div>
+                <label className={labelClass}>Hoja</label>
+                <input value={hojaActualizacion} onChange={e=>{setHojaActualizacion(e.target.value);setPreviewActualizacion(null);}} className={fieldClass}/>
+              </div>
+              <ActionButton variant="primary" onClick={generarPreviewActualizacion} disabled={previewCargando}>
+                {previewCargando?"Calculando...":"Generar preview"}
+              </ActionButton>
+            </div>
+
+            {previewActualizacion&&(
+              <>
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:"8px", marginBottom:"12px" }}>
+                  {[
+                    ["Actual", `${previewActualizacion.resumen.total_rubros_actual} rubros`, fmtM(previewActualizacion.resumen.total_ref_actual), "#f8fafc", "#374151"],
+                    ["Excel", `${previewActualizacion.resumen.total_rubros_excel} rubros`, fmtM(previewActualizacion.resumen.total_ref_excel), "#eef2ff", "#3730a3"],
+                    ["Automatico", `${previewActualizacion.resumen.rubros_actualizacion_segura + previewActualizacion.resumen.rubros_nuevos} rubros`, "sin excepciones", "#ecfdf5", "#166534"],
+                    ["Revision", `${previewActualizacion.resumen.rubros_revision} rubros`, `${previewActualizacion.resumen.rubros_obsoletos} obsoletos`, "#fff7ed", "#9a3412"],
+                  ].map(([t,v,s,bg,color])=>(
+                    <div key={t} style={{ background:bg, border:"1px solid #e5e7eb", borderRadius:"8px", padding:"10px" }}>
+                      <div style={{ fontSize:"10px", color, fontWeight:"700", textTransform:"uppercase" }}>{t}</div>
+                      <div style={{ fontSize:"16px", color:"#111827", fontWeight:"700", marginTop:"2px" }}>{v}</div>
+                      <div style={{ fontSize:"11px", color:"#6b7280", marginTop:"2px" }}>{s}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ display:"flex", gap:"6px", marginBottom:"10px", flexWrap:"wrap" }}>
+                  {[
+                    ["automatico","Automatico seguro"],
+                    ["revision","Revision requerida"],
+                    ["obsoletos","Obsoletos"],
+                    ["matriz","Matriz completa"],
+                  ].map(([k,label])=>(
+                    <button key={k} onClick={()=>setPaqueteActualizacionAbierto(k)}
+                      style={{ fontSize:"11px", padding:"5px 10px", border:"1px solid", borderColor:paqueteActualizacionAbierto===k?"#166534":"#d1d5db", background:paqueteActualizacionAbierto===k?"#166534":"#fff", color:paqueteActualizacionAbierto===k?"#fff":"#374151", borderRadius:"6px", cursor:"pointer" }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                <div style={{ border:"1px solid #e5e7eb", borderRadius:"8px", overflow:"hidden", marginBottom:"12px" }}>
+                  {paqueteActualizacionAbierto==="automatico"&&(
+                    <div style={{ padding:"10px", fontSize:"12px" }}>
+                      <div style={{ fontWeight:"700", marginBottom:"6px" }}>Rubros existentes seguros: {previewActualizacion.paquetes.automatico_seguro.rubros_existentes.length}</div>
+                      <div style={{ maxHeight:"150px", overflowY:"auto", marginBottom:"10px" }}>
+                        {previewActualizacion.paquetes.automatico_seguro.rubros_existentes.slice(0,40).map(r=>(
+                          <div key={r.item} style={{ display:"grid", gridTemplateColumns:"120px 1fr 130px", gap:"8px", padding:"4px 0", borderBottom:"1px solid #f1f5f9" }}>
+                            <span style={{ color:"#6b7280" }}>{r.item}</span>
+                            <span>{textoVista(r.excel.descripcion)}</span>
+                            <span style={{ textAlign:"right" }}>{fmtM(r.excel.precio_unitario_ref)}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ fontWeight:"700", marginBottom:"6px" }}>Nuevos por estructura</div>
+                      <div style={{ maxHeight:"210px", overflowY:"auto" }}>
+                        {previewActualizacion.paquetes.automatico_seguro.nuevos_por_ancla.map((p,idx)=>(
+                          <div key={`${p.ruta}-${idx}`} style={{ padding:"7px 0", borderBottom:"1px solid #f1f5f9" }}>
+                            <div style={{ fontWeight:"600" }}>{textoVista(p.ancla?.descripcion || "Raiz")} <span style={{ color:"#166534" }}>+{p.rubros.length} rubros</span></div>
+                            <div style={{ color:"#6b7280", fontSize:"11px" }}>{textoVista(p.ruta)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {paqueteActualizacionAbierto==="revision"&&(
+                    <div style={{ padding:"10px", fontSize:"12px", maxHeight:"330px", overflowY:"auto" }}>
+                      {previewActualizacion.paquetes.revision_requerida.length===0&&<div style={{ color:"#6b7280" }}>Sin excepciones.</div>}
+                      {previewActualizacion.paquetes.revision_requerida.map(r=>(
+                        <div key={r.item} style={{ padding:"7px 0", borderBottom:"1px solid #f1f5f9" }}>
+                          <div style={{ display:"flex", gap:"8px", justifyContent:"space-between" }}>
+                            <strong>{r.item}</strong>
+                            <span style={{ color:"#9a3412" }}>{r.motivos_revision.join(", ")}</span>
+                          </div>
+                          <div style={{ color:"#6b7280" }}>{textoVista(r.actual.descripcion)} -&gt; {textoVista(r.excel.descripcion)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {paqueteActualizacionAbierto==="obsoletos"&&(
+                    <div style={{ padding:"10px", fontSize:"12px", maxHeight:"330px", overflowY:"auto" }}>
+                      {previewActualizacion.paquetes.obsoletos.map(r=>(
+                        <div key={r.item} style={{ display:"grid", gridTemplateColumns:"120px 1fr 100px", gap:"8px", padding:"5px 0", borderBottom:"1px solid #f1f5f9" }}>
+                          <span style={{ color:"#6b7280" }}>{r.item}</span>
+                          <span>{textoVista(r.actual.descripcion)}</span>
+                          <span style={{ color:r.actual.apu_id?"#9a3412":"#6b7280", textAlign:"right" }}>{r.actual.apu_id?"con APU":""}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {paqueteActualizacionAbierto==="matriz"&&(
+                    <div style={{ padding:"10px", fontSize:"12px", maxHeight:"330px", overflowY:"auto" }}>
+                      {previewActualizacion.matriz.slice(0,250).map(r=>(
+                        <div key={r.item} style={{ display:"grid", gridTemplateColumns:"120px 1fr 170px", gap:"8px", padding:"4px 0", borderBottom:"1px solid #f1f5f9" }}>
+                          <span style={{ color:"#6b7280" }}>{r.item}</span>
+                          <span>{textoVista(r.excel.descripcion)}</span>
+                          <span style={{ color:r.motivos_revision.length?"#9a3412":"#166534", textAlign:"right" }}>{r.motivos_revision.length?r.motivos_revision.join(", "):"seguro"}</span>
+                        </div>
+                      ))}
+                      {previewActualizacion.matriz.length>250&&<div style={{ paddingTop:"8px", color:"#6b7280" }}>Mostrando 250 de {previewActualizacion.matriz.length}. La respuesta completa queda disponible en el preview.</div>}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {error&&<p style={{ color:"#dc2626", fontSize:"12px" }}>{error}</p>}
+            <div className="modal-footer">
+              <ActionButton onClick={()=>{setModalActualizar(false);setError("");}}>Cancelar</ActionButton>
+              <ActionButton variant="primary" onClick={aplicarActualizacion} disabled={!previewActualizacion||applyCargando}>
+                {applyCargando?"Aplicando...":"Aplicar actualizacion"}
+              </ActionButton>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Modal Importar */}
