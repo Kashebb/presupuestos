@@ -53,11 +53,12 @@ const InfoIcon = ({ tooltip }) => (
   </span>
 );
 
-export default function ApuDetalle({ apu: apuInicial, onVolver }) {
+export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "Volver a APUs" }) {
   const [apu, setApu]                       = useState(apuInicial);
   const [rendimientoEdit, setRendimientoEdit] = useState(apuInicial.rendimiento);
   const [items, setItems]                   = useState([]);
   const [recursos, setRecursos]             = useState([]);
+  const [costoOficial, setCostoOficial]     = useState(null);
   const [agregando, setAgregando]           = useState(null);
   const [formItem, setFormItem]             = useState({ recurso_id: "", cantidad: 1.0 });
   const [editandoCantidad, setEditandoCantidad] = useState(null);
@@ -82,6 +83,10 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
       setRendimientoEdit(dataApu.rendimiento);
       setItems(dataApu.items || []);
       setRecursos(dataRec);
+      fetch(`${API}/apus/${apu.id}/costo`)
+        .then(r => r.ok ? r.json() : null)
+        .then(setCostoOficial)
+        .catch(() => setCostoOficial(null));
       setCargando(false);
     };
     cargar();
@@ -129,6 +134,8 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
         }))
       })
     });
+    const costo = await fetch(`${API}/apus/${apu.id}/costo`).then(r => r.ok ? r.json() : null).catch(() => null);
+    setCostoOficial(costo);
   };
 
   const guardarRendimientoBase = async (valorBase) => {
@@ -264,6 +271,15 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
     await guardarRendimientoBase(base);
   };
 
+  const guardarYVolver = async () => {
+    if (editandoCantidad !== null) {
+      await confirmarEditCantidad(editandoCantidad);
+    } else if (rendimientoCampoValor) {
+      await confirmarRendimientoCampo();
+    }
+    await onVolver?.();
+  };
+
   const fmt  = (n) => (n || 0).toFixed(4);
   const rendimientoModoValor = fmt(rendimientoValores[rendimientoModo]);
   const rendimientoValue = rendimientoCampoValor || rendimientoModoValor;
@@ -305,7 +321,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
       <PageHeader
         title={apu.nombre}
         subtitle="Detalle tecnico y composicion del APU."
-        actions={<ActionButton onClick={onVolver}>Volver a APUs</ActionButton>}
+        actions={<ActionButton onClick={guardarYVolver}>{volverLabel}</ActionButton>}
       />
 
       {/* Cabecera del APU */}
@@ -580,10 +596,10 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <tbody>
             {[
-              ["Subtotal Equipos",      subtotalEquipos],
-              ["Subtotal Mano de Obra", subtotalMO],
-              ["Subtotal Materiales",   subtotalMateriales],
-              ["Subtotal Transporte",   subtotalTransporte],
+              ["Subtotal Equipos",      costoOficial?.subtotales?.equipo ?? subtotalEquipos],
+              ["Subtotal Mano de Obra", costoOficial?.subtotales?.mano_de_obra ?? subtotalMO],
+              ["Subtotal Materiales",   costoOficial?.subtotales?.material ?? subtotalMateriales],
+              ["Subtotal Transporte",   costoOficial?.subtotales?.transporte ?? subtotalTransporte],
             ].map(([lbl, val]) => (
               <tr key={lbl}>
                 <td style={{ padding: "6px 0", color: "#6b7280", fontSize: "0.875rem" }}>{lbl}</td>
@@ -592,7 +608,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver }) {
             ))}
             <tr style={{ borderTop: "2px solid #e5e7eb" }}>
               <td style={{ padding: "12px 0 0", fontWeight: 700, color: "#111827", fontSize: "1rem" }}>Total Costo Directo</td>
-              <td style={{ padding: "12px 0 0", textAlign: "right", fontWeight: 700, color: "#166534", fontSize: "1.2rem" }}>${fmt2(totalCostoDirecto)}</td>
+              <td style={{ padding: "12px 0 0", textAlign: "right", fontWeight: 700, color: "#166534", fontSize: "1.2rem" }}>${fmt2(costoOficial?.precio_unitario ?? totalCostoDirecto)}</td>
             </tr>
           </tbody>
         </table>

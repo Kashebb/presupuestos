@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { ActionButton, ModalShell, PageHeader, fieldClass, labelClass } from "../components/ui";
+import ApuDetalle from "./ApuDetalle";
 
 const API = "http://127.0.0.1:8000";
 const PERF_DEBUG = false;
@@ -105,8 +106,8 @@ const COLUMNAS = {
 
 // Cache de costos APU
 const costoCache = {};
-async function fetchCostoApu(apuId) {
-  if (costoCache[apuId] !== undefined) return costoCache[apuId];
+async function fetchCostoApu(apuId, force = false) {
+  if (!force && costoCache[apuId] !== undefined) return costoCache[apuId];
   try {
     const r = await fetch(`${API}/apus/${apuId}/costo`);
     if (!r.ok) { costoCache[apuId] = null; return null; }
@@ -194,7 +195,7 @@ function TablaGrupos({ titulo, grupos, expandidos, onToggle, onVincular, onDesvi
 }
 
 // Componente principal
-export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) {
+export default function Presupuestos({ initialFilter = "todos" }) {
   const [vista, setVista] = useState("lista");
   const [pestana, setPestana] = useState("jerarquica");
   const [proyectos, setProyectos] = useState([]);
@@ -233,6 +234,10 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
   const [apus, setApus] = useState([]);
   const [buscarApu, setBuscarApu] = useState("");
   const [costosModalApu, setCostosModalApu] = useState({});
+  const [apuResumenRubroId, setApuResumenRubroId] = useState(null);
+  const [apuResumen, setApuResumen] = useState(null);
+  const [cargandoApuResumen, setCargandoApuResumen] = useState(false);
+  const [apuEditandoPresupuesto, setApuEditandoPresupuesto] = useState(null);
   const [vistaColumnas, setVistaColumnas] = useState("presupuesto");
   const [rubrosSeleccionados, setRubrosSeleccionados] = useState([]);
 
@@ -250,10 +255,11 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
   useEffect(() => { cargarProyectos(); }, []);
 
   // Cargar nodos
-  const cargarCostosApu = useCallback(async (planos) => {
+  const cargarCostosApu = useCallback(async (planos, opciones = {}) => {
     const apuIds = [...new Set(planos.filter(n=>n.apu_id).map(n=>n.apu_id))];
+    const forceIds = new Set(opciones.forceIds || []);
     const nuevos = {};
-    await Promise.all(apuIds.map(async id => { nuevos[id] = await fetchCostoApu(id); }));
+    await Promise.all(apuIds.map(async id => { nuevos[id] = await fetchCostoApu(id, forceIds.has(id)); }));
     setCostosApu(prev => ({ ...prev, ...nuevos }));
   }, []);
 
@@ -392,6 +398,11 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
     if (errores.length) { setError(`${errores.length} rubro(s) no vinculados. Revisa el detalle del servidor.`); return; }
     // Registrar en historial
     rubros.forEach(r => registrarAccion({ tipo:"vincular", nodoId:r.id, apuId:apu.id }));
+    if (!esGrupo && rubros[0]) {
+      setRubrosSeleccionados([rubros[0].id]);
+      setApuResumenRubroId(rubros[0].id);
+      setApuResumen(apu);
+    }
     setModalVincular(false); mostrarExito("APU vinculado"); cargarNodos(proyectoActual);
   };
 
@@ -407,18 +418,17 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
     setModalVincular(false);
     mostrarExito("APU creado y vinculado");
     setRubrosSeleccionados([]);
+    setApuResumenRubroId(nodo.id);
     await cargarNodos(proyectoActual);
-    if (onVerDetalle) {
-      onVerDetalle({
-        id: creado.apu_id,
-        codigo: creado.codigo,
-        nombre: creado.nombre,
-        unidad: creado.unidad,
-        estado: creado.estado,
-        rendimiento: 1.0,
-        items: [],
-      });
-    }
+    setApuEditandoPresupuesto({
+      id: creado.apu_id,
+      codigo: creado.codigo,
+      nombre: creado.nombre,
+      unidad: creado.unidad,
+      estado: creado.estado,
+      rendimiento: 1.0,
+      items: [],
+    });
   };
 
   const individualizar = async (id) => {
@@ -734,8 +744,16 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
     [nodosVisibles, idsSeleccionados]
   );
   const unicoRubroSeleccionado = rubrosSeleccionadosDatos.length === 1 ? rubrosSeleccionadosDatos[0] : null;
+  const rubroResumenApu = useMemo(() => {
+    if (unicoRubroSeleccionado?.apu_id) return unicoRubroSeleccionado;
+    if (rubrosSeleccionadosDatos.length || !apuResumenRubroId) return null;
+    const rubro = rubrosPorId.get(apuResumenRubroId);
+    return rubro?.apu_id ? rubro : null;
+  }, [unicoRubroSeleccionado, rubrosSeleccionadosDatos.length, apuResumenRubroId, rubrosPorId]);
+  const metricasResumenApu = rubroResumenApu ? rubroMetricas(rubroResumenApu) : null;
   const puedeVincularSeleccion = Boolean(unicoRubroSeleccionado);
   const puedeCrearApuSeleccion = Boolean(unicoRubroSeleccionado);
+  const puedeVerApuSeleccion = Boolean(unicoRubroSeleccionado?.apu_id);
   const puedeDesvincularSeleccion = rubrosSeleccionadosDatos.some(r => r.apu_id);
   const puedeMarcarSinApuSeleccion = rubrosSeleccionadosDatos.length > 0;
   const textoSeleccion = rubrosSeleccionadosDatos.length === 1
@@ -751,7 +769,58 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
     });
   };
 
-  const limpiarSeleccion = () => setRubrosSeleccionados([]);
+  const limpiarSeleccion = () => {
+    setRubrosSeleccionados([]);
+    setApuResumenRubroId(null);
+  };
+
+  useEffect(() => {
+    const apuId = rubroResumenApu?.apu_id;
+    if (!apuId) {
+      setApuResumen(null);
+      setCargandoApuResumen(false);
+      return;
+    }
+    let cancelado = false;
+    setCargandoApuResumen(true);
+    fetch(`${API}/apus/${apuId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!cancelado) setApuResumen(data);
+      })
+      .catch(() => {
+        if (!cancelado) setApuResumen(null);
+      })
+      .finally(() => {
+        if (!cancelado) setCargandoApuResumen(false);
+      });
+    return () => { cancelado = true; };
+  }, [rubroResumenApu?.apu_id]);
+
+  const editarApuResumen = () => {
+    if (!rubroResumenApu?.apu_id) return;
+    setApuEditandoPresupuesto({
+      id: rubroResumenApu.apu_id,
+      codigo: apuResumen?.codigo,
+      nombre: apuResumen?.nombre || rubroResumenApu.descripcion,
+      unidad: apuResumen?.unidad || rubroResumenApu.unidad || "",
+      estado: apuResumen?.estado || "en_revision",
+      rendimiento: apuResumen?.rendimiento || 1.0,
+      items: apuResumen?.items || [],
+    });
+  };
+
+  const cerrarEditorApuPresupuesto = async () => {
+    const apuId = apuEditandoPresupuesto?.id;
+    setApuEditandoPresupuesto(null);
+    if (!apuId) return;
+    const [costoActualizado, apuActualizado] = await Promise.all([
+      fetchCostoApu(apuId, true),
+      fetch(`${API}/apus/${apuId}`).then(r => r.ok ? r.json() : null).catch(() => null),
+    ]);
+    setCostosApu(prev => ({ ...prev, [apuId]: costoActualizado }));
+    if (apuActualizado) setApuResumen(apuActualizado);
+  };
 
   const vincularSeleccion = () => {
     if (!unicoRubroSeleccionado) return;
@@ -761,6 +830,11 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
   const crearApuSeleccion = () => {
     if (!unicoRubroSeleccionado) return;
     crearApuDesdeRubro(unicoRubroSeleccionado);
+  };
+
+  const verApuSeleccion = () => {
+    if (!unicoRubroSeleccionado?.apu_id) return;
+    setApuResumenRubroId(unicoRubroSeleccionado.id);
   };
 
   const desvincularSeleccion = async () => {
@@ -928,6 +1002,15 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
         </div>
       )}
 
+      {apuEditandoPresupuesto ? (
+        <div style={{ flex:1, overflowY:"auto", background:"#f8fafc" }}>
+          <ApuDetalle
+            apu={apuEditandoPresupuesto}
+            onVolver={cerrarEditorApuPresupuesto}
+            volverLabel="Guardar y volver al presupuesto"
+          />
+        </div>
+      ) : (
       <div style={{ flex:1, overflow:"hidden", display:"flex" }}>
 
         {/* Pestana jerarquica */}
@@ -1020,6 +1103,10 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
                   <button onClick={vincularSeleccion} disabled={!puedeVincularSeleccion} title="Vincular un APU al rubro seleccionado"
                     style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #166534", borderRadius:"5px", background:puedeVincularSeleccion?"#166534":"#f3f4f6", color:puedeVincularSeleccion?"#fff":"#9ca3af", cursor:puedeVincularSeleccion?"pointer":"not-allowed" }}>
                     Vincular
+                  </button>
+                  <button onClick={verApuSeleccion} disabled={!puedeVerApuSeleccion} title="Mostrar resumen del APU vinculado"
+                    style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #bbf7d0", borderRadius:"5px", background:puedeVerApuSeleccion?"#f0fdf4":"#f3f4f6", color:puedeVerApuSeleccion?"#166534":"#9ca3af", cursor:puedeVerApuSeleccion?"pointer":"not-allowed" }}>
+                    Ver APU
                   </button>
                   <button onClick={crearApuSeleccion} disabled={!puedeCrearApuSeleccion} title="Crear un nuevo APU desde el rubro seleccionado"
                     style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #86efac", borderRadius:"5px", background:puedeCrearApuSeleccion?"#f0fdf4":"#f3f4f6", color:puedeCrearApuSeleccion?"#166534":"#9ca3af", cursor:puedeCrearApuSeleccion?"pointer":"not-allowed" }}>
@@ -1122,6 +1209,84 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
                 )}
               </div>
             </div>
+            {rubroResumenApu&&(
+              <aside style={{ width:"300px", borderLeft:"1px solid #e5e7eb", background:"#f8fafc", display:"flex", flexDirection:"column", flexShrink:0 }}>
+                <div style={{ padding:"10px 12px", borderBottom:"1px solid #e5e7eb", background:"#fff", display:"flex", alignItems:"center", justifyContent:"space-between", gap:"8px" }}>
+                  <div>
+                    <div style={{ fontSize:"11px", color:"#166534", fontWeight:"700", textTransform:"uppercase" }}>Ver APU</div>
+                    <div style={{ fontSize:"10px", color:"#6b7280" }}>Resumen del vinculo seleccionado</div>
+                  </div>
+                  <button onClick={limpiarSeleccion}
+                    style={{ border:"1px solid #d1d5db", background:"#fff", color:"#374151", borderRadius:"5px", fontSize:"10px", padding:"3px 7px", cursor:"pointer" }}>
+                    Ocultar
+                  </button>
+                </div>
+                <div style={{ padding:"12px", overflowY:"auto", flex:1 }}>
+                  <div style={{ background:"#fff", border:"1px solid #e5e7eb", borderRadius:"8px", padding:"10px", marginBottom:"10px" }}>
+                    <div style={{ fontSize:"13px", fontWeight:"700", color:"#111827", lineHeight:1.3, marginBottom:"4px" }}>
+                      {textoVista(apuResumen?.nombre || rubroResumenApu.descripcion)}
+                    </div>
+                    <div style={{ display:"flex", gap:"6px", flexWrap:"wrap", fontSize:"10px", color:"#6b7280" }}>
+                      <span style={{ background:"#f3f4f6", border:"1px solid #e5e7eb", borderRadius:"4px", padding:"2px 6px" }}>{apuResumen?.codigo || `APU #${rubroResumenApu.apu_id}`}</span>
+                      <span style={{ background:"#f3f4f6", border:"1px solid #e5e7eb", borderRadius:"4px", padding:"2px 6px" }}>{apuResumen?.unidad || rubroResumenApu.unidad || "-"}</span>
+                      <span style={{ background:"#f3f4f6", border:"1px solid #e5e7eb", borderRadius:"4px", padding:"2px 6px" }}>{apuResumen?.estado || "cargando"}</span>
+                    </div>
+                  </div>
+
+                  <div style={{ background:"#fff", border:"1px solid #e5e7eb", borderRadius:"8px", padding:"10px", marginBottom:"10px" }}>
+                    <div style={{ fontSize:"10px", color:"#6b7280", fontWeight:"700", textTransform:"uppercase", marginBottom:"6px" }}>Rubro vinculado</div>
+                    <div style={{ fontSize:"12px", color:"#111827", lineHeight:1.35 }}>{textoVista(rubroResumenApu.descripcion)}</div>
+                    <div style={{ marginTop:"6px", display:"grid", gridTemplateColumns:"1fr 1fr", gap:"6px", fontSize:"11px", color:"#6b7280" }}>
+                      <div>Und: <strong style={{ color:"#111827" }}>{rubroResumenApu.unidad || "-"}</strong></div>
+                      <div>Metrado: <strong style={{ color:"#111827" }}>{fmtN(rubroResumenApu.metrado)}</strong></div>
+                      <div>P.U. Ref: <strong style={{ color:"#111827" }}>{fmtM(metricasResumenApu?.puRef)}</strong></div>
+                      <div>P.U. Meta: <strong style={{ color:"#166534" }}>{fmtM(metricasResumenApu?.puMeta)}</strong></div>
+                    </div>
+                  </div>
+
+                  <div style={{ background:"#fff", border:"1px solid #e5e7eb", borderRadius:"8px", padding:"10px", marginBottom:"10px" }}>
+                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"8px", fontSize:"11px" }}>
+                      <div>
+                        <div style={{ color:"#6b7280" }}>Dif P.U.</div>
+                        <div style={{ color:colorDif(metricasResumenApu?.difPu), fontWeight:"700" }}>{fmtDifM(metricasResumenApu?.difPu)}</div>
+                      </div>
+                      <div>
+                        <div style={{ color:"#6b7280" }}>Dif %</div>
+                        <div style={{ color:colorDif(metricasResumenApu?.difPu), fontWeight:"700" }}>{fmtPct(metricasResumenApu?.difPuPct)}</div>
+                      </div>
+                      <div>
+                        <div style={{ color:"#6b7280" }}>Total ref</div>
+                        <div style={{ color:"#111827", fontWeight:"700" }}>{fmtM(metricasResumenApu?.totalRef)}</div>
+                      </div>
+                      <div>
+                        <div style={{ color:"#6b7280" }}>Total meta</div>
+                        <div style={{ color:"#166534", fontWeight:"700" }}>{fmtM(metricasResumenApu?.totalMeta)}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ background:"#fff", border:"1px solid #e5e7eb", borderRadius:"8px", padding:"10px", marginBottom:"10px" }}>
+                    <div style={{ fontSize:"10px", color:"#6b7280", fontWeight:"700", textTransform:"uppercase", marginBottom:"6px" }}>Desglose P.U.</div>
+                    {[
+                      ["Materiales", metricasResumenApu?.subtotales?.material],
+                      ["Mano de obra", metricasResumenApu?.subtotales?.mano_de_obra],
+                      ["Equipos", metricasResumenApu?.subtotales?.equipo],
+                      ["Transporte", metricasResumenApu?.subtotales?.transporte],
+                    ].map(([label, valor])=>(
+                      <div key={label} style={{ display:"flex", justifyContent:"space-between", gap:"8px", padding:"3px 0", borderBottom:"1px solid #f1f5f9", fontSize:"11px" }}>
+                        <span style={{ color:"#6b7280" }}>{label}</span>
+                        <strong style={{ color:"#111827", fontVariantNumeric:"tabular-nums" }}>{fmtM(valor || 0)}</strong>
+                      </div>
+                    ))}
+                  </div>
+
+                  <button onClick={editarApuResumen} disabled={cargandoApuResumen}
+                    style={{ width:"100%", background:cargandoApuResumen?"#f3f4f6":"#166534", color:cargandoApuResumen?"#9ca3af":"#fff", border:"none", borderRadius:"6px", padding:"8px 10px", fontSize:"12px", fontWeight:"700", cursor:cargandoApuResumen?"wait":"pointer" }}>
+                    {cargandoApuResumen ? "Cargando APU..." : "Editar APU"}
+                  </button>
+                </div>
+              </aside>
+            )}
           </>
         )}
 
@@ -1178,6 +1343,7 @@ export default function Presupuestos({ initialFilter = "todos", onVerDetalle }) 
           </div>
         )}
       </div>
+      )}
 
       {/* Modal Importar */}
       {modalImportar&&(
