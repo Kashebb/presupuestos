@@ -756,6 +756,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
   const puedeVerApuSeleccion = Boolean(unicoRubroSeleccionado?.apu_id);
   const puedeDesvincularSeleccion = rubrosSeleccionadosDatos.some(r => r.apu_id);
   const puedeMarcarSinApuSeleccion = rubrosSeleccionadosDatos.length > 0;
+  const puedeQuitarSinApuSeleccion = rubrosSeleccionadosDatos.some(r => r.observaciones === "SIN_APU");
   const textoSeleccion = rubrosSeleccionadosDatos.length === 1
     ? "1 rubro seleccionado"
     : `${rubrosSeleccionadosDatos.length} rubros seleccionados`;
@@ -867,6 +868,23 @@ export default function Presupuestos({ initialFilter = "todos" }) {
       return;
     }
     mostrarExito(`${rubrosSeleccionadosDatos.length} rubro(s) marcados como Sin APU`);
+    cargarNodos(proyectoActual);
+  };
+
+  const quitarSinApuSeleccion = async () => {
+    const sinApu = rubrosSeleccionadosDatos.filter(r => r.observaciones === "SIN_APU");
+    if (!sinApu.length) {
+      mostrarExito("No hay rubros Sin APU en la seleccion");
+      return;
+    }
+    sinApu.forEach(r => registrarAccion({ tipo:"desmarcar_sin_apu", nodoId:r.id }));
+    const resultados = await Promise.all(sinApu.map(r => fetch(`${API}/presupuestos/nodos/${r.id}/desmarcar-sin-apu`, { method:"PATCH" })));
+    const errores = resultados.filter(r => !r.ok);
+    if (errores.length) {
+      setError(`${errores.length} rubro(s) no se pudieron devolver a Pendiente.`);
+      return;
+    }
+    mostrarExito(`${sinApu.length} rubro(s) devueltos a Pendiente`);
     cargarNodos(proyectoActual);
   };
 
@@ -1119,6 +1137,10 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                   <button onClick={marcarSinApuSeleccion} disabled={!puedeMarcarSinApuSeleccion} title="Marcar los rubros seleccionados como Sin APU"
                     style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #d1d5db", borderRadius:"5px", background:puedeMarcarSinApuSeleccion?"#fff":"#f3f4f6", color:puedeMarcarSinApuSeleccion?"#374151":"#9ca3af", cursor:puedeMarcarSinApuSeleccion?"pointer":"not-allowed" }}>
                     Sin APU
+                  </button>
+                  <button onClick={quitarSinApuSeleccion} disabled={!puedeQuitarSinApuSeleccion} title="Quitar la marca Sin APU y devolver a Pendiente"
+                    style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #fde68a", borderRadius:"5px", background:puedeQuitarSinApuSeleccion?"#fffbeb":"#f3f4f6", color:puedeQuitarSinApuSeleccion?"#854d0e":"#9ca3af", cursor:puedeQuitarSinApuSeleccion?"pointer":"not-allowed" }}>
+                    Quitar Sin APU
                   </button>
                   <button onClick={limpiarSeleccion} disabled={!rubrosSeleccionadosDatos.length} title="Limpiar seleccion actual"
                     style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #d1d5db", borderRadius:"5px", background:"#fff", color:rubrosSeleccionadosDatos.length?"#374151":"#9ca3af", cursor:rubrosSeleccionadosDatos.length?"pointer":"not-allowed" }}>
