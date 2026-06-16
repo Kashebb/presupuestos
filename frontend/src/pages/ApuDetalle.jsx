@@ -18,6 +18,46 @@ const ESTADOS_APU = [
   ["activo", "Activo"],
 ];
 
+const normalizarBusqueda = (valor) =>
+  String(valor || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+
+const textoRecurso = (recurso) =>
+  normalizarBusqueda([
+    recurso.descripcion,
+    recurso.codigo,
+    recurso.unidad,
+    recurso.fuente_precio,
+    recurso.observacion,
+  ].filter(Boolean).join(" "));
+
+const puntuarRecurso = (recurso, terminos) => {
+  const descripcion = normalizarBusqueda(recurso.descripcion);
+  const codigo = normalizarBusqueda(recurso.codigo);
+  const unidad = normalizarBusqueda(recurso.unidad);
+  const fuente = normalizarBusqueda(recurso.fuente_precio);
+  const observacion = normalizarBusqueda(recurso.observacion);
+
+  return terminos.reduce((total, termino) => {
+    if (codigo === termino) return total + 120;
+    if (codigo.startsWith(termino)) return total + 90;
+    if (descripcion.startsWith(termino)) return total + 80;
+    if (descripcion.includes(termino)) return total + 50;
+    if (unidad === termino) return total + 25;
+    if (fuente.includes(termino)) return total + 18;
+    if (observacion.includes(termino)) return total + 12;
+    return total;
+  }, 0);
+};
+
+const recursoDetalleBreve = (recurso) => {
+  const detalle = recurso.fuente_precio || recurso.observacion || "";
+  return detalle.length > 48 ? `${detalle.slice(0, 45)}...` : detalle;
+};
+
 const estadoBadge = (estado) => {
   const estilos = {
     activo:      { background: "#dcfce7", color: "#166534" },
@@ -61,6 +101,8 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
   const [costoOficial, setCostoOficial]     = useState(null);
   const [agregando, setAgregando]           = useState(null);
   const [formItem, setFormItem]             = useState({ recurso_id: "", cantidad: 1.0 });
+  const [busquedaRecurso, setBusquedaRecurso] = useState("");
+  const [indiceResultadoActivo, setIndiceResultadoActivo] = useState(0);
   const [editandoCantidad, setEditandoCantidad] = useState(null);
   const [cantidadEdit, setCantidadEdit]     = useState("");
   const [error, setError]                   = useState("");
@@ -178,8 +220,14 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
 
   const confirmarAgregar = async () => {
     if (!formItem.recurso_id) { setError("Selecciona un recurso."); return; }
+    const recursoId = parseInt(formItem.recurso_id);
+    const yaExiste = items.some(i => i.categoria === agregando && i.recurso_id === recursoId && !i.es_herramienta_menor);
+    if (yaExiste) {
+      setError("Este recurso ya esta agregado en esta categoria.");
+      return;
+    }
     const nuevo = {
-      recurso_id: parseInt(formItem.recurso_id),
+      recurso_id: recursoId,
       cantidad:   parseFloat(formItem.cantidad) || 1.0,
       categoria:  agregando,
       es_herramienta_menor: false,
@@ -189,6 +237,16 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
     await guardarItems(nuevosItems);
     setAgregando(null);
     setFormItem({ recurso_id: "", cantidad: 1.0 });
+    setBusquedaRecurso("");
+    setIndiceResultadoActivo(0);
+    setError("");
+  };
+
+  const cancelarAgregar = () => {
+    setAgregando(null);
+    setFormItem({ recurso_id: "", cantidad: 1.0 });
+    setBusquedaRecurso("");
+    setIndiceResultadoActivo(0);
     setError("");
   };
 
@@ -285,6 +343,28 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
   const rendimientoValue = rendimientoCampoValor || rendimientoModoValor;
   const fmt2 = (n) => (n || 0).toFixed(2);
   const recursosDe = (key) => recursos.filter(r => r.categoria === key);
+  const recursoSeleccionado = formItem.recurso_id
+    ? recursos.find(r => r.id === parseInt(formItem.recurso_id))
+    : null;
+  const recursosFiltradosDe = (key) => {
+    const base = recursosDe(key);
+    const terminos = normalizarBusqueda(busquedaRecurso).split(/\s+/).filter(Boolean);
+    if (!terminos.length) return base.slice(0, 8);
+
+    return base
+      .filter(r => terminos.every(termino => textoRecurso(r).includes(termino)))
+      .map(r => ({ recurso: r, puntaje: puntuarRecurso(r, terminos) }))
+      .sort((a, b) => b.puntaje - a.puntaje || (a.recurso.descripcion || "").localeCompare(b.recurso.descripcion || ""))
+      .slice(0, 8)
+      .map(({ recurso }) => recurso);
+  };
+  const seleccionarRecurso = (recurso) => {
+    const yaExiste = items.some(i => i.categoria === agregando && i.recurso_id === recurso.id && !i.es_herramienta_menor);
+    setFormItem({ ...formItem, recurso_id: String(recurso.id) });
+    setBusquedaRecurso(recurso.descripcion || recurso.codigo || "");
+    setIndiceResultadoActivo(0);
+    setError(yaExiste ? "Este recurso ya esta agregado en esta categoria." : "");
+  };
   const rendimientoCampos = [
     ["h_unidad", `h/${apu.unidad}`],
     ["dia_unidad", `dia/${apu.unidad}`],
@@ -388,6 +468,8 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
       {SECCIONES.map(({ key, label, usaRendimiento, labelB, tooltipB }) => {
         const itemsSeccion = itemsCosto.filter(i => i.categoria === key);
         const contraida = seccionesContraidas.has(key);
+        const resultadosRecursos = agregando === key ? recursosFiltradosDe(key) : [];
+        const indiceActivo = resultadosRecursos.length ? Math.min(indiceResultadoActivo, resultadosRecursos.length - 1) : 0;
 
         return (
           <div key={key} style={{ ...card, marginBottom: "16px", overflow: "hidden" }}>
@@ -541,34 +623,101 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
                     );
                   })}
 
-                  {/* Fila para agregar nuevo ítem */}
                   {agregando === key ? (
                     <tr style={{ background: "#f0fdf4" }}>
-                      <td style={{ padding: "10px 14px" }} colSpan={2}>
-                        <select
-                          value={formItem.recurso_id}
-                          onChange={e => { setFormItem({ ...formItem, recurso_id: e.target.value }); setError(""); }}
-                          style={{ border: "1px solid #bbf7d0", borderRadius: "6px", padding: "6px 10px", fontSize: "0.85rem", width: "100%", outline: "none" }}>
-                          <option value="">— Seleccionar recurso —</option>
-                          {recursosDe(key).map(r => (
-                            <option key={r.id} value={r.id}>{r.descripcion} — {r.unidad}</option>
-                          ))}
-                        </select>
-                        {error && <div style={{ color: "#ef4444", fontSize: "0.75rem", marginTop: "4px" }}>{error}</div>}
+                      <td style={{ padding: "10px 14px", verticalAlign: "top" }} colSpan={4}>
+                        <div>
+                          <input
+                            type="text"
+                            value={busquedaRecurso}
+                            autoFocus
+                            onChange={e => {
+                              setBusquedaRecurso(e.target.value);
+                              setFormItem({ ...formItem, recurso_id: "" });
+                              setIndiceResultadoActivo(0);
+                              setError("");
+                            }}
+                            onKeyDown={e => {
+                              if (e.key === "ArrowDown") {
+                                e.preventDefault();
+                                setIndiceResultadoActivo(prev => Math.min(prev + 1, Math.max(resultadosRecursos.length - 1, 0)));
+                              }
+                              if (e.key === "ArrowUp") {
+                                e.preventDefault();
+                                setIndiceResultadoActivo(prev => Math.max(prev - 1, 0));
+                              }
+                              if (e.key === "Enter" && resultadosRecursos[indiceActivo]) {
+                                e.preventDefault();
+                                seleccionarRecurso(resultadosRecursos[indiceActivo]);
+                              }
+                              if (e.key === "Escape") cancelarAgregar();
+                            }}
+                            placeholder={`Buscar recurso en ${label.toLowerCase()} por nombre, codigo, unidad o fuente...`}
+                            style={{ border: "1px solid #bbf7d0", borderRadius: "6px", padding: "7px 10px", fontSize: "0.85rem", width: "100%", outline: "none", background: "#fff" }}
+                          />
+                          <div style={{ marginTop: "6px", border: "1px solid #dcfce7", borderRadius: "6px", overflow: "hidden", background: "#fff" }}>
+                            {resultadosRecursos.length === 0 ? (
+                              <div style={{ padding: "8px 10px", color: "#9ca3af", fontSize: "0.78rem" }}>
+                                No hay recursos coincidentes en esta categoria.
+                              </div>
+                            ) : resultadosRecursos.map((r, idx) => {
+                              const activo = idx === indiceActivo;
+                              const seleccionado = String(r.id) === String(formItem.recurso_id);
+                              return (
+                                <button
+                                  key={r.id}
+                                  type="button"
+                                  onClick={() => seleccionarRecurso(r)}
+                                  onMouseEnter={() => setIndiceResultadoActivo(idx)}
+                                  style={{
+                                    display: "grid",
+                                    gridTemplateColumns: "minmax(180px, 1fr) 92px 56px 82px",
+                                    gap: "8px",
+                                    width: "100%",
+                                    border: "none",
+                                    borderBottom: idx === resultadosRecursos.length - 1 ? "none" : "1px solid #f3f4f6",
+                                    background: seleccionado ? "#dcfce7" : activo ? "#f0fdf4" : "#fff",
+                                    color: "#1f2937",
+                                    cursor: "pointer",
+                                    padding: "7px 10px",
+                                    textAlign: "left",
+                                    fontSize: "0.78rem",
+                                  }}
+                                >
+                                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }}>{r.descripcion}</span>
+                                  <span style={{ color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.codigo || "-"}</span>
+                                  <span style={{ color: "#64748b" }}>{r.unidad || "-"}</span>
+                                  <span style={{ color: "#111827", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>${fmt2(r.precio_unitario)}</span>
+                                  {recursoDetalleBreve(r) && (
+                                    <span style={{ gridColumn: "1 / -1", color: "#6b7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "0.72rem" }}>
+                                      {recursoDetalleBreve(r)}
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {recursoSeleccionado && (
+                            <div style={{ marginTop: "6px", padding: "6px 8px", border: "1px solid #bbf7d0", borderRadius: "6px", background: "#fff", color: "#14532d", fontSize: "0.76rem" }}>
+                              Seleccionado: <strong>{recursoSeleccionado.descripcion}</strong> ({recursoSeleccionado.unidad || "-"}) - ${fmt2(recursoSeleccionado.precio_unitario)}
+                            </div>
+                          )}
+                          {error && <div style={{ color: "#ef4444", fontSize: "0.75rem", marginTop: "4px" }}>{error}</div>}
+                        </div>
                       </td>
-                      <td style={{ padding: "10px 14px" }} colSpan={2}>
+                      <td style={{ padding: "10px 14px", verticalAlign: "top" }}>
                         <input type="number" step="0.01" min="0"
                           value={formItem.cantidad}
                           onChange={e => setFormItem({ ...formItem, cantidad: e.target.value })}
                           placeholder="Cantidad"
                           style={{ border: "1px solid #bbf7d0", borderRadius: "6px", padding: "6px 10px", fontSize: "0.85rem", width: "100%", outline: "none" }} />
                       </td>
-                      <td colSpan={3} style={{ padding: "10px 14px" }}>
+                      <td colSpan={2} style={{ padding: "10px 14px", verticalAlign: "top", whiteSpace: "nowrap" }}>
                         <button onClick={confirmarAgregar}
                           style={{ background: "#166534", color: "#fff", border: "none", borderRadius: "6px", padding: "6px 16px", fontSize: "0.85rem", cursor: "pointer", marginRight: "8px" }}>
                           Agregar
                         </button>
-                        <button onClick={() => { setAgregando(null); setError(""); }}
+                        <button onClick={cancelarAgregar}
                           style={{ background: "none", border: "1px solid #d1d5db", borderRadius: "6px", padding: "6px 12px", fontSize: "0.85rem", cursor: "pointer", color: "#6b7280" }}>
                           Cancelar
                         </button>
@@ -577,7 +726,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
                   ) : (
                     <tr>
                       <td colSpan={7} style={{ padding: "8px 14px" }}>
-                        <button onClick={() => { setFormItem({ recurso_id: "", cantidad: 1.0 }); setError(""); setAgregando(key); }}
+                        <button onClick={() => { setFormItem({ recurso_id: "", cantidad: 1.0 }); setBusquedaRecurso(""); setIndiceResultadoActivo(0); setError(""); setAgregando(key); }}
                           style={{ background: "none", border: "none", color: "#15803d", cursor: "pointer", fontSize: "0.85rem", fontWeight: 500, padding: 0 }}>
                           + Agregar recurso
                         </button>
