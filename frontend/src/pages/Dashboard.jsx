@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ActionButton, DataTable, MetricStrip, PageHeader, StatusBadge } from "../components/ui";
+import { ActionButton, DataTable, ErrorBanner, LoadingState, MetricStrip, PageHeader, StatusBadge } from "../components/ui";
 
 const API = "http://127.0.0.1:8000";
 
@@ -45,15 +45,13 @@ export default function Dashboard({ onNavigate }) {
   if (error) {
     return (
       <div className="page-wrap">
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800">
-          {error}
-        </div>
+        <ErrorBanner>{error}</ErrorBanner>
       </div>
     );
   }
 
   if (!resumen) {
-    return <div className="page-wrap text-xs text-slate-500">Cargando tablero...</div>;
+    return <div className="page-wrap"><LoadingState>Cargando tablero...</LoadingState></div>;
   }
 
   const { recursos, apus, presupuestos, proyectos } = resumen;

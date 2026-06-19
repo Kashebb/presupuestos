@@ -45,7 +45,7 @@ export function SectionHeader({ title, subtitle, countLabel, status, filters, ac
   return <div className="section-header">{content}</div>;
 }
 
-export function ActionButton({ children, variant = "secondary", onClick, disabled, type = "button", compact = false }) {
+export function ActionButton({ children, variant = "secondary", onClick, disabled, type = "button", compact = false, className = "" }) {
   const variants = {
     primary: "btn-primary",
     secondary: "btn-secondary",
@@ -59,11 +59,28 @@ export function ActionButton({ children, variant = "secondary", onClick, disable
       type={type}
       disabled={disabled}
       onClick={onClick}
-      className={`app-btn ${compact ? "app-btn-compact" : ""} ${variants[variant] || variants.secondary}`}
+      className={`app-btn ${compact ? "app-btn-compact" : ""} ${variants[variant] || variants.secondary} ${className}`}
     >
       {children}
     </button>
   );
+}
+
+export function Panel({ children, className = "" }) {
+  return <div className={`panel ${className}`}>{children}</div>;
+}
+
+export function EmptyState({ children = "Sin registros." }) {
+  return <Panel className="empty-state">{children}</Panel>;
+}
+
+export function LoadingState({ children = "Cargando..." }) {
+  return <Panel className="loading-state">{children}</Panel>;
+}
+
+export function ErrorBanner({ children }) {
+  if (!children) return null;
+  return <div className="error-banner">{children}</div>;
 }
 
 export function StatusBadge({ children, tone = "slate" }) {
@@ -178,13 +195,37 @@ export function DataTable({ columns, rows, rowKey, emptyText = "Sin registros." 
   );
 }
 
-export function ModalShell({ title, children, footer }) {
+export function ModalShell({ title, children, footer, size = "md" }) {
+  const sizes = {
+    sm: "modal-shell-sm",
+    md: "",
+    lg: "modal-shell-lg",
+  };
+
   return (
     <div className="modal-overlay">
-      <div className="modal-shell">
+      <div className={`modal-shell ${sizes[size] || ""}`}>
         {title && <h2 className="modal-title">{title}</h2>}
         {children}
         {footer && <div className="modal-footer">{footer}</div>}
+      </div>
+    </div>
+  );
+}
+
+export function BottomSheet({ title, meta, actions, children, footer }) {
+  return (
+    <div className="bottom-sheet-overlay">
+      <div className="bottom-sheet">
+        <div className="bottom-sheet-header">
+          <div>
+            {title && <h2 className="bottom-sheet-title">{title}</h2>}
+            {meta && <div className="bottom-sheet-meta">{meta}</div>}
+          </div>
+          {actions && <div className="bottom-sheet-actions">{actions}</div>}
+        </div>
+        <div className="bottom-sheet-body">{children}</div>
+        {footer && <div className="bottom-sheet-footer">{footer}</div>}
       </div>
     </div>
   );

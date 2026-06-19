@@ -171,6 +171,50 @@ textarea {
   box-shadow: var(--shadow-sm);
 }
 
+.empty-state,
+.loading-state {
+  padding: 32px;
+  color: #8a948b;
+  font-size: 12px;
+  text-align: center;
+}
+
+.project-list {
+  display: grid;
+  gap: 12px;
+}
+
+.project-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+}
+
+.project-card-title {
+  color: var(--color-text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.project-card-meta {
+  margin-top: 2px;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.project-card-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.form-stack {
+  display: grid;
+  gap: 10px;
+}
+
 .filter-bar {
   display: flex;
   flex-wrap: wrap;
@@ -459,6 +503,15 @@ textarea {
   text-align: center;
 }
 
+.error-banner {
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-sm);
+  background: #fef2f2;
+  color: var(--color-danger);
+  font-size: 12px;
+  padding: 10px 12px;
+}
+
 .section-header {
   display: flex;
   align-items: center;
@@ -648,6 +701,15 @@ textarea {
   padding: 20px;
 }
 
+.modal-shell-sm {
+  max-width: 400px;
+}
+
+.modal-shell-lg {
+  max-height: 88vh;
+  max-width: 980px;
+}
+
 .modal-title {
   margin: 0 0 16px;
   color: var(--color-text);
@@ -660,6 +722,62 @@ textarea {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 18px;
+}
+
+.bottom-sheet-overlay {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 60;
+  border-top: 1px solid #cbd5e1;
+  background: var(--color-surface);
+  box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.14);
+  padding: 12px 20px;
+}
+
+.bottom-sheet {
+  display: flex;
+  width: 100%;
+  max-height: 42vh;
+  max-width: 1100px;
+  margin: 0 auto;
+  flex-direction: column;
+}
+
+.bottom-sheet-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.bottom-sheet-title {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.bottom-sheet-meta {
+  margin-top: 4px;
+  color: var(--color-muted);
+  font-size: 12px;
+}
+
+.bottom-sheet-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.bottom-sheet-body {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.bottom-sheet-footer {
+  margin-top: 12px;
 }
 
 @media (max-width: 760px) {

@@ -1,5 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
-import { ActionButton, ModalShell, PageHeader, fieldClass, labelClass } from "../components/ui";
+import {
+  ActionButton,
+  BottomSheet,
+  EmptyState,
+  ErrorBanner,
+  ModalShell,
+  PageHeader,
+  Panel,
+  fieldClass,
+  labelClass,
+} from "../components/ui";
 import ApuDetalle from "./ApuDetalle";
 
 const API = "http://127.0.0.1:8000";
@@ -984,19 +994,19 @@ export default function Presupuestos({ initialFilter = "todos" }) {
           </ActionButton>
         }
       />
-      {proyectos.length===0 && <div className="panel" style={{ textAlign:"center", padding:"48px", color:"#9ca3af" }}>No hay proyectos.</div>}
-      <div style={{ display:"grid", gap:"12px" }}>
+      {proyectos.length===0 && <EmptyState>No hay proyectos.</EmptyState>}
+      <div className="project-list">
         {proyectos.map(p=>(
-          <div key={p.id} className="panel" style={{ padding:"16px", display:"flex", justifyContent:"space-between", alignItems:"center", gap:"16px", flexWrap:"wrap" }}>
+          <Panel key={p.id} className="project-card">
             <div>
-              <div style={{ fontWeight:"600", fontSize:"15px" }}>{textoVista(p.nombre)}</div>
-              {p.codigo&&<div style={{ fontSize:"12px", color:"#6b7280" }}>Codigo: {p.codigo}</div>}
+              <div className="project-card-title">{textoVista(p.nombre)}</div>
+              {p.codigo&&<div className="project-card-meta">Codigo: {p.codigo}</div>}
             </div>
-            <div style={{ display:"flex", gap:"8px" }}>
+            <div className="project-card-actions">
               <ActionButton variant="primary" compact onClick={()=>cargarNodos(p)}>Abrir</ActionButton>
               <ActionButton variant="danger" compact onClick={()=>eliminarProyecto(p.id)}>Eliminar</ActionButton>
             </div>
-          </div>
+          </Panel>
         ))}
       </div>
       {modalNuevo&&(
@@ -1009,19 +1019,21 @@ export default function Presupuestos({ initialFilter = "todos" }) {
             </>
           }
         >
+          <div className="form-stack">
             {[["Nombre *","nombre","Ej: Edificio Norte"],["Codigo","codigo","Ej: PPTO-2026-001"]].map(([label,key,ph])=>(
-              <div key={key} style={{ marginBottom:"10px" }}>
+              <div key={key}>
                 <label className={labelClass}>{label}</label>
                 <input value={formNuevo[key]} onChange={e=>setFormNuevo({...formNuevo,[key]:e.target.value})}
                   className={fieldClass} placeholder={ph}/>
               </div>
             ))}
-            <div style={{ marginBottom:"10px" }}>
+            <div>
               <label className={labelClass}>Descripcion</label>
               <textarea value={formNuevo.descripcion} onChange={e=>setFormNuevo({...formNuevo,descripcion:e.target.value})}
                 className={fieldClass} rows={2}/>
             </div>
-            {error&&<p style={{ color:"#dc2626", fontSize:"12px" }}>{error}</p>}
+            <ErrorBanner>{error}</ErrorBanner>
+          </div>
         </ModalShell>
       )}
     </div>
@@ -1436,9 +1448,18 @@ export default function Presupuestos({ initialFilter = "todos" }) {
 
       {/* Modal Actualizar */}
       {modalActualizar&&(
-        <div className="modal-overlay">
-          <div className="modal-shell" style={{ maxWidth:"980px", maxHeight:"88vh", overflowY:"auto" }}>
-            <h2 className="modal-title">Actualizar desde Excel</h2>
+        <ModalShell
+          title="Actualizar desde Excel"
+          size="lg"
+          footer={
+            <>
+              <ActionButton onClick={()=>{setModalActualizar(false);setError("");}}>Cancelar</ActionButton>
+              <ActionButton variant="primary" onClick={aplicarActualizacion} disabled={!previewActualizacion||applyCargando}>
+                {applyCargando?"Aplicando...":"Aplicar actualizacion"}
+              </ActionButton>
+            </>
+          }
+        >
             <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr auto", gap:"10px", alignItems:"end", marginBottom:"12px" }}>
               <div>
                 <label className={labelClass}>Archivo Excel *</label>
@@ -1552,27 +1573,30 @@ export default function Presupuestos({ initialFilter = "todos" }) {
               </>
             )}
 
-            {error&&<p style={{ color:"#dc2626", fontSize:"12px" }}>{error}</p>}
-            <div className="modal-footer">
-              <ActionButton onClick={()=>{setModalActualizar(false);setError("");}}>Cancelar</ActionButton>
-              <ActionButton variant="primary" onClick={aplicarActualizacion} disabled={!previewActualizacion||applyCargando}>
-                {applyCargando?"Aplicando...":"Aplicar actualizacion"}
-              </ActionButton>
-            </div>
-          </div>
-        </div>
+            <ErrorBanner>{error}</ErrorBanner>
+        </ModalShell>
       )}
 
       {/* Modal Importar */}
       {modalImportar&&(
-        <div className="modal-overlay">
-          <div className="modal-shell" style={{ maxWidth:"400px" }}>
-            <h2 className="modal-title">Importar Excel</h2>
-            <div style={{ marginBottom:"10px" }}>
+        <ModalShell
+          title="Importar Excel"
+          size="sm"
+          footer={
+            <>
+              <ActionButton onClick={()=>{setModalImportar(false);setError("");}}>Cancelar</ActionButton>
+              <ActionButton variant="primary" onClick={importarExcel} disabled={importando}>
+                {importando?"Importando...":"Importar"}
+              </ActionButton>
+            </>
+          }
+        >
+          <div className="form-stack">
+            <div>
               <label className={labelClass}>Archivo Excel *</label>
               <input ref={fileRef} type="file" accept=".xlsx" onChange={e=>setArchivoImport(e.target.files[0])} className={fieldClass}/>
             </div>
-            <div style={{ marginBottom:"10px" }}>
+            <div>
               <label className={labelClass}>Hoja</label>
               <select value={hojaImport} onChange={e=>setHojaImport(e.target.value)}
                 className={fieldClass}>
@@ -1580,37 +1604,29 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                 <option value="PPTO CONTRACTUAL">PPTO CONTRACTUAL</option>
               </select>
             </div>
-            {error&&<p style={{ color:"#dc2626", fontSize:"12px" }}>{error}</p>}
-            <div className="modal-footer">
-              <ActionButton onClick={()=>{setModalImportar(false);setError("");}}>Cancelar</ActionButton>
-              <ActionButton variant="primary" onClick={importarExcel} disabled={importando}>
-                {importando?"Importando...":"Importar"}
-              </ActionButton>
-            </div>
+            <ErrorBanner>{error}</ErrorBanner>
           </div>
-        </div>
+        </ModalShell>
       )}
 
       {/* Panel fijo Vincular APU */}
       {modalVincular&&(
-        <div style={{ position:"fixed", left:0, right:0, bottom:0, background:"#fff", borderTop:"1px solid #cbd5e1", boxShadow:"0 -8px 24px rgba(15,23,42,0.14)", zIndex:60, padding:"12px 20px" }}>
-          <div style={{ background:"#fff", width:"100%", maxWidth:"1100px", maxHeight:"42vh", margin:"0 auto", display:"flex", flexDirection:"column" }}>
-            <div style={{ marginBottom:"12px", display:"flex", justifyContent:"space-between", gap:"12px", alignItems:"flex-start" }}>
-              <div>
-              <h2 style={{ fontSize:"15px", fontWeight:"700", margin:0 }}>Vincular APU</h2>
-              <div style={{ fontSize:"12px", color:"#6b7280", marginTop:"4px" }}>
-                {esGrupo?`Grupo: "${textoVista(nodoVinculando?.descripcion)}" (${nodoVinculando?.rubros?.length} rubros)`:`Rubro: "${textoVista(nodoVinculando?.descripcion)}"`}
-                {nodoVinculando?.unidad&&<span style={{ marginLeft:"6px", background:"#f3f4f6", padding:"1px 6px", borderRadius:"4px" }}>{nodoVinculando.unidad}</span>}
-                <span style={{ marginLeft:"8px" }}>Unidad solo referencial; no filtra resultados.</span>
-              </div>
-              </div>
-              {!esGrupo&&(
-                <button onClick={()=>crearApuDesdeRubro(nodoVinculando)}
-                  style={{ background:"#f0fdf4", color:"#166534", border:"1px solid #86efac", borderRadius:"6px", padding:"6px 12px", fontSize:"12px", fontWeight:"600", cursor:"pointer", whiteSpace:"nowrap" }}>
+        <BottomSheet
+          title="Vincular APU"
+          meta={
+            <>
+              {esGrupo?`Grupo: "${textoVista(nodoVinculando?.descripcion)}" (${nodoVinculando?.rubros?.length} rubros)`:`Rubro: "${textoVista(nodoVinculando?.descripcion)}"`}
+              {nodoVinculando?.unidad&&<span style={{ marginLeft:"6px", background:"#f3f4f6", padding:"1px 6px", borderRadius:"4px" }}>{nodoVinculando.unidad}</span>}
+              <span style={{ marginLeft:"8px" }}>Unidad solo referencial; no filtra resultados.</span>
+            </>
+          }
+          actions={!esGrupo&&(
+            <ActionButton variant="ghost" onClick={()=>crearApuDesdeRubro(nodoVinculando)}>
                   Crear Nuevo
-                </button>
-              )}
-            </div>
+            </ActionButton>
+          )}
+          footer={<ActionButton onClick={()=>{setModalVincular(false);setError("");}}>Cerrar panel</ActionButton>}
+        >
             <input type="text" placeholder="Buscar APU por nombre, codigo o categoria..." value={buscarApu} onChange={e=>setBuscarApu(e.target.value)}
               style={{ border:"1px solid #d1d5db", borderRadius:"6px", padding:"7px 10px", fontSize:"13px", marginBottom:"8px" }}/>
             <div style={{ fontSize:"11px", color:"#6b7280", marginBottom:"6px" }}>{buscarApu.trim()?`${apusFiltrados.length} coincidencia(s) no inactivas`:"Escribe para buscar APUs"}</div>
@@ -1645,9 +1661,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
               )}
             </div>
             {error&&<p style={{ color:"#dc2626", fontSize:"12px", marginTop:"8px" }}>{error}</p>}
-            <button onClick={()=>{setModalVincular(false);setError("");}} style={{ marginTop:"12px", border:"1px solid #d1d5db", borderRadius:"6px", padding:"6px", fontSize:"13px", cursor:"pointer" }}>Cerrar panel</button>
-          </div>
-        </div>
+        </BottomSheet>
       )}
     </div>
   );

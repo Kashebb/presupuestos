@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActionButton,
   DataTable,
+  EmptyState,
   MetricStrip,
   ModalShell,
   PageHeader,
   SectionHeader,
   ToolbarFilter,
+  LoadingState,
   fieldClass,
   labelClass,
 } from "../components/ui";
@@ -509,9 +511,9 @@ export default function Recursos() {
       </div>
 
       {cargando ? (
-        <div className="rounded-md border border-slate-200 bg-white p-8 text-center text-xs text-slate-400">Cargando...</div>
+        <LoadingState />
       ) : grupos.length === 0 ? (
-        <div className="rounded-md border border-slate-200 bg-white p-8 text-center text-xs text-slate-400">No se encontraron recursos.</div>
+        <EmptyState>No se encontraron recursos.</EmptyState>
       ) : (
         <div className="space-y-4">
           {grupos.map((grupo) => (
