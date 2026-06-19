@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ActionButton, DataTable, ErrorBanner, LoadingState, MetricStrip, PageHeader, StatusBadge } from "../components/ui";
+import { ActionButton, BlockHeader, DataTable, ErrorBanner, LoadingState, MetricStrip, PageHeader, ScreenBlock, StatusBadge } from "../components/ui";
 
 const API = "http://127.0.0.1:8000";
 
@@ -130,26 +130,20 @@ export default function Dashboard({ onNavigate }) {
         }
       />
 
-      <section className="mb-4">
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-xs font-semibold uppercase text-slate-600">Pendiente de atencion</h2>
-          <span className="text-[11px] text-slate-400">Selecciona una metrica para trabajarla</span>
-        </div>
+      <ScreenBlock>
+        <BlockHeader title="Pendiente de atencion" hint="Selecciona una metrica para trabajarla" />
         <MetricStrip items={pendientes} />
-      </section>
+      </ScreenBlock>
 
-      <section className="mb-4">
-        <div className="mb-2 text-xs font-semibold uppercase text-slate-600">Resumen general</div>
+      <ScreenBlock>
+        <BlockHeader title="Resumen general" />
         <MetricStrip items={resumenGeneral} />
-      </section>
+      </ScreenBlock>
 
-      <section>
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-xs font-semibold uppercase text-slate-600">Presupuestos en trabajo</h2>
-          <ActionButton variant="ghost" onClick={() => onNavigate("presupuestos")}>Gestionar</ActionButton>
-        </div>
+      <ScreenBlock>
+        <BlockHeader title="Presupuestos en trabajo" actions={<ActionButton variant="ghost" onClick={() => onNavigate("presupuestos")}>Gestionar</ActionButton>} />
         <DataTable columns={columns} rows={proyectos} rowKey={(proyecto) => proyecto.id} emptyText="No hay presupuestos registrados." />
-      </section>
+      </ScreenBlock>
     </div>
   );
 }

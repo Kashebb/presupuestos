@@ -10,6 +10,7 @@ import {
   ModalFormGrid,
   ModalShell,
   PageHeader,
+  ScreenBlock,
   SectionHeader,
   StatusBadge,
   fieldClass,
@@ -135,6 +136,17 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
     setModalAbierto(true);
     generarCodigoApu();
   };
+
+  useEffect(() => {
+    function cancelarConEscape(event) {
+      if (event.key !== "Escape") return;
+      if (editandoRapidoId) setEditandoRapidoId(null);
+      setError("");
+    }
+
+    window.addEventListener("keydown", cancelarConEscape);
+    return () => window.removeEventListener("keydown", cancelarConEscape);
+  }, [editandoRapidoId]);
 
   const abrirEditarRapido = (apu) => {
     setEditandoRapidoId(apu.id);
@@ -268,7 +280,7 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
         actions={<ActionButton variant="primary" onClick={abrirNuevo}>Nuevo APU</ActionButton>}
       />
 
-      <div className="mb-4">
+      <ScreenBlock compact>
         <MetricStrip
           items={[
             { label: "Total APUs", value: resumen.total, detail: `${apusFiltrados.length} visibles`, tone: "blue", active: filtro === "todos", onClick: () => setFiltro("todos") },
@@ -279,7 +291,7 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
           ]}
         />
         <CategoryStrip label="Categorias" items={categorias} value={categoriaFiltro} onChange={setCategoriaFiltro} />
-      </div>
+      </ScreenBlock>
 
       <SectionHeader
         title="Listado de APUs"
@@ -302,6 +314,10 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
         <ModalShell
           title=""
           size="form"
+          onClose={() => {
+            setModalAbierto(false);
+            setError("");
+          }}
           footer={
             <>
               <ActionButton onClick={() => setModalAbierto(false)}>Cancelar</ActionButton>

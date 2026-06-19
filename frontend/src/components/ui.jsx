@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+
 export function PageHeader({ title, subtitle, actions, meta }) {
   return (
     <div className="page-header">
@@ -7,6 +9,22 @@ export function PageHeader({ title, subtitle, actions, meta }) {
         {meta && <div className="page-meta">{meta}</div>}
       </div>
       {actions && <div className="page-actions">{actions}</div>}
+    </div>
+  );
+}
+
+export function ScreenBlock({ children, compact = false }) {
+  return <section className={compact ? "screen-block screen-block-compact" : "screen-block"}>{children}</section>;
+}
+
+export function BlockHeader({ title, hint, actions }) {
+  return (
+    <div className="block-header">
+      <h2 className="block-title">{title}</h2>
+      <div className="block-header-side">
+        {hint && <span className="block-hint">{hint}</span>}
+        {actions}
+      </div>
     </div>
   );
 }
@@ -241,13 +259,24 @@ export function DataTable({ columns, rows, rowKey, emptyText = "Sin registros." 
   );
 }
 
-export function ModalShell({ title, children, footer, size = "md" }) {
+export function ModalShell({ title, children, footer, size = "md", onClose }) {
   const sizes = {
     sm: "modal-shell-sm",
     md: "",
     form: "modal-shell-form",
     lg: "modal-shell-lg",
   };
+
+  useEffect(() => {
+    if (!onClose) return undefined;
+
+    function closeWithEscape(event) {
+      if (event.key === "Escape") onClose();
+    }
+
+    window.addEventListener("keydown", closeWithEscape);
+    return () => window.removeEventListener("keydown", closeWithEscape);
+  }, [onClose]);
 
   return (
     <div className="modal-overlay">
@@ -260,7 +289,18 @@ export function ModalShell({ title, children, footer, size = "md" }) {
   );
 }
 
-export function BottomSheet({ title, meta, actions, children, footer }) {
+export function BottomSheet({ title, meta, actions, children, footer, onClose }) {
+  useEffect(() => {
+    if (!onClose) return undefined;
+
+    function closeWithEscape(event) {
+      if (event.key === "Escape") onClose();
+    }
+
+    window.addEventListener("keydown", closeWithEscape);
+    return () => window.removeEventListener("keydown", closeWithEscape);
+  }, [onClose]);
+
   return (
     <div className="bottom-sheet-overlay">
       <div className="bottom-sheet">

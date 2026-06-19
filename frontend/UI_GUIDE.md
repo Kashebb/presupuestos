@@ -59,6 +59,8 @@ Evitar bloques pegados sin margen. Si dos controles tienen funciones distintas, 
 | Componente | Uso |
 | --- | --- |
 | `PageHeader` | Titulo, subtitulo, acciones principales |
+| `ScreenBlock` | Separacion vertical consistente entre bloques de pantalla |
+| `BlockHeader` | Titulo de bloque con hint o acciones |
 | `SectionHeader` | Encabezado de tabla, grupo o bloque operativo |
 | `ActionButton` | Cualquier boton de accion |
 | `MetricStrip` | Tarjetas con numero, detalle y filtro operativo |
@@ -93,6 +95,8 @@ Debe incluir:
 
 No usar `MetricStrip` para listas largas de categorias.
 
+Las metricas deben vivir dentro de `ScreenBlock` para mantener separacion uniforme con filtros, encabezados y tablas.
+
 ### Categorias
 
 Usar `CategoryStrip` para filtros compactos por categoria.
@@ -104,6 +108,21 @@ Debe mostrar:
 - estado activo claro
 
 No debe mostrar contadores, subtitulos ni costos si esa informacion ya esta en `MetricStrip`.
+
+Cuando `CategoryStrip` acompana a `MetricStrip`, ambos deben estar dentro del mismo `ScreenBlock`.
+
+### Bloques De Pantalla
+
+Usar `ScreenBlock` para separar bloques principales:
+
+- metricas
+- filtros de categoria
+- tablas
+- secciones del tablero
+
+Usar `BlockHeader` para titulos como `Pendiente de atencion`, `Resumen general` o `Presupuestos en trabajo`.
+
+No usar margenes sueltos `mb-*` como regla principal si el bloque puede usar `ScreenBlock`.
 
 ### Tablas
 
@@ -147,6 +166,8 @@ Tamanos:
 - `lg`: previews, importaciones o contenido ancho
 
 No escribir manualmente `modal-overlay` y `modal-shell` dentro de una pagina.
+
+Todo modal debe pasar `onClose` cuando pueda cerrarse. `Escape` debe cancelar la accion activa sin guardar.
 
 ## Anti-Patrones
 

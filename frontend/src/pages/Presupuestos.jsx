@@ -1012,6 +1012,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
       {modalNuevo&&(
         <ModalShell
           title="Nuevo proyecto"
+          onClose={()=>setModalNuevo(false)}
           footer={
             <>
               <ActionButton onClick={()=>setModalNuevo(false)}>Cancelar</ActionButton>
@@ -1451,6 +1452,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
         <ModalShell
           title="Actualizar desde Excel"
           size="lg"
+          onClose={()=>{setModalActualizar(false);setError("");}}
           footer={
             <>
               <ActionButton onClick={()=>{setModalActualizar(false);setError("");}}>Cancelar</ActionButton>
@@ -1582,6 +1584,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
         <ModalShell
           title="Importar Excel"
           size="sm"
+          onClose={()=>{setModalImportar(false);setError("");}}
           footer={
             <>
               <ActionButton onClick={()=>{setModalImportar(false);setError("");}}>Cancelar</ActionButton>
@@ -1613,6 +1616,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
       {modalVincular&&(
         <BottomSheet
           title="Vincular APU"
+          onClose={()=>{setModalVincular(false);setError("");}}
           meta={
             <>
               {esGrupo?`Grupo: "${textoVista(nodoVinculando?.descripcion)}" (${nodoVinculando?.rubros?.length} rubros)`:`Rubro: "${textoVista(nodoVinculando?.descripcion)}"`}

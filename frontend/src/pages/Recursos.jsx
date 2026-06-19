@@ -9,6 +9,7 @@ import {
   ModalFormGrid,
   ModalShell,
   PageHeader,
+  ScreenBlock,
   SectionHeader,
   ToolbarFilter,
   LoadingState,
@@ -142,6 +143,10 @@ export default function Recursos() {
   useEffect(() => {
     function cancelarConEscape(event) {
       if (event.key === "Escape") {
+        if (modal) {
+          setModal(false);
+          setError("");
+        }
         setEdicionFila({});
         setErroresFila({});
       }
@@ -149,7 +154,7 @@ export default function Recursos() {
 
     window.addEventListener("keydown", cancelarConEscape);
     return () => window.removeEventListener("keydown", cancelarConEscape);
-  }, []);
+  }, [modal]);
 
   useEffect(() => {
     if (!modal) return;
@@ -490,7 +495,7 @@ export default function Recursos() {
         actions={<ActionButton variant="primary" disabled={clasificaciones.length === 0} onClick={abrirCrear}>Nuevo recurso</ActionButton>}
       />
 
-      <div className="mb-3">
+      <ScreenBlock compact>
         <MetricStrip
           items={[
             { label: "Total recursos", value: resumen.total, detail: `${filtrados.length} visibles`, tone: "blue", active: filtroCategoria === "todos", onClick: () => setFiltroCategoria("todos") },
@@ -501,7 +506,7 @@ export default function Recursos() {
             { label: "Otros", value: resumen.otros, detail: "Categorias varias", tone: "slate", active: filtroCategoria === "otros", onClick: () => setFiltroCategoria("otros") },
           ]}
         />
-      </div>
+      </ScreenBlock>
 
       <div className="filter-bar">
         <input
@@ -540,6 +545,10 @@ export default function Recursos() {
         <ModalShell
           title=""
           size="form"
+          onClose={() => {
+            setModal(false);
+            setError("");
+          }}
           footer={
             <>
               <ActionButton onClick={() => setModal(false)}>Cancelar</ActionButton>
