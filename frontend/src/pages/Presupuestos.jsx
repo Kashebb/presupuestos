@@ -7,6 +7,9 @@ import {
   ModalShell,
   PageHeader,
   Panel,
+  SidebarShell,
+  ToolbarShell,
+  ViewTabs,
   fieldClass,
   labelClass,
 } from "../components/ui";
@@ -246,6 +249,7 @@ function TablaGrupos({ titulo, grupos, expandidos, onToggle, onVincular, onDesvi
 // Componente principal
 export default function Presupuestos({ initialFilter = "todos" }) {
   const [vista, setVista] = useState("lista");
+  const [vistaInterna, setVistaInterna] = useState("vincular");
   const [pestana, setPestana] = useState("jerarquica");
   const [proyectos, setProyectos] = useState([]);
   const [proyectoActual, setProyectoActual] = useState(null);
@@ -253,9 +257,10 @@ export default function Presupuestos({ initialFilter = "todos" }) {
   const [colapsados, setColapsados] = useState({});
   const [gruposExp, setGruposExp] = useState({});
   const [nodoSeleccionado, setNodoSeleccionado] = useState(null); // filtro sidebar
+  const [sidebarColapsado, setSidebarColapsado] = useState(false);
 
   // Filtros vista jerarquica
-  const [filtroEstado, setFiltroEstado] = useState("todos"); // todos|VINCULADO|PENDIENTE|SIN_APU
+  const [filtroEstado, setFiltroEstado] = useState("PENDIENTE"); // todos|VINCULADO|PENDIENTE|SIN_APU
   const [filtroAnalisis, setFiltroAnalisis] = useState("todos"); // todos|impacto|positivos|negativos|sin_meta|sin_apu
   const [buscarRubro, setBuscarRubro] = useState("");
   const [buscarSidebar, setBuscarSidebar] = useState("");
@@ -303,7 +308,8 @@ export default function Presupuestos({ initialFilter = "todos" }) {
   const fileRef = useRef();
 
   useEffect(() => {
-    setFiltroEstado(initialFilter || "todos");
+    setFiltroEstado(initialFilter && initialFilter !== "todos" ? initialFilter : "PENDIENTE");
+    setVistaInterna("vincular");
     setPestana("jerarquica");
   }, [initialFilter]);
 
@@ -617,11 +623,18 @@ export default function Presupuestos({ initialFilter = "todos" }) {
 
   const rubrosPorId = useMemo(() => new Map(rubros.map(r => [r.id, r])), [rubros]);
 
+  const esVistaEditar = vistaInterna === "editar";
+  const esVistaVincular = vistaInterna === "vincular";
+  const esVistaAnalisis = vistaInterna === "analisis";
+
   const columnasActivas = useMemo(
-    () => VISTAS_COLUMNAS[vistaColumnas] || VISTAS_COLUMNAS.presupuesto,
-    [vistaColumnas]
+    () => {
+      if (vistaInterna === "analisis") return VISTAS_COLUMNAS[vistaColumnas] || VISTAS_COLUMNAS.presupuesto;
+      return VISTAS_COLUMNAS.presupuesto;
+    },
+    [vistaColumnas, vistaInterna]
   );
-  const anchoColumnaSeleccion = 24;
+  const anchoColumnaSeleccion = esVistaVincular ? 24 : 0;
   const anchoOtrasColumnas = useMemo(() => columnasActivas
     .filter((key) => key !== "descripcion")
     .reduce((s, key) => s + (Number.parseFloat(COLUMNAS[key].width) || 0), 0), [columnasActivas]);
@@ -733,24 +746,27 @@ export default function Presupuestos({ initialFilter = "todos" }) {
       visibles = visibles.filter(n => idsPermitidos.has(n.id));
     }
 
+    const filtroEstadoAplicado = esVistaVincular ? filtroEstado : "todos";
+    const filtroAnalisisAplicado = esVistaAnalisis ? filtroAnalisis : "todos";
+
     // Filtro por estado rubro
-    if (filtroEstado !== "todos") {
+    if (filtroEstadoAplicado !== "todos") {
       visibles = visibles.filter(n => {
         if (n.tipo !== "RUBRO") return true; // siempre mostrar nodos padre
-        if (filtroEstado === "SIN_APU") return n.observaciones === "SIN_APU";
-        return n.tipo_rubro === filtroEstado && n.observaciones !== "SIN_APU";
+        if (filtroEstadoAplicado === "SIN_APU") return n.observaciones === "SIN_APU";
+        return n.tipo_rubro === filtroEstadoAplicado && n.observaciones !== "SIN_APU";
       });
     }
 
-    if (filtroAnalisis !== "todos") {
+    if (filtroAnalisisAplicado !== "todos") {
       visibles = visibles.filter(n => {
         if (n.tipo !== "RUBRO") return true;
         const m = metricasRubroPorId.get(n.id);
-        if (filtroAnalisis === "impacto") return Number.isFinite(m?.difTotal) && Math.abs(m.difTotal) > 0;
-        if (filtroAnalisis === "positivos") return Number.isFinite(m?.difTotal) && m.difTotal > 0;
-        if (filtroAnalisis === "negativos") return Number.isFinite(m?.difTotal) && m.difTotal < 0;
-        if (filtroAnalisis === "sin_meta") return n.observaciones !== "SIN_APU" && !Number.isFinite(m?.totalMeta);
-        if (filtroAnalisis === "sin_apu") return n.observaciones === "SIN_APU";
+        if (filtroAnalisisAplicado === "impacto") return Number.isFinite(m?.difTotal) && Math.abs(m.difTotal) > 0;
+        if (filtroAnalisisAplicado === "positivos") return Number.isFinite(m?.difTotal) && m.difTotal > 0;
+        if (filtroAnalisisAplicado === "negativos") return Number.isFinite(m?.difTotal) && m.difTotal < 0;
+        if (filtroAnalisisAplicado === "sin_meta") return n.observaciones !== "SIN_APU" && !Number.isFinite(m?.totalMeta);
+        if (filtroAnalisisAplicado === "sin_apu") return n.observaciones === "SIN_APU";
         return true;
       });
     }
@@ -762,7 +778,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
 
     debugPerf("nodos visibles", t0, { visibles: visibles.length });
     return visibles;
-  }, [nodosPlanos, colapsados, nodoSeleccionado, nodoPorId, hijosPorPadre, filtroEstado, filtroAnalisis, metricasRubroPorId, buscarRubro]);
+  }, [nodosPlanos, colapsados, nodoSeleccionado, nodoPorId, hijosPorPadre, esVistaVincular, filtroEstado, esVistaAnalisis, filtroAnalisis, metricasRubroPorId, buscarRubro]);
 
   // Nodos sidebar filtrados
   const nodosSidebar = useMemo(() => nodosPlanos.filter(n => n.tipo !== "RUBRO").filter(n => {
@@ -846,7 +862,13 @@ export default function Presupuestos({ initialFilter = "todos" }) {
     };
   }, [nodoSeleccionado, rubros, rubrosPorContenedor, metricasRubroPorId]);
 
-  const { grupos, individualizados } = useMemo(() => calcularGrupos(nodosPlanos), [nodosPlanos]);
+  const nodosParaGrupos = useMemo(() => {
+    if (!nodoSeleccionado) return nodosPlanos;
+    const rubrosGrupo = rubrosPorContenedor.get(nodoSeleccionado.id) || [];
+    return rubrosGrupo;
+  }, [nodoSeleccionado, nodosPlanos, rubrosPorContenedor]);
+
+  const { grupos, individualizados } = useMemo(() => calcularGrupos(nodosParaGrupos), [nodosParaGrupos]);
 
   const rankingDesviaciones = useMemo(() => {
     const base = nodoSeleccionado ? rubrosSeccion : rubros;
@@ -1144,12 +1166,23 @@ export default function Presupuestos({ initialFilter = "todos" }) {
         <span style={{ fontWeight:"600", fontSize:"14px" }}>{textoVista(proyectoActual?.nombre)}</span>
         {proyectoActual?.codigo&&<span style={{ fontSize:"12px", color:"#6b7280" }}>({proyectoActual.codigo})</span>}
         <div style={{ display:"flex", gap:"4px", marginLeft:"12px" }}>
-          {[["jerarquica","Jerarquica"],["grupos","Por grupos"]].map(([k,label])=>(
-            <button key={k} onClick={()=>setPestana(k)}
-              style={{ fontSize:"12px", padding:"4px 12px", border:"1px solid", borderRadius:"6px", cursor:"pointer", borderColor:pestana===k?"#166534":"#d1d5db", background:pestana===k?"#166534":"#fff", color:pestana===k?"#fff":"#374151" }}>
-              {label}
-            </button>
-          ))}
+          <ViewTabs
+            value={vistaInterna}
+            onChange={(valor)=>{
+              setVistaInterna(valor);
+              if (valor === "vincular") {
+                setPestana("jerarquica");
+                setFiltroEstado("PENDIENTE");
+              }
+              if (valor === "analisis" && vistaColumnas === "presupuesto") setVistaColumnas("diferencias");
+            }}
+            items={[
+              { value:"editar", label:"Editar" },
+              { value:"vincular", label:"Vincular APUs", meta:`${resumenEstados.pendientes}` },
+              { value:"analisis", label:"Analisis" },
+            ]}
+            ariaLabel="Vistas internas de presupuesto"
+          />
         </div>
         <div style={{ marginLeft:"auto", display:"flex", gap:"6px", alignItems:"center" }}>
           {msgExito&&<span style={{ fontSize:"12px", color:"#16a34a", background:"#f0fdf4", border:"1px solid #86efac", borderRadius:"4px", padding:"3px 10px" }}>{msgExito}</span>}
@@ -1166,8 +1199,8 @@ export default function Presupuestos({ initialFilter = "todos" }) {
               style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:"6px", padding:"6px 14px", fontSize:"12px", cursor:"pointer" }}>Importar Excel</button>
           )}
           {nodosPlanos.length>0&&(
-            <button onClick={abrirActualizarExcel}
-              style={{ background:"#0f766e", color:"#fff", border:"none", borderRadius:"6px", padding:"6px 14px", fontSize:"12px", cursor:"pointer" }}>Actualizar desde Excel</button>
+            <button onClick={abrirActualizarExcel} disabled title="Temporalmente inhabilitado durante la reorganizacion de vistas"
+              style={{ background:"#e5e7eb", color:"#6b7280", border:"1px solid #d1d5db", borderRadius:"6px", padding:"6px 14px", fontSize:"12px", cursor:"not-allowed" }}>Actualizar desde Excel inhabilitado</button>
           )}
         </div>
       </div>
@@ -1207,24 +1240,26 @@ export default function Presupuestos({ initialFilter = "todos" }) {
       ) : (
       <div style={{ flex:1, overflow:"hidden", display:"flex" }}>
 
-        {/* Pestana jerarquica */}
-        {pestana==="jerarquica"&&(
+        {/* Vista con tabla jerarquica */}
+        {(!esVistaVincular || pestana==="jerarquica")&&(
           <>
             {/* Sidebar */}
-            <div style={{ width:"260px", borderRight:"1px solid #e5e7eb", display:"flex", flexDirection:"column", background:"#f9fafb", flexShrink:0 }}>
+            <SidebarShell collapsed={sidebarColapsado} onToggle={()=>setSidebarColapsado(v=>!v)} label="Secciones">
+              {!sidebarColapsado&&(
+              <>
               <div style={{ padding:"8px" }}>
                 <input type="text" placeholder="Buscar seccion..." value={buscarSidebar} onChange={e=>setBuscarSidebar(e.target.value)}
                   style={{ width:"100%", fontSize:"11px", padding:"5px 8px", border:"1px solid #d1d5db", borderRadius:"6px", boxSizing:"border-box" }}/>
               </div>
               {/* Filtro pills */}
-              <div style={{ padding:"0 8px 6px", display:"flex", gap:"3px", flexWrap:"wrap" }}>
+              {esVistaVincular&&<div style={{ padding:"0 8px 6px", display:"flex", gap:"3px", flexWrap:"wrap" }}>
                 {[["todos","Todos","#f3f4f6","#374151"],["VINCULADO","Vinculados","#dcfce7","#166534"],["PENDIENTE","Pendientes","#fef9c3","#854d0e"],["SIN_APU","Sin APU","#fee2e2","#991b1b"]].map(([val,label,bg,color])=>(
                   <button key={val} onClick={()=>setFiltroEstado(val)}
                     style={{ fontSize:"10px", padding:"2px 7px", borderRadius:"20px", cursor:"pointer", border:"1px solid", borderColor:filtroEstado===val?color:"transparent", background:filtroEstado===val?bg:"transparent", color:filtroEstado===val?color:"#6b7280", fontWeight:filtroEstado===val?"600":"400" }}>
                     {label}
                   </button>
                 ))}
-              </div>
+              </div>}
               {nodoSeleccionado&&(
                 <div style={{ padding:"0 8px 6px" }}>
                   <button onClick={()=>setNodoSeleccionado(null)}
@@ -1265,50 +1300,78 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                   <div>Dif comparable: <span style={{ color:colorDif(difComparableSeccion) }}>{fmtDifM(difComparableSeccion)}</span> | <span style={{ color:colorDif(difComparableSeccion) }}>{fmtPct(difComparablePctSeccion)}</span></div>
                 </div>
               )}
-            </div>
+              </>
+              )}
+            </SidebarShell>
 
             {/* Tabla */}
             <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
-              <div style={{ padding:"8px 10px", borderBottom:"1px solid #e5e7eb", background:"#f8fafc", display:"grid", gridTemplateColumns:"minmax(220px, 0.9fr) minmax(320px, 1.4fr)", gap:"10px", flexShrink:0 }}>
-                <div style={{ display:"flex", gap:"5px", alignItems:"center", flexWrap:"wrap" }}>
-                  <span style={{ fontSize:"10px", color:"#6b7280", fontWeight:"700", textTransform:"uppercase" }}>Analisis</span>
-                  {[
-                    ["todos","Todos"],
-                    ["impacto","Mayor impacto"],
-                    ["positivos","Dif +"],
-                    ["negativos","Dif -"],
-                    ["sin_meta","Sin meta"],
-                    ["sin_apu","Sin APU"],
-                  ].map(([val,label])=>(
-                    <button key={val} onClick={()=>{setFiltroAnalisis(val); if (val !== "todos" && val !== "sin_apu") setVistaColumnas("diferencias");}}
-                      style={{ fontSize:"10px", padding:"3px 7px", borderRadius:"999px", cursor:"pointer", border:"1px solid", borderColor:filtroAnalisis===val?"#166534":"#d1d5db", background:filtroAnalisis===val?"#166534":"#fff", color:filtroAnalisis===val?"#fff":"#374151", fontWeight:filtroAnalisis===val?"700":"500" }}>
+              {esVistaEditar&&(
+                <ToolbarShell>
+                  <span style={{ fontSize:"11px", color:"#6b7280", fontWeight:"700", textTransform:"uppercase" }}>Edicion preparada</span>
+                  {["Agregar fila debajo","Editar fila","Marcar obsoleto","Guardar cambios","Cancelar cambios"].map(label=>(
+                    <button key={label} disabled title="Disponible cuando se creen los endpoints de edicion"
+                      style={{ fontSize:"11px", padding:"5px 9px", border:"1px solid #d1d5db", borderRadius:"6px", background:"#f3f4f6", color:"#9ca3af", cursor:"not-allowed" }}>
                       {label}
                     </button>
                   ))}
-                </div>
-                <div style={{ display:"flex", gap:"6px", alignItems:"center", minWidth:0 }}>
-                  <span style={{ fontSize:"10px", color:"#6b7280", fontWeight:"700", textTransform:"uppercase", flexShrink:0 }}>
-                    Top desviaciones{nodoSeleccionado ? " seccion" : ""}
-                  </span>
-                  <div style={{ display:"flex", gap:"5px", overflowX:"auto", minWidth:0, paddingBottom:"1px" }}>
-                    {rankingDesviaciones.length===0&&<span style={{ fontSize:"10px", color:"#9ca3af" }}>Sin diferencias comparables.</span>}
-                    {rankingDesviaciones.map(({ rubro, metricas }, idx)=>(
-                      <button key={rubro.id} onClick={()=>abrirRubroDesdeRanking(rubro)} title={textoVista(rubro.descripcion)}
-                        style={{ flexShrink:0, maxWidth:"210px", display:"grid", gridTemplateColumns:"auto 1fr", columnGap:"5px", rowGap:"1px", textAlign:"left", border:"1px solid #e5e7eb", background:"#fff", borderRadius:"6px", padding:"5px 7px", cursor:"pointer" }}>
-                        <span style={{ gridRow:"1 / span 2", color:"#9ca3af", fontSize:"10px", fontWeight:"700" }}>{idx+1}</span>
-                        <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color:"#111827", fontSize:"10px", fontWeight:"700" }}>{textoVista(rubro.descripcion)}</span>
-                        <span style={{ color:colorDif(metricas.difTotal), fontSize:"10px", fontWeight:"800", fontVariantNumeric:"tabular-nums" }}>{fmtDifM(metricas.difTotal)}</span>
+                  <span style={{ fontSize:"11px", color:"#6b7280" }}>Solo lectura: no hay persistencia manual habilitada.</span>
+                </ToolbarShell>
+              )}
+              {esVistaVincular&&(
+                <ToolbarShell>
+                  <span style={{ fontSize:"11px", color:"#6b7280", fontWeight:"700", textTransform:"uppercase" }}>Vinculacion APU</span>
+                  {[["jerarquica","Jerarquia"],["grupos","Por grupos"]].map(([k,label])=>(
+                    <button key={k} onClick={()=>setPestana(k)}
+                      style={{ fontSize:"11px", padding:"5px 10px", border:"1px solid", borderRadius:"6px", cursor:"pointer", borderColor:pestana===k?"#166534":"#d1d5db", background:pestana===k?"#166534":"#fff", color:pestana===k?"#fff":"#374151" }}>
+                      {label}
+                    </button>
+                  ))}
+                  <span style={{ fontSize:"11px", color:"#6b7280" }}>Filtro inicial recomendado: Pendientes.</span>
+                </ToolbarShell>
+              )}
+              {esVistaAnalisis&&(
+                <div style={{ padding:"8px 10px", borderBottom:"1px solid #e5e7eb", background:"#f8fafc", display:"grid", gridTemplateColumns:"minmax(220px, 0.9fr) minmax(320px, 1.4fr)", gap:"10px", flexShrink:0 }}>
+                  <div style={{ display:"flex", gap:"5px", alignItems:"center", flexWrap:"wrap" }}>
+                    <span style={{ fontSize:"10px", color:"#6b7280", fontWeight:"700", textTransform:"uppercase" }}>Analisis</span>
+                    {[
+                      ["todos","Todos"],
+                      ["impacto","Mayor impacto"],
+                      ["positivos","Dif +"],
+                      ["negativos","Dif -"],
+                      ["sin_meta","Sin meta"],
+                      ["sin_apu","Sin APU"],
+                    ].map(([val,label])=>(
+                      <button key={val} onClick={()=>{setFiltroAnalisis(val); if (val !== "todos" && val !== "sin_apu") setVistaColumnas("diferencias");}}
+                        style={{ fontSize:"10px", padding:"3px 7px", borderRadius:"999px", cursor:"pointer", border:"1px solid", borderColor:filtroAnalisis===val?"#166534":"#d1d5db", background:filtroAnalisis===val?"#166534":"#fff", color:filtroAnalisis===val?"#fff":"#374151", fontWeight:filtroAnalisis===val?"700":"500" }}>
+                        {label}
                       </button>
                     ))}
                   </div>
+                  <div style={{ display:"flex", gap:"6px", alignItems:"center", minWidth:0 }}>
+                    <span style={{ fontSize:"10px", color:"#6b7280", fontWeight:"700", textTransform:"uppercase", flexShrink:0 }}>
+                      Top desviaciones{nodoSeleccionado ? " seccion" : ""}
+                    </span>
+                    <div style={{ display:"flex", gap:"5px", overflowX:"auto", minWidth:0, paddingBottom:"1px" }}>
+                      {rankingDesviaciones.length===0&&<span style={{ fontSize:"10px", color:"#9ca3af" }}>Sin diferencias comparables.</span>}
+                      {rankingDesviaciones.map(({ rubro, metricas }, idx)=>(
+                        <button key={rubro.id} onClick={()=>abrirRubroDesdeRanking(rubro)} title={textoVista(rubro.descripcion)}
+                          style={{ flexShrink:0, maxWidth:"210px", display:"grid", gridTemplateColumns:"auto 1fr", columnGap:"5px", rowGap:"1px", textAlign:"left", border:"1px solid #e5e7eb", background:"#fff", borderRadius:"6px", padding:"5px 7px", cursor:"pointer" }}>
+                          <span style={{ gridRow:"1 / span 2", color:"#9ca3af", fontSize:"10px", fontWeight:"700" }}>{idx+1}</span>
+                          <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color:"#111827", fontSize:"10px", fontWeight:"700" }}>{textoVista(rubro.descripcion)}</span>
+                          <span style={{ color:colorDif(metricas.difTotal), fontSize:"10px", fontWeight:"800", fontVariantNumeric:"tabular-nums" }}>{fmtDifM(metricas.difTotal)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
               {/* Barra filtros tabla */}
               <div style={{ padding:"6px 10px", borderBottom:"1px solid #e5e7eb", display:"flex", gap:"6px", alignItems:"center", flexWrap:"wrap", background:"#fff", flexShrink:0 }}>
                 {nodoSeleccionado
                   ? <><span style={{ fontSize:"11px", color:"#6b7280" }}>Mostrando:</span><span style={{ fontSize:"11px", fontWeight:"500" }}>{textoVista(nodoSeleccionado.descripcion)}</span><span style={{ fontSize:"10px", color:"#9ca3af" }}>({rubrosSeccion.length} rubros)</span></>
                   : <span style={{ fontSize:"11px", color:"#6b7280" }}>Presupuesto completo</span>}
-                <label style={{ display:"flex", alignItems:"center", gap:"4px", fontSize:"10px", color:"#6b7280" }}>
+                {esVistaAnalisis&&<label style={{ display:"flex", alignItems:"center", gap:"4px", fontSize:"10px", color:"#6b7280" }}>
                   Vista:
                   <select value={vistaColumnas} onChange={e=>setVistaColumnas(e.target.value)}
                     style={{ fontSize:"10px", padding:"3px 22px 3px 7px", border:"1px solid #d1d5db", borderRadius:"6px", background:"#fff", color:"#374151", cursor:"pointer" }}>
@@ -1321,8 +1384,8 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                       ["desglose","Desglose"],
                     ].map(([key,label])=><option key={key} value={key}>{label}</option>)}
                   </select>
-                </label>
-                <div style={{ display:"flex", gap:"4px", alignItems:"center", flexWrap:"wrap", marginLeft:"8px" }}>
+                </label>}
+                {esVistaVincular&&<div style={{ display:"flex", gap:"4px", alignItems:"center", flexWrap:"wrap", marginLeft:"8px" }}>
                   <span style={{ fontSize:"10px", color:rubrosSeleccionadosDatos.length?"#166534":"#6b7280", background:rubrosSeleccionadosDatos.length?"#f0fdf4":"#f8fafc", border:"1px solid #e5e7eb", borderRadius:"999px", padding:"2px 8px", whiteSpace:"nowrap" }}>
                     {rubrosSeleccionadosDatos.length ? textoSeleccion : "Selecciona uno o varios rubros para operar"}
                     {rubrosSeleccionadosDatos.length > 0 && rubrosSeleccionadosVisibles !== rubrosSeleccionadosDatos.length ? `, ${rubrosSeleccionadosVisibles} visible(s)` : ""}
@@ -1394,7 +1457,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                       </div>
                     </details>
                   )}
-                </div>
+                </div>}
                 <div style={{ marginLeft:"auto", display:"flex", gap:"4px", alignItems:"center" }}>
                   <input type="text" placeholder="Buscar rubro..." value={buscarRubro} onChange={e=>setBuscarRubro(e.target.value)}
                     style={{ fontSize:"11px", padding:"3px 8px", border:"1px solid #d1d5db", borderRadius:"6px", width:"130px" }}/>
@@ -1411,16 +1474,16 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                 ):(
                   <table style={{ width:"100%", borderCollapse:"collapse", fontSize:"11px", tableLayout:"fixed" }}>
                     <colgroup>
-                      <col style={{ width:`${anchoColumnaSeleccion}px` }} />
+                      {esVistaVincular&&<col style={{ width:`${anchoColumnaSeleccion}px` }} />}
                       {columnasActivas.map((key) => (
                         <col key={key} style={{ width:key === "descripcion" ? anchoDescripcion : COLUMNAS[key].width }} />
                       ))}
                     </colgroup>
                     <thead>
                       <tr style={{ background:"#f3f4f6", position:"sticky", top:0, zIndex:1 }}>
-                        <th style={{ padding:"7px 3px", textAlign:"center", borderBottom:"1px solid #e5e7eb", color:"#374151", fontWeight:"600", width:"24px", minWidth:"24px", maxWidth:"24px", whiteSpace:"nowrap" }} title="Seleccion manual por rubro">
+                        {esVistaVincular&&<th style={{ padding:"7px 3px", textAlign:"center", borderBottom:"1px solid #e5e7eb", color:"#374151", fontWeight:"600", width:"24px", minWidth:"24px", maxWidth:"24px", whiteSpace:"nowrap" }} title="Seleccion manual por rubro">
                           Sel.
-                        </th>
+                        </th>}
                         {columnasActivas.map((key)=>{
                           const c = COLUMNAS[key];
                           return <th key={key} style={{ padding:"7px 8px", textAlign:c.align, borderBottom:"1px solid #e5e7eb", color:"#374151", fontWeight:"600", width:key === "descripcion" ? anchoDescripcion : c.width, whiteSpace:"nowrap" }}>{c.label}</th>;
@@ -1441,7 +1504,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                         return (
                           <tr key={n.id} style={{ background:estaSeleccionado?"#ecfdf5":(esR?(obsoleto?"#f3f4f6":"#fff"):cfg.bg), borderBottom:estaSeleccionado?"1px solid #bbf7d0":"1px solid #e5e7eb", cursor:tieneHijos?"pointer":"default", opacity:obsoleto?0.72:1 }}
                             onClick={()=>tieneHijos&&toggleColapsar(n.id)}>
-                            <td style={{ padding:"5px 3px", textAlign:"center", width:"24px", minWidth:"24px", maxWidth:"24px", borderLeft:estaSeleccionado?"3px solid #16a34a":"3px solid transparent" }} onClick={e=>e.stopPropagation()}>
+                            {esVistaVincular&&<td style={{ padding:"5px 3px", textAlign:"center", width:"24px", minWidth:"24px", maxWidth:"24px", borderLeft:estaSeleccionado?"3px solid #16a34a":"3px solid transparent" }} onClick={e=>e.stopPropagation()}>
                               {esR&&(
                                 <input
                                   type="checkbox"
@@ -1451,7 +1514,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                                   style={{ width:"13px", height:"13px", cursor:"pointer", accentColor:"#166534" }}
                                 />
                               )}
-                            </td>
+                            </td>}
                             {columnasActivas.map((col) => {
                               const c = COLUMNAS[col];
                               const diffValue = col.includes("dif") ? (col.includes("pu") ? m.difPu : (esR ? m.difTotal : mc.difTotal)) : null;
@@ -1481,7 +1544,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                 )}
               </div>
             </div>
-            {rubroResumenApu&&(
+            {rubroResumenApu&&(esVistaVincular||esVistaAnalisis)&&(
               <aside style={{ width:"320px", borderLeft:"1px solid #e5e7eb", background:"#f8fafc", display:"flex", flexDirection:"column", flexShrink:0 }}>
                 <div style={{ padding:"10px 12px", borderBottom:"1px solid #e5e7eb", background:"#fff", display:"flex", alignItems:"center", justifyContent:"space-between", gap:"8px" }}>
                   <div>
@@ -1565,7 +1628,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                     ))}
                   </div>
 
-                  <div style={{ display:"grid", gap:"6px" }}>
+                  {esVistaVincular&&<div style={{ display:"grid", gap:"6px" }}>
                     <button onClick={editarApuResumen} disabled={cargandoApuResumen}
                       style={{ width:"100%", background:cargandoApuResumen?"#f3f4f6":"#166534", color:cargandoApuResumen?"#9ca3af":"#fff", border:"none", borderRadius:"6px", padding:"8px 10px", fontSize:"12px", fontWeight:"700", cursor:cargandoApuResumen?"wait":"pointer" }}>
                       {cargandoApuResumen ? "Cargando APU..." : "Editar APU completo"}
@@ -1580,7 +1643,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                         Desvincular
                       </button>
                     </div>
-                  </div>
+                  </div>}
                 </div>
               </aside>
             )}
@@ -1588,8 +1651,53 @@ export default function Presupuestos({ initialFilter = "todos" }) {
         )}
 
         {/* Pestana por grupos */}
-        {pestana==="grupos"&&(
+        {esVistaVincular&&pestana==="grupos"&&(
+          <>
+          <SidebarShell collapsed={sidebarColapsado} onToggle={()=>setSidebarColapsado(v=>!v)} label="Secciones">
+            {!sidebarColapsado&&(
+              <>
+                <div style={{ padding:"8px" }}>
+                  <input type="text" placeholder="Buscar seccion..." value={buscarSidebar} onChange={e=>setBuscarSidebar(e.target.value)}
+                    style={{ width:"100%", fontSize:"11px", padding:"5px 8px", border:"1px solid #d1d5db", borderRadius:"6px", boxSizing:"border-box" }}/>
+                </div>
+                {nodoSeleccionado&&(
+                  <div style={{ padding:"0 8px 6px" }}>
+                    <button onClick={()=>setNodoSeleccionado(null)}
+                      style={{ fontSize:"10px", color:"#166534", background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:"4px", padding:"2px 8px", cursor:"pointer", width:"100%" }}>
+                      Mostrar todo el presupuesto
+                    </button>
+                  </div>
+                )}
+                <div style={{ overflowY:"auto", flex:1 }}>
+                  {nodosSidebar.map(n=>{
+                    const cfg = COLORES_TIPO[n.tipo]||COLORES_TIPO.GRUPO;
+                    const seleccionado = nodoSeleccionado?.id===n.id;
+                    const est = estadoNodoPorId.get(n.id) || "sin_rubros";
+                    return (
+                      <div key={n.id} onClick={()=>setNodoSeleccionado(seleccionado?null:n)}
+                        style={{ paddingLeft:`${cfg.indent+10}px`, paddingRight:"8px", paddingTop:"4px", paddingBottom:"4px",
+                          fontSize:"11px", cursor:"pointer", display:"flex", alignItems:"center", gap:"4px", color:"#1f2937",
+                          background:seleccionado?"#dcfce7":"transparent", borderLeft:seleccionado?"3px solid #166534":"3px solid transparent" }}>
+                        <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1 }} title={textoVista(n.descripcion)}>{textoVista(n.descripcion)}</span>
+                        <span style={{ width:"7px", height:"7px", borderRadius:"50%", background:DOT_COLOR[est], flexShrink:0 }}/>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </SidebarShell>
           <div style={{ flex:1, overflowY:"auto", padding:"16px 20px" }}>
+            <ToolbarShell className="mb-3">
+              <span style={{ fontSize:"11px", color:"#6b7280", fontWeight:"700", textTransform:"uppercase" }}>Vinculacion APU</span>
+              {[["jerarquica","Jerarquia"],["grupos","Por grupos"]].map(([k,label])=>(
+                <button key={k} onClick={()=>setPestana(k)}
+                  style={{ fontSize:"11px", padding:"5px 10px", border:"1px solid", borderRadius:"6px", cursor:"pointer", borderColor:pestana===k?"#166534":"#d1d5db", background:pestana===k?"#166534":"#fff", color:pestana===k?"#fff":"#374151" }}>
+                  {label}
+                </button>
+              ))}
+              <span style={{ fontSize:"11px", color:"#6b7280" }}>{nodoSeleccionado ? "Grupos filtrados por seccion seleccionada." : "Grupos del presupuesto completo."}</span>
+            </ToolbarShell>
             {nodosPlanos.length===0?(
               <div style={{ textAlign:"center", paddingTop:"60px", color:"#9ca3af" }}>Sin datos. Importa un Excel primero.</div>
             ):(
@@ -1638,6 +1746,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
               </>
             )}
           </div>
+          </>
         )}
       </div>
       )}

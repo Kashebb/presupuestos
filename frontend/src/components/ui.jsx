@@ -88,6 +88,57 @@ export function Panel({ children, className = "" }) {
   return <div className={`panel ${className}`}>{children}</div>;
 }
 
+export function ViewTabs({ items, value, onChange, ariaLabel = "Vistas" }) {
+  return (
+    <div className="view-tabs" role="tablist" aria-label={ariaLabel}>
+      {items.map((item) => {
+        const active = item.value === value;
+        return (
+          <button
+            key={item.value}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(item.value)}
+            className={`view-tab ${active ? "view-tab-active" : ""}`}
+          >
+            <span className="view-tab-label">{item.label}</span>
+            {item.meta && <span className="view-tab-meta">{item.meta}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function ToolbarShell({ children, className = "" }) {
+  return <div className={`toolbar-shell ${className}`}>{children}</div>;
+}
+
+export function SidebarShell({ children, collapsed = false, onToggle, label = "Secciones" }) {
+  if (collapsed) {
+    return (
+      <aside className="sidebar-shell sidebar-shell-collapsed" aria-label={label}>
+        <button type="button" className="sidebar-toggle-vertical" onClick={onToggle} aria-label={`Mostrar ${label}`}>
+          Mostrar {label}
+        </button>
+      </aside>
+    );
+  }
+
+  return (
+    <aside className="sidebar-shell" aria-label={label}>
+      <div className="sidebar-shell-header">
+        <span>{label}</span>
+        <button type="button" className="sidebar-toggle" onClick={onToggle}>
+          Ocultar
+        </button>
+      </div>
+      {children}
+    </aside>
+  );
+}
+
 export function EmptyState({ children = "Sin registros." }) {
   return <Panel className="empty-state">{children}</Panel>;
 }
