@@ -286,6 +286,39 @@ textarea {
   color: var(--color-info);
 }
 
+.validation-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 82px;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.validation-aprobado {
+  background: var(--color-primary-light);
+  color: var(--color-success);
+}
+
+.validation-pendiente {
+  background: #eef1ee;
+  color: #526057;
+}
+
+.validation-piloto {
+  background: #fef3c7;
+  color: var(--color-warning);
+}
+
+.validation-no_aprobado {
+  background: #fee2e2;
+  color: var(--color-danger);
+}
+
 .filter-chip {
   border: 1px solid var(--color-border-strong);
   border-radius: 999px;

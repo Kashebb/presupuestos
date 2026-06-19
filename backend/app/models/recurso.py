@@ -15,4 +15,8 @@ class Recurso(Base):
     fecha_precio = Column(Date, nullable=True)
     fuente_precio = Column(String, nullable=True)
     observacion = Column(String, nullable=True)
+    estado_validacion = Column(String, nullable=False, default="pendiente")
+    fuente_validacion = Column(String, nullable=True)
+    fecha_validacion = Column(Date, nullable=True)
+    nota_validacion = Column(String, nullable=True)
     activo = Column(Boolean, default=True)

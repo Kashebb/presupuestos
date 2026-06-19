@@ -20,7 +20,7 @@ def obtener_resumen(db: Session = Depends(get_db)):
     recursos_activos = _count(db.query(func.count(Recurso.id)).filter(Recurso.activo.is_(True)))
     recursos_piloto = _count(
         db.query(func.count(Recurso.id)).filter(
-            Recurso.observacion.ilike("%PILOTO_NO_VALIDADO%")
+            Recurso.estado_validacion.in_(["piloto", "no_aprobado"])
         )
     )
 

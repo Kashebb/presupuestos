@@ -28,6 +28,15 @@ const FILTROS_ESTADO = [
   { value: "todos", label: "Todos" },
 ];
 
+const ESTADOS_VALIDACION = [
+  { value: "aprobado", label: "Aprobado" },
+  { value: "pendiente", label: "Pendiente" },
+  { value: "piloto", label: "Piloto" },
+  { value: "no_aprobado", label: "No aprobado" },
+];
+
+const VALIDACION_LABELS = Object.fromEntries(ESTADOS_VALIDACION.map((estado) => [estado.value, estado.label]));
+
 const vacio = {
   codigo: "",
   descripcion: "",
@@ -36,6 +45,7 @@ const vacio = {
   subcategoria: "",
   familia: "",
   precio_unitario: "",
+  estado_validacion: "pendiente",
 };
 
 function parseNumero(valor) {
@@ -249,6 +259,7 @@ export default function Recursos() {
         descripcion: recurso.descripcion || "",
         unidad: recurso.unidad || "",
         precio_unitario: Number(recurso.precio_unitario || 0).toFixed(2),
+        estado_validacion: recurso.estado_validacion || "pendiente",
       },
     });
     setErroresFila({});
@@ -285,6 +296,8 @@ export default function Recursos() {
         descripcion: editado.descripcion.trim(),
         unidad: editado.unidad.trim(),
         precio_unitario: precio,
+        estado_validacion: editado.estado_validacion || "pendiente",
+        fuente_validacion: editado.estado_validacion !== recurso.estado_validacion ? "MANUAL" : recurso.fuente_validacion,
       }),
     });
 
@@ -409,6 +422,25 @@ export default function Recursos() {
           />
         );
       },
+    },
+    {
+      key: "validacion",
+      label: "Validacion",
+      align: "center",
+      width: "12%",
+      render: (recurso) => edicionFila[recurso.id] ? (
+        <select
+          className={fieldClass}
+          value={edicionFila[recurso.id].estado_validacion}
+          onChange={(e) => setEdicionFila((prev) => ({ ...prev, [recurso.id]: { ...prev[recurso.id], estado_validacion: e.target.value } }))}
+        >
+          {ESTADOS_VALIDACION.map((estado) => <option key={estado.value} value={estado.value}>{estado.label}</option>)}
+        </select>
+      ) : (
+        <span className={`validation-badge validation-${recurso.estado_validacion || "pendiente"}`}>
+          {VALIDACION_LABELS[recurso.estado_validacion] || "Pendiente"}
+        </span>
+      ),
     },
     {
       key: "acciones",

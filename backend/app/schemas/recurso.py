@@ -13,6 +13,10 @@ class RecursoBase(BaseModel):
     fecha_precio: Optional[date] = None
     fuente_precio: Optional[str] = None
     observacion: Optional[str] = None
+    estado_validacion: str = "pendiente"
+    fuente_validacion: Optional[str] = None
+    fecha_validacion: Optional[date] = None
+    nota_validacion: Optional[str] = None
     activo: bool = True
 
 class RecursoCreate(RecursoBase):
