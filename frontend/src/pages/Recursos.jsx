@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActionButton,
   DataTable,
@@ -22,7 +22,21 @@ const ETIQUETAS = {
   otros: "Otros",
 };
 
-const vacio = { codigo: "", descripcion: "", unidad: "", categoria: "material", precio_unitario: "" };
+const FILTROS_ESTADO = [
+  { value: "activos", label: "Activos" },
+  { value: "inactivos", label: "Inactivos" },
+  { value: "todos", label: "Todos" },
+];
+
+const vacio = {
+  codigo: "",
+  descripcion: "",
+  unidad: "",
+  categoria: "material",
+  subcategoria: "",
+  familia: "",
+  precio_unitario: "",
+};
 
 function parseNumero(valor) {
   if (valor === null || valor === undefined) return Number.NaN;
@@ -52,43 +66,45 @@ export default function Recursos() {
   const [recursos, setRecursos] = useState([]);
   const [busqueda, setBusqueda] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState("todos");
+  const [filtroEstado, setFiltroEstado] = useState("activos");
   const [cargando, setCargando] = useState(true);
   const [modal, setModal] = useState(false);
   const [modoModal, setModoModal] = useState("crear");
   const [codigoBase, setCodigoBase] = useState("");
   const [form, setForm] = useState(vacio);
+  const [clasificaciones, setClasificaciones] = useState([]);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
-  const [precioEdits, setPrecioEdits] = useState({});
-  const [precioErrores, setPrecioErrores] = useState({});
+  const [edicionFila, setEdicionFila] = useState({});
+  const [erroresFila, setErroresFila] = useState({});
   const [toasts, setToasts] = useState([]);
 
-  useEffect(() => {
-    fetchRecursos();
-  }, []);
-
-  useEffect(() => {
-    if (!modal) return;
-    generarCodigo(form.categoria, codigoBase);
-  }, [form.categoria, codigoBase, modal]);
-
-  function mostrarToast(mensaje, tipo = "exito") {
-    const id = Date.now();
-    setToasts((prev) => [...prev, { id, mensaje, tipo }]);
-    setTimeout(() => setToasts((prev) => prev.filter((toast) => toast.id !== id)), 3500);
-  }
-
-  async function fetchRecursos() {
+  const fetchRecursos = useCallback(async () => {
     setCargando(true);
-    const res = await fetch(`${API}/recursos/?limit=500`);
+    const params = new URLSearchParams({ estado: filtroEstado });
+    const res = await fetch(`${API}/recursos/?${params}`);
     const data = await res.json();
     setRecursos(data);
     setCargando(false);
-  }
+  }, [filtroEstado]);
 
-  async function generarCodigo(categoria, base = "") {
+  const fetchClasificaciones = useCallback(async () => {
+    const res = await fetch(`${API}/recursos/clasificaciones`);
+    if (!res.ok) return;
+    const data = await res.json();
+    setClasificaciones(data);
+  }, []);
+
+  const generarCodigo = useCallback(async (categoria, subcategoria, base = "") => {
     if (!categoria) return;
+    if (!subcategoria && !base) {
+      setForm((prev) => ({ ...prev, codigo: "" }));
+      setError("Selecciona una subcategoria para generar el codigo.");
+      return;
+    }
+
     const params = new URLSearchParams({ categoria });
+    if (subcategoria) params.append("subcategoria", subcategoria);
     if (base) params.append("codigo_base", base);
     const res = await fetch(`${API}/recursos/siguiente-codigo?${params}`);
     if (!res.ok) {
@@ -100,12 +116,68 @@ export default function Recursos() {
     const data = await res.json();
     setForm((prev) => ({ ...prev, codigo: data.codigo }));
     setError("");
+  }, []);
+
+  useEffect(() => {
+    fetchRecursos();
+    fetchClasificaciones();
+  }, [fetchRecursos, fetchClasificaciones]);
+
+  useEffect(() => {
+    function cancelarConEscape(event) {
+      if (event.key === "Escape") {
+        setEdicionFila({});
+        setErroresFila({});
+      }
+    }
+
+    window.addEventListener("keydown", cancelarConEscape);
+    return () => window.removeEventListener("keydown", cancelarConEscape);
+  }, []);
+
+  useEffect(() => {
+    if (!modal) return;
+    generarCodigo(form.categoria, form.subcategoria, codigoBase);
+  }, [form.categoria, form.subcategoria, codigoBase, modal, generarCodigo]);
+
+  function mostrarToast(mensaje, tipo = "exito") {
+    const id = Date.now();
+    setToasts((prev) => [...prev, { id, mensaje, tipo }]);
+    setTimeout(() => setToasts((prev) => prev.filter((toast) => toast.id !== id)), 3500);
+  }
+
+  function subcategoriasDe(categoria) {
+    return clasificaciones.find((item) => item.categoria === categoria)?.subcategorias || [];
+  }
+
+  function clasificacionInicial(categoria = "material") {
+    const categoriaBase = clasificaciones.find((item) => item.categoria === categoria) || clasificaciones[0];
+    const subcategoriaBase = categoriaBase?.subcategorias?.[0];
+    return {
+      categoria: categoriaBase?.categoria || categoria,
+      subcategoria: subcategoriaBase?.nombre || "",
+      familia: subcategoriaBase?.familias?.[0] || "",
+    };
+  }
+
+  function actualizarCategoria(categoria) {
+    const siguiente = clasificacionInicial(categoria);
+    setForm((prev) => ({ ...prev, ...siguiente }));
+  }
+
+  function actualizarSubcategoria(subcategoria) {
+    const subcategoriaInfo = subcategoriasDe(form.categoria).find((item) => item.nombre === subcategoria);
+    setForm((prev) => ({
+      ...prev,
+      subcategoria,
+      familia: subcategoriaInfo?.familias?.[0] || "",
+    }));
   }
 
   function abrirCrear() {
     setModoModal("crear");
     setCodigoBase("");
-    setForm(vacio);
+    setForm({ ...vacio, ...clasificacionInicial("material") });
     setError("");
     setModal(true);
   }
@@ -118,6 +190,8 @@ export default function Recursos() {
       descripcion: `${recurso.descripcion || ""} copia`,
       unidad: recurso.unidad || "",
       categoria: recurso.categoria || "material",
+      subcategoria: recurso.subcategoria || "",
+      familia: recurso.familia || "",
       precio_unitario: recurso.precio_unitario ?? "",
     });
     setError("");
@@ -135,6 +209,10 @@ export default function Recursos() {
     }
     if (!form.unidad.trim()) {
       setError("La unidad es obligatoria.");
+      return;
+    }
+    if (!form.subcategoria.trim()) {
+      setError("La subcategoria es obligatoria para generar el codigo.");
       return;
     }
     const precio = parseNumero(form.precio_unitario);
@@ -165,54 +243,60 @@ export default function Recursos() {
     }
   }
 
-  async function guardarPrecioInline(recurso) {
-    const editado = precioEdits[recurso.id];
-    if (editado === undefined) return;
+  function iniciarEdicion(recurso) {
+    setEdicionFila({
+      [recurso.id]: {
+        descripcion: recurso.descripcion || "",
+        unidad: recurso.unidad || "",
+        precio_unitario: Number(recurso.precio_unitario || 0).toFixed(2),
+      },
+    });
+    setErroresFila({});
+  }
 
-    const precio = parseNumero(editado);
-    const anterior = Number(recurso.precio_unitario || 0);
+  function cancelarEdicion() {
+    setEdicionFila({});
+    setErroresFila({});
+  }
+
+  async function guardarEdicion(recurso) {
+    const editado = edicionFila[recurso.id];
+    if (!editado) return;
+
+    if (!editado.descripcion.trim()) {
+      setErroresFila({ [recurso.id]: "El nombre es obligatorio." });
+      return;
+    }
+    if (!editado.unidad.trim()) {
+      setErroresFila({ [recurso.id]: "La unidad es obligatoria." });
+      return;
+    }
+    const precio = parseNumero(editado.precio_unitario);
     if (!Number.isFinite(precio) || precio < 0) {
-      setPrecioErrores((prev) => ({ ...prev, [recurso.id]: "Precio invalido." }));
-      return;
-    }
-    if (Math.abs(precio - anterior) < 0.000001) {
-      setPrecioEdits((prev) => {
-        const next = { ...prev };
-        delete next[recurso.id];
-        return next;
-      });
-      setPrecioErrores((prev) => {
-        const next = { ...prev };
-        delete next[recurso.id];
-        return next;
-      });
+      setErroresFila({ [recurso.id]: "Precio invalido." });
       return;
     }
 
-    const res = await fetch(`${API}/recursos/${recurso.id}/precio`, {
-      method: "PATCH",
+    const res = await fetch(`${API}/recursos/${recurso.id}`, {
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ precio_unitario: precio }),
+      body: JSON.stringify({
+        ...recurso,
+        descripcion: editado.descripcion.trim(),
+        unidad: editado.unidad.trim(),
+        precio_unitario: precio,
+      }),
     });
 
     if (res.ok) {
       const actualizado = await res.json();
       setRecursos((prev) => prev.map((item) => (item.id === recurso.id ? actualizado : item)));
-      setPrecioEdits((prev) => {
-        const next = { ...prev };
-        delete next[recurso.id];
-        return next;
-      });
-      setPrecioErrores((prev) => {
-        const next = { ...prev };
-        delete next[recurso.id];
-        return next;
-      });
-      mostrarToast("Precio actualizado.");
+      setEdicionFila({});
+      setErroresFila({});
+      mostrarToast("Recurso actualizado.");
     } else {
-      setPrecioEdits((prev) => ({ ...prev, [recurso.id]: anterior.toFixed(2) }));
-      setPrecioErrores((prev) => ({ ...prev, [recurso.id]: "No se pudo guardar. Se restauro el valor anterior." }));
-      mostrarToast("No se pudo actualizar el precio.", "error");
+      setErroresFila({ [recurso.id]: "No se pudo guardar el recurso." });
+      mostrarToast("No se pudo actualizar el recurso.", "error");
     }
   }
 
@@ -228,6 +312,20 @@ export default function Recursos() {
       mostrarToast(`"${recurso.descripcion}" desactivado.`, "alerta");
     } else {
       mostrarToast("Error al desactivar el recurso.", "error");
+    }
+  }
+
+  async function reactivar(recurso) {
+    const res = await fetch(`${API}/recursos/${recurso.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...recurso, activo: true }),
+    });
+    if (res.ok) {
+      fetchRecursos();
+      mostrarToast(`"${recurso.descripcion}" reactivado.`);
+    } else {
+      mostrarToast("Error al reactivar el recurso.", "error");
     }
   }
 
@@ -262,26 +360,55 @@ export default function Recursos() {
 
   const columns = [
     { key: "codigo", label: "Codigo", width: "13%", render: (recurso) => recurso.codigo || "-" },
-    { key: "descripcion", label: "Nombre", render: (recurso) => <span className="font-medium text-slate-900">{recurso.descripcion}</span> },
-    { key: "unidad", label: "Unidad", width: "9%" },
+    {
+      key: "descripcion",
+      label: "Nombre",
+      render: (recurso) => edicionFila[recurso.id] ? (
+        <div>
+          <input
+            className={fieldClass}
+            value={edicionFila[recurso.id].descripcion}
+            onChange={(e) => setEdicionFila((prev) => ({ ...prev, [recurso.id]: { ...prev[recurso.id], descripcion: e.target.value } }))}
+            autoFocus
+          />
+          {erroresFila[recurso.id] && <div className="mt-1 text-[10px] text-red-600">{erroresFila[recurso.id]}</div>}
+        </div>
+      ) : (
+        <span className={`font-medium ${recurso.activo ? "text-slate-900" : "text-slate-400"}`}>{recurso.descripcion}</span>
+      ),
+    },
+    {
+      key: "unidad",
+      label: "Unidad",
+      width: "9%",
+      render: (recurso) => edicionFila[recurso.id] ? (
+        <input
+          className={`${fieldClass} max-w-24`}
+          value={edicionFila[recurso.id].unidad}
+          onChange={(e) => setEdicionFila((prev) => ({ ...prev, [recurso.id]: { ...prev[recurso.id], unidad: e.target.value } }))}
+        />
+      ) : recurso.unidad,
+    },
     {
       key: "precio_unitario",
       label: "Precio",
       align: "right",
       width: "14%",
-      render: (recurso) => (
-        <div>
+      render: (recurso) => {
+        if (!edicionFila[recurso.id]) {
+          return <span className="resource-price-display">{Number(recurso.precio_unitario || 0).toFixed(2)}</span>;
+        }
+
+        return (
           <input
             type="text"
             inputMode="decimal"
-            value={precioEdits[recurso.id] ?? Number(recurso.precio_unitario || 0).toFixed(2)}
-            onChange={(e) => setPrecioEdits((prev) => ({ ...prev, [recurso.id]: e.target.value }))}
-            onBlur={() => guardarPrecioInline(recurso)}
+            value={edicionFila[recurso.id].precio_unitario}
+            onChange={(e) => setEdicionFila((prev) => ({ ...prev, [recurso.id]: { ...prev[recurso.id], precio_unitario: e.target.value } }))}
             className={`${fieldClass} ml-auto max-w-28 text-right tabular-nums`}
           />
-          {precioErrores[recurso.id] && <div className="mt-1 text-[10px] text-red-600">{precioErrores[recurso.id]}</div>}
-        </div>
-      ),
+        );
+      },
     },
     {
       key: "acciones",
@@ -290,8 +417,22 @@ export default function Recursos() {
       width: "22%",
       render: (recurso) => (
         <div className="flex justify-center gap-1">
-          <ActionButton compact onClick={() => abrirDuplicar(recurso)}>Duplicar</ActionButton>
-          {recurso.activo && <ActionButton variant="danger" compact onClick={() => desactivar(recurso)}>Desactivar</ActionButton>}
+          {edicionFila[recurso.id] ? (
+            <>
+              <ActionButton variant="primary" compact onClick={() => guardarEdicion(recurso)}>Guardar</ActionButton>
+              <ActionButton compact onClick={cancelarEdicion}>Cancelar</ActionButton>
+            </>
+          ) : (
+            <>
+              <ActionButton compact onClick={() => iniciarEdicion(recurso)}>Editar</ActionButton>
+              <ActionButton compact onClick={() => abrirDuplicar(recurso)}>Duplicar</ActionButton>
+              {recurso.activo ? (
+                <ActionButton variant="danger" compact onClick={() => desactivar(recurso)}>Desactivar</ActionButton>
+              ) : (
+                <ActionButton variant="success" compact onClick={() => reactivar(recurso)}>Reactivar</ActionButton>
+              )}
+            </>
+          )}
         </div>
       ),
     },
@@ -302,12 +443,18 @@ export default function Recursos() {
     ...CATEGORIAS.map((categoria) => ({ value: categoria, label: ETIQUETAS[categoria] })),
   ];
 
+  const categoriasFormulario = clasificaciones.length
+    ? clasificaciones.map((item) => item.categoria)
+    : CATEGORIAS;
+  const subcategoriasFormulario = subcategoriasDe(form.categoria);
+  const familiasFormulario = subcategoriasFormulario.find((item) => item.nombre === form.subcategoria)?.familias || [];
+
   return (
     <div className="page-wrap">
       <PageHeader
         title="Recursos"
         subtitle="Biblioteca base de mano de obra, materiales, equipos y transporte."
-        actions={<ActionButton variant="primary" onClick={abrirCrear}>Nuevo recurso</ActionButton>}
+        actions={<ActionButton variant="primary" disabled={clasificaciones.length === 0} onClick={abrirCrear}>Nuevo recurso</ActionButton>}
       />
 
       <div className="mb-3">
@@ -342,9 +489,12 @@ export default function Recursos() {
         <div className="space-y-4">
           {grupos.map((grupo) => (
             <section key={grupo.categoria}>
-              <div className="mb-1 flex items-center justify-between rounded-t-md border border-slate-200 bg-green-50 px-3 py-2">
-                <h2 className="text-xs font-semibold text-slate-800">{ETIQUETAS[grupo.categoria] || grupo.categoria}</h2>
-                <span className="text-[11px] text-slate-500">{grupo.recursos.length} recurso{grupo.recursos.length !== 1 ? "s" : ""}</span>
+              <div className="resource-group-header">
+                <h2>{ETIQUETAS[grupo.categoria] || grupo.categoria}</h2>
+                <div className="resource-group-actions">
+                  <ToolbarFilter options={FILTROS_ESTADO} value={filtroEstado} onChange={setFiltroEstado} />
+                  <span>{grupo.recursos.length} recurso{grupo.recursos.length !== 1 ? "s" : ""}</span>
+                </div>
               </div>
               <DataTable columns={columns} rows={grupo.recursos} rowKey={(recurso) => recurso.id} emptyText="No se encontraron recursos." />
             </section>
@@ -358,7 +508,7 @@ export default function Recursos() {
 
       {modal && (
         <ModalShell
-          title={modoModal === "duplicar" ? "Duplicar recurso" : "Nuevo recurso"}
+          title=""
           footer={
             <>
               <ActionButton onClick={() => setModal(false)}>Cancelar</ActionButton>
@@ -368,24 +518,60 @@ export default function Recursos() {
             </>
           }
         >
-          <label className={labelClass}>Codigo automatico</label>
-          <input className={`${fieldClass} bg-slate-100`} value={form.codigo} readOnly placeholder="Se genera desde codigos existentes" />
+          <div className="resource-modal-title-row">
+            <h2>{modoModal === "duplicar" ? "Duplicar recurso" : "Nuevo recurso"}</h2>
+            <input className="resource-code-display" value={form.codigo} readOnly placeholder="Pendiente" aria-label="Codigo automatico" />
+          </div>
 
-          <label className={`${labelClass} mt-3`}>Nombre *</label>
-          <input className={fieldClass} value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} placeholder="Nombre del recurso" />
+          <div>
+            <label className={labelClass}>Nombre *</label>
+            <input className={fieldClass} value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} placeholder="Nombre del recurso" />
+          </div>
+
+          <div className="resource-classification-grid">
+            <div>
+              <label className={labelClass}>Categoria *</label>
+              <select
+                className={fieldClass}
+                value={form.categoria}
+                disabled={modoModal === "duplicar"}
+                onChange={(e) => actualizarCategoria(e.target.value)}
+              >
+                {categoriasFormulario.map((categoria) => <option key={categoria} value={categoria}>{ETIQUETAS[categoria] || categoria}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className={labelClass}>Subcategoria *</label>
+              <select
+                className={fieldClass}
+                value={form.subcategoria}
+                disabled={modoModal === "duplicar" || subcategoriasFormulario.length === 0}
+                onChange={(e) => actualizarSubcategoria(e.target.value)}
+              >
+                {subcategoriasFormulario.length === 0 ? (
+                  <option value="">Sin subcategorias</option>
+                ) : (
+                  subcategoriasFormulario.map((subcategoria) => <option key={subcategoria.nombre} value={subcategoria.nombre}>{subcategoria.nombre}</option>)
+                )}
+              </select>
+            </div>
+
+            <div>
+              <label className={labelClass}>Familia</label>
+              <select
+                className={fieldClass}
+                value={form.familia}
+                onChange={(e) => setForm({ ...form, familia: e.target.value })}
+              >
+                <option value="">Sin familia</option>
+                {familiasFormulario.map((familia) => <option key={familia} value={familia}>{familia}</option>)}
+              </select>
+            </div>
+          </div>
 
           <label className={`${labelClass} mt-3`}>Unidad *</label>
           <input className={fieldClass} value={form.unidad} onChange={(e) => setForm({ ...form, unidad: e.target.value })} placeholder="Ej: m3, kg, gl, u" />
-
-          <label className={`${labelClass} mt-3`}>Tipo *</label>
-          <select
-            className={fieldClass}
-            value={form.categoria}
-            disabled={modoModal === "duplicar"}
-            onChange={(e) => setForm({ ...form, categoria: e.target.value })}
-          >
-            {CATEGORIAS.map((categoria) => <option key={categoria} value={categoria}>{ETIQUETAS[categoria]}</option>)}
-          </select>
 
           <label className={`${labelClass} mt-3`}>Precio unitario *</label>
           <input className={fieldClass} type="text" inputMode="decimal" value={form.precio_unitario} onChange={(e) => setForm({ ...form, precio_unitario: e.target.value })} placeholder="0.00" />

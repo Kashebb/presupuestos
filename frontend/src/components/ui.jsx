@@ -148,7 +148,7 @@ export function ModalShell({ title, children, footer }) {
   return (
     <div className="modal-overlay">
       <div className="modal-shell">
-        <h2 className="modal-title">{title}</h2>
+        {title && <h2 className="modal-title">{title}</h2>}
         {children}
         {footer && <div className="modal-footer">{footer}</div>}
       </div>
