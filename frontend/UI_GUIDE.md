@@ -198,6 +198,15 @@ Pendiente de extraccion: `ColumnViewSelector`.
 
 Pendiente de extraccion: `BudgetKpiBar`.
 
+### Ranking Y Filtros De Desviaciones
+
+- El ranking de desviaciones debe usar los mismos calculos economicos de la tabla; no recalcular con otra formula.
+- Si hay una seccion del arbol seleccionada, el ranking debe priorizar esa seccion antes que el global.
+- Los filtros rapidos de analisis pueden cambiar la visibilidad de rubros, pero no deben cambiar la interpretacion de colores ni de signos.
+- Los filtros de impacto deben llevar al usuario hacia la vista de columnas `Diferencias` cuando aporte contexto.
+
+Pendiente de extraccion: `BudgetImpactRank` y `AnalysisQuickFilters`.
+
 ### Acciones Masivas Con Validacion
 
 - Antes de una accion masiva que vincule rubros con APUs, validar unidades normalizadas.

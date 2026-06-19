@@ -256,6 +256,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
 
   // Filtros vista jerarquica
   const [filtroEstado, setFiltroEstado] = useState("todos"); // todos|VINCULADO|PENDIENTE|SIN_APU
+  const [filtroAnalisis, setFiltroAnalisis] = useState("todos"); // todos|impacto|positivos|negativos|sin_meta|sin_apu
   const [buscarRubro, setBuscarRubro] = useState("");
   const [buscarSidebar, setBuscarSidebar] = useState("");
 
@@ -741,6 +742,19 @@ export default function Presupuestos({ initialFilter = "todos" }) {
       });
     }
 
+    if (filtroAnalisis !== "todos") {
+      visibles = visibles.filter(n => {
+        if (n.tipo !== "RUBRO") return true;
+        const m = metricasRubroPorId.get(n.id);
+        if (filtroAnalisis === "impacto") return Number.isFinite(m?.difTotal) && Math.abs(m.difTotal) > 0;
+        if (filtroAnalisis === "positivos") return Number.isFinite(m?.difTotal) && m.difTotal > 0;
+        if (filtroAnalisis === "negativos") return Number.isFinite(m?.difTotal) && m.difTotal < 0;
+        if (filtroAnalisis === "sin_meta") return n.observaciones !== "SIN_APU" && !Number.isFinite(m?.totalMeta);
+        if (filtroAnalisis === "sin_apu") return n.observaciones === "SIN_APU";
+        return true;
+      });
+    }
+
     if (buscarRubro.trim()) {
       const q = buscarRubro.toLowerCase();
       visibles = visibles.filter(n => n.tipo !== "RUBRO" || n.descripcion.toLowerCase().includes(q));
@@ -748,7 +762,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
 
     debugPerf("nodos visibles", t0, { visibles: visibles.length });
     return visibles;
-  }, [nodosPlanos, colapsados, nodoSeleccionado, nodoPorId, hijosPorPadre, filtroEstado, buscarRubro]);
+  }, [nodosPlanos, colapsados, nodoSeleccionado, nodoPorId, hijosPorPadre, filtroEstado, filtroAnalisis, metricasRubroPorId, buscarRubro]);
 
   // Nodos sidebar filtrados
   const nodosSidebar = useMemo(() => nodosPlanos.filter(n => n.tipo !== "RUBRO").filter(n => {
@@ -833,6 +847,20 @@ export default function Presupuestos({ initialFilter = "todos" }) {
   }, [nodoSeleccionado, rubros, rubrosPorContenedor, metricasRubroPorId]);
 
   const { grupos, individualizados } = useMemo(() => calcularGrupos(nodosPlanos), [nodosPlanos]);
+
+  const rankingDesviaciones = useMemo(() => {
+    const base = nodoSeleccionado ? rubrosSeccion : rubros;
+    return base
+      .map(r => ({ rubro: r, metricas: metricasRubroPorId.get(r.id) }))
+      .filter(item => Number.isFinite(item.metricas?.difTotal) && Math.abs(item.metricas.difTotal) > 0)
+      .sort((a, b) => Math.abs(b.metricas.difTotal) - Math.abs(a.metricas.difTotal))
+      .slice(0, 5);
+  }, [nodoSeleccionado, rubrosSeccion, rubros, metricasRubroPorId]);
+
+  const abrirRubroDesdeRanking = (rubro) => {
+    setRubrosSeleccionados([rubro.id]);
+    setApuResumenRubroId(rubro.apu_id ? rubro.id : null);
+  };
 
   // Grupos filtrados
   const gruposFiltrados = useMemo(() => grupos.filter(g => {
@@ -1241,6 +1269,40 @@ export default function Presupuestos({ initialFilter = "todos" }) {
 
             {/* Tabla */}
             <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
+              <div style={{ padding:"8px 10px", borderBottom:"1px solid #e5e7eb", background:"#f8fafc", display:"grid", gridTemplateColumns:"minmax(220px, 0.9fr) minmax(320px, 1.4fr)", gap:"10px", flexShrink:0 }}>
+                <div style={{ display:"flex", gap:"5px", alignItems:"center", flexWrap:"wrap" }}>
+                  <span style={{ fontSize:"10px", color:"#6b7280", fontWeight:"700", textTransform:"uppercase" }}>Analisis</span>
+                  {[
+                    ["todos","Todos"],
+                    ["impacto","Mayor impacto"],
+                    ["positivos","Dif +"],
+                    ["negativos","Dif -"],
+                    ["sin_meta","Sin meta"],
+                    ["sin_apu","Sin APU"],
+                  ].map(([val,label])=>(
+                    <button key={val} onClick={()=>{setFiltroAnalisis(val); if (val !== "todos" && val !== "sin_apu") setVistaColumnas("diferencias");}}
+                      style={{ fontSize:"10px", padding:"3px 7px", borderRadius:"999px", cursor:"pointer", border:"1px solid", borderColor:filtroAnalisis===val?"#166534":"#d1d5db", background:filtroAnalisis===val?"#166534":"#fff", color:filtroAnalisis===val?"#fff":"#374151", fontWeight:filtroAnalisis===val?"700":"500" }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display:"flex", gap:"6px", alignItems:"center", minWidth:0 }}>
+                  <span style={{ fontSize:"10px", color:"#6b7280", fontWeight:"700", textTransform:"uppercase", flexShrink:0 }}>
+                    Top desviaciones{nodoSeleccionado ? " seccion" : ""}
+                  </span>
+                  <div style={{ display:"flex", gap:"5px", overflowX:"auto", minWidth:0, paddingBottom:"1px" }}>
+                    {rankingDesviaciones.length===0&&<span style={{ fontSize:"10px", color:"#9ca3af" }}>Sin diferencias comparables.</span>}
+                    {rankingDesviaciones.map(({ rubro, metricas }, idx)=>(
+                      <button key={rubro.id} onClick={()=>abrirRubroDesdeRanking(rubro)} title={textoVista(rubro.descripcion)}
+                        style={{ flexShrink:0, maxWidth:"210px", display:"grid", gridTemplateColumns:"auto 1fr", columnGap:"5px", rowGap:"1px", textAlign:"left", border:"1px solid #e5e7eb", background:"#fff", borderRadius:"6px", padding:"5px 7px", cursor:"pointer" }}>
+                        <span style={{ gridRow:"1 / span 2", color:"#9ca3af", fontSize:"10px", fontWeight:"700" }}>{idx+1}</span>
+                        <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color:"#111827", fontSize:"10px", fontWeight:"700" }}>{textoVista(rubro.descripcion)}</span>
+                        <span style={{ color:colorDif(metricas.difTotal), fontSize:"10px", fontWeight:"800", fontVariantNumeric:"tabular-nums" }}>{fmtDifM(metricas.difTotal)}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
               {/* Barra filtros tabla */}
               <div style={{ padding:"6px 10px", borderBottom:"1px solid #e5e7eb", display:"flex", gap:"6px", alignItems:"center", flexWrap:"wrap", background:"#fff", flexShrink:0 }}>
                 {nodoSeleccionado
