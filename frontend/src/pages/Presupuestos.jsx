@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
   ActionButton,
-  BottomSheet,
   EmptyState,
   ErrorBanner,
   ModalShell,
@@ -295,6 +294,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
   const [esGrupo, setEsGrupo] = useState(false);
   const [apus, setApus] = useState([]);
   const [buscarApu, setBuscarApu] = useState("");
+  const [apuSeleccionadoVinculo, setApuSeleccionadoVinculo] = useState(null);
   const [costosModalApu, setCostosModalApu] = useState({});
   const [apuResumenRubroId, setApuResumenRubroId] = useState(null);
   const [apuResumen, setApuResumen] = useState(null);
@@ -367,6 +367,31 @@ export default function Presupuestos({ initialFilter = "todos" }) {
       return a.estado !== "inactivo" && (nombre.includes(busq) || codigo.includes(busq) || categoria.includes(busq));
     });
   }, [apus, buscarApu, nodoVinculando]);
+
+  const rubrosVinculacion = useMemo(() => {
+    if (!nodoVinculando) return [];
+    return esGrupo ? (nodoVinculando.rubros || []) : [nodoVinculando];
+  }, [esGrupo, nodoVinculando]);
+
+  const resumenUnidadesVinculacion = useMemo(() => {
+    const unidades = [...new Set(rubrosVinculacion.map(r => normalizarUnidad(r.unidad)).filter(Boolean))];
+    return {
+      unidades,
+      etiqueta: unidades.length ? unidades.join(", ") : "sin unidad",
+      mezcladas: unidades.length > 1,
+    };
+  }, [rubrosVinculacion]);
+
+  const apusClasificados = useMemo(() => {
+    const resultado = { compatibles: [], incompatibles: [] };
+    apusFiltrados.forEach(apu => {
+      const validacion = validarVinculacionMasiva(rubrosVinculacion, apu);
+      const item = { apu, mensaje: validacion.mensaje || "" };
+      if (validacion.ok) resultado.compatibles.push(item);
+      else resultado.incompatibles.push(item);
+    });
+    return resultado;
+  }, [apusFiltrados, rubrosVinculacion]);
 
   // CRUD proyectos
   const crearProyecto = async () => {
@@ -500,16 +525,14 @@ export default function Presupuestos({ initialFilter = "todos" }) {
   };
 
   // Vincular APU
-  const abrirVincular = (nodo, grupo) => { setNodoVinculando(nodo); setEsGrupo(grupo); setBuscarApu(""); setError(""); setModalVincular(true); };
+  const abrirVincular = (nodo, grupo) => { setNodoVinculando(nodo); setEsGrupo(grupo); setBuscarApu(""); setApuSeleccionadoVinculo(null); setError(""); setModalVincular(true); };
 
   const vincularApu = async (apu) => {
     const rubros = esGrupo ? nodoVinculando.rubros : [nodoVinculando];
-    if (rubros.length > 1) {
-      const validacion = validarVinculacionMasiva(rubros, apu);
-      if (!validacion.ok) {
-        setError(validacion.mensaje);
-        return;
-      }
+    const validacion = validarVinculacionMasiva(rubros, apu);
+    if (!validacion.ok) {
+      setError(validacion.mensaje);
+      return;
     }
     const resultados = await Promise.all(rubros.map(r =>
       fetch(`${API}/presupuestos/nodos/${r.id}/vincular-apu`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({apu_id:apu.id}) })
@@ -930,7 +953,14 @@ export default function Presupuestos({ initialFilter = "todos" }) {
       const siguiente = new Set(prev);
       if (siguiente.has(id)) siguiente.delete(id);
       else siguiente.add(id);
-      return [...siguiente];
+      const seleccion = [...siguiente];
+      if (seleccion.length === 1) {
+        const rubro = rubrosPorId.get(seleccion[0]);
+        setApuResumenRubroId(rubro?.apu_id ? rubro.id : null);
+      } else {
+        setApuResumenRubroId(null);
+      }
+      return seleccion;
     });
   };
 
@@ -1916,60 +1946,155 @@ export default function Presupuestos({ initialFilter = "todos" }) {
         </ModalShell>
       )}
 
-      {/* Panel fijo Vincular APU */}
+      {/* Modal Vincular APU */}
       {modalVincular&&(
-        <BottomSheet
+        <ModalShell
           title="Vincular APU"
-          onClose={()=>{setModalVincular(false);setError("");}}
-          meta={
+          size="lg"
+          onClose={()=>{setModalVincular(false);setError("");setApuSeleccionadoVinculo(null);}}
+          footer={
             <>
-              {esGrupo?`Grupo: "${textoVista(nodoVinculando?.descripcion)}" (${nodoVinculando?.rubros?.length} rubros)`:`Rubro: "${textoVista(nodoVinculando?.descripcion)}"`}
-              {nodoVinculando?.unidad&&<span style={{ marginLeft:"6px", background:"#f3f4f6", padding:"1px 6px", borderRadius:"4px" }}>{nodoVinculando.unidad}</span>}
-              <span style={{ marginLeft:"8px" }}>Unidad solo referencial; no filtra resultados.</span>
+              <ActionButton onClick={()=>{setModalVincular(false);setError("");setApuSeleccionadoVinculo(null);}}>Cancelar</ActionButton>
+              <ActionButton variant="primary" onClick={()=>apuSeleccionadoVinculo&&vincularApu(apuSeleccionadoVinculo)} disabled={!apuSeleccionadoVinculo}>
+                Confirmar vinculo
+              </ActionButton>
             </>
           }
-          actions={!esGrupo&&(
-            <ActionButton variant="ghost" onClick={()=>crearApuDesdeRubro(nodoVinculando)}>
-                  Crear Nuevo
-            </ActionButton>
-          )}
-          footer={<ActionButton onClick={()=>{setModalVincular(false);setError("");}}>Cerrar panel</ActionButton>}
         >
-            <input type="text" placeholder="Buscar APU por nombre, codigo o categoria..." value={buscarApu} onChange={e=>setBuscarApu(e.target.value)}
-              style={{ border:"1px solid #d1d5db", borderRadius:"6px", padding:"7px 10px", fontSize:"13px", marginBottom:"8px" }}/>
-            <div style={{ fontSize:"11px", color:"#6b7280", marginBottom:"6px" }}>{buscarApu.trim()?`${apusFiltrados.length} coincidencia(s) no inactivas`:"Escribe para buscar APUs"}</div>
-            <div style={{ overflowY:"auto", flex:1 }}>
-              {buscarApu.trim()&&apusFiltrados.length===0&&<div style={{ textAlign:"center", padding:"24px", color:"#9ca3af", fontSize:"13px" }}>No hay APUs coincidentes no inactivos.</div>}
-              {apusFiltrados.length>0&&(
-                <table style={{ width:"100%", borderCollapse:"collapse", fontSize:"12px" }}>
-                  <thead>
-                    <tr style={{ background:"#f8fafc" }}>
-                      {["APU","Unidad","P.U. Calc.","Estado","Accion"].map((h,i)=>(
-                        <th key={h} style={{ padding:"6px 8px", textAlign:i===2?"right":i===4?"center":"left", color:"#6b7280", borderBottom:"1px solid #e5e7eb", fontSize:"11px" }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {apusFiltrados.map(a=>(
-                      <tr key={a.id} style={{ borderBottom:"1px solid #f1f5f9" }}>
-                        <td style={{ padding:"7px 8px" }}>
-                          <div style={{ fontWeight:"500" }}>{textoVista(a.nombre)}</div>
-                          <div style={{ color:"#6b7280", fontSize:"11px" }}>{a.codigo||"-"}</div>
-                        </td>
-                        <td style={{ padding:"7px 8px", color:"#374151" }}>{a.unidad||"-"}</td>
-                        <td style={{ padding:"7px 8px", textAlign:"right", fontVariantNumeric:"tabular-nums", color:"#166534", fontWeight:"600" }}>{fmtM(costosModalApu[a.id]?.precio_unitario ?? null)}</td>
-                        <td style={{ padding:"7px 8px", color:"#374151" }}>{a.estado}</td>
-                        <td style={{ padding:"7px 8px", textAlign:"center" }}>
-                          <button onClick={()=>vincularApu(a)} style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:"4px", padding:"4px 12px", fontSize:"11px", cursor:"pointer" }}>Vincular</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+          <div style={{ display:"grid", gridTemplateColumns:"280px minmax(0,1fr)", gap:"14px", minHeight:"520px" }}>
+            <aside style={{ border:"1px solid #e5e7eb", borderRadius:"8px", background:"#f8fafc", padding:"12px", display:"flex", flexDirection:"column", gap:"10px" }}>
+              <div>
+                <div style={{ fontSize:"10px", color:"#6b7280", fontWeight:"800", textTransform:"uppercase", marginBottom:"5px" }}>
+                  {esGrupo ? "Grupo seleccionado" : "Rubro seleccionado"}
+                </div>
+                <div style={{ fontSize:"14px", fontWeight:"800", color:"#111827", lineHeight:1.35 }}>
+                  {textoVista(nodoVinculando?.descripcion)}
+                </div>
+                <div style={{ marginTop:"8px", display:"flex", flexWrap:"wrap", gap:"5px", fontSize:"10px" }}>
+                  <span style={{ background:"#fff", border:"1px solid #e5e7eb", borderRadius:"999px", padding:"3px 7px", color:"#374151" }}>
+                    {rubrosVinculacion.length} rubro(s)
+                  </span>
+                  <span style={{ background:resumenUnidadesVinculacion.mezcladas?"#fef3c7":"#ecfdf5", border:"1px solid #e5e7eb", borderRadius:"999px", padding:"3px 7px", color:resumenUnidadesVinculacion.mezcladas?"#854d0e":"#166534" }}>
+                    Und: {resumenUnidadesVinculacion.etiqueta}
+                  </span>
+                </div>
+              </div>
+
+              {resumenUnidadesVinculacion.mezcladas&&(
+                <div style={{ border:"1px solid #fde68a", background:"#fffbeb", borderRadius:"8px", padding:"8px", color:"#854d0e", fontSize:"11px", lineHeight:1.45 }}>
+                  La seleccion tiene unidades mezcladas. La vinculacion masiva queda bloqueada hasta separar rubros compatibles.
+                </div>
               )}
-            </div>
-            {error&&<p style={{ color:"#dc2626", fontSize:"12px", marginTop:"8px" }}>{error}</p>}
-        </BottomSheet>
+
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"8px" }}>
+                <div style={{ background:"#fff", border:"1px solid #e5e7eb", borderRadius:"8px", padding:"8px" }}>
+                  <div style={{ fontSize:"10px", color:"#6b7280" }}>P.U. ref</div>
+                  <div style={{ fontWeight:"800", color:"#111827" }}>{fmtM(rubrosVinculacion[0]?.precio_unitario_ref ?? null)}</div>
+                </div>
+                <div style={{ background:"#fff", border:"1px solid #e5e7eb", borderRadius:"8px", padding:"8px" }}>
+                  <div style={{ fontSize:"10px", color:"#6b7280" }}>Metrado</div>
+                  <div style={{ fontWeight:"800", color:"#111827" }}>{fmtN(rubrosVinculacion.reduce((s,r)=>s+(r.metrado||0),0))}</div>
+                </div>
+              </div>
+
+              {apuSeleccionadoVinculo&&(
+                <div style={{ marginTop:"auto", border:"1px solid #bbf7d0", background:"#f0fdf4", borderRadius:"8px", padding:"10px" }}>
+                  <div style={{ fontSize:"10px", color:"#166534", fontWeight:"800", textTransform:"uppercase", marginBottom:"4px" }}>APU listo para confirmar</div>
+                  <div style={{ fontSize:"12px", fontWeight:"800", color:"#111827" }}>{textoVista(apuSeleccionadoVinculo.nombre)}</div>
+                  <div style={{ fontSize:"11px", color:"#6b7280", marginTop:"3px" }}>
+                    {apuSeleccionadoVinculo.codigo || "-"} | Und {apuSeleccionadoVinculo.unidad || "-"} | {fmtM(costosModalApu[apuSeleccionadoVinculo.id]?.precio_unitario ?? null)}
+                  </div>
+                </div>
+              )}
+
+              {!esGrupo&&(
+                <ActionButton variant="ghost" onClick={()=>crearApuDesdeRubro(nodoVinculando)}>
+                  Crear APU desde rubro
+                </ActionButton>
+              )}
+            </aside>
+
+            <section style={{ minWidth:0, display:"flex", flexDirection:"column" }}>
+              <input type="text" placeholder="Buscar APU por nombre, codigo o categoria..." value={buscarApu} onChange={e=>{setBuscarApu(e.target.value);setApuSeleccionadoVinculo(null);}}
+                style={{ border:"1px solid #d1d5db", borderRadius:"6px", padding:"8px 10px", fontSize:"13px", marginBottom:"8px" }}/>
+              <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", alignItems:"center", fontSize:"11px", color:"#6b7280", marginBottom:"8px" }}>
+                <span>{buscarApu.trim()?`${apusFiltrados.length} coincidencia(s) no inactivas`:"Escribe para buscar APUs"}</span>
+                {buscarApu.trim()&&<span style={{ color:"#166534", fontWeight:"700" }}>{apusClasificados.compatibles.length} compatibles</span>}
+                {buscarApu.trim()&&<span style={{ color:"#854d0e", fontWeight:"700" }}>{apusClasificados.incompatibles.length} incompatibles</span>}
+              </div>
+
+              <div style={{ overflowY:"auto", flex:1, display:"grid", gap:"12px", alignContent:"start" }}>
+                {buscarApu.trim()&&apusFiltrados.length===0&&<div style={{ textAlign:"center", padding:"24px", color:"#9ca3af", fontSize:"13px", border:"1px dashed #d1d5db", borderRadius:"8px" }}>No hay APUs coincidentes no inactivos.</div>}
+
+                {apusClasificados.compatibles.length>0&&(
+                  <div style={{ border:"1px solid #bbf7d0", borderRadius:"8px", overflow:"hidden" }}>
+                    <div style={{ background:"#f0fdf4", color:"#166534", fontSize:"11px", fontWeight:"800", padding:"7px 9px", borderBottom:"1px solid #bbf7d0" }}>
+                      APUs compatibles primero
+                    </div>
+                    <table style={{ width:"100%", borderCollapse:"collapse", fontSize:"12px" }}>
+                      <thead>
+                        <tr style={{ background:"#f8fafc" }}>
+                          {["APU","Unidad","P.U. Calc.","Estado","Seleccion"].map((h,i)=>(
+                            <th key={h} style={{ padding:"6px 8px", textAlign:i===2?"right":i===4?"center":"left", color:"#6b7280", borderBottom:"1px solid #e5e7eb", fontSize:"11px" }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {apusClasificados.compatibles.map(({ apu })=>(
+                          <tr key={apu.id} style={{ borderBottom:"1px solid #f1f5f9", background:apuSeleccionadoVinculo?.id===apu.id?"#ecfdf5":"#fff" }}>
+                            <td style={{ padding:"7px 8px" }}>
+                              <div style={{ fontWeight:"700" }}>{textoVista(apu.nombre)}</div>
+                              <div style={{ color:"#6b7280", fontSize:"11px" }}>{apu.codigo||"-"}</div>
+                            </td>
+                            <td style={{ padding:"7px 8px", color:"#374151" }}>{apu.unidad||"-"}</td>
+                            <td style={{ padding:"7px 8px", textAlign:"right", fontVariantNumeric:"tabular-nums", color:"#166534", fontWeight:"700" }}>{fmtM(costosModalApu[apu.id]?.precio_unitario ?? null)}</td>
+                            <td style={{ padding:"7px 8px", color:"#374151" }}>{apu.estado}</td>
+                            <td style={{ padding:"7px 8px", textAlign:"center" }}>
+                              <button onClick={()=>{setApuSeleccionadoVinculo(apu);setError("");}} style={{ background:apuSeleccionadoVinculo?.id===apu.id?"#14532d":"#16a34a", color:"#fff", border:"none", borderRadius:"4px", padding:"4px 12px", fontSize:"11px", cursor:"pointer" }}>
+                                {apuSeleccionadoVinculo?.id===apu.id?"Seleccionado":"Seleccionar"}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {apusClasificados.incompatibles.length>0&&(
+                  <div style={{ border:"1px solid #fde68a", borderRadius:"8px", overflow:"hidden" }}>
+                    <div style={{ background:"#fffbeb", color:"#854d0e", fontSize:"11px", fontWeight:"800", padding:"7px 9px", borderBottom:"1px solid #fde68a" }}>
+                      APUs incompatibles visibles
+                    </div>
+                    <table style={{ width:"100%", borderCollapse:"collapse", fontSize:"12px" }}>
+                      <thead>
+                        <tr style={{ background:"#fffaf0" }}>
+                          {["APU","Unidad","P.U. Calc.","Motivo"].map((h,i)=>(
+                            <th key={h} style={{ padding:"6px 8px", textAlign:i===2?"right":"left", color:"#854d0e", borderBottom:"1px solid #fde68a", fontSize:"11px" }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {apusClasificados.incompatibles.map(({ apu, mensaje })=>(
+                          <tr key={apu.id} style={{ borderBottom:"1px solid #fef3c7", opacity:0.86 }}>
+                            <td style={{ padding:"7px 8px" }}>
+                              <div style={{ fontWeight:"700" }}>{textoVista(apu.nombre)}</div>
+                              <div style={{ color:"#6b7280", fontSize:"11px" }}>{apu.codigo||"-"}</div>
+                            </td>
+                            <td style={{ padding:"7px 8px", color:"#374151" }}>{apu.unidad||"-"}</td>
+                            <td style={{ padding:"7px 8px", textAlign:"right", fontVariantNumeric:"tabular-nums", color:"#374151", fontWeight:"700" }}>{fmtM(costosModalApu[apu.id]?.precio_unitario ?? null)}</td>
+                            <td style={{ padding:"7px 8px", color:"#854d0e", fontSize:"11px" }}>{mensaje}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+              <ErrorBanner>{error}</ErrorBanner>
+            </section>
+          </div>
+        </ModalShell>
       )}
     </div>
   );
