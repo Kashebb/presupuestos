@@ -471,11 +471,6 @@ export default function Recursos() {
     },
   ];
 
-  const filtros = [
-    { value: "todos", label: "Todos" },
-    ...CATEGORIAS.map((categoria) => ({ value: categoria, label: ETIQUETAS[categoria] })),
-  ];
-
   const categoriasFormulario = clasificaciones.length
     ? clasificaciones.map((item) => item.categoria)
     : CATEGORIAS;
@@ -493,12 +488,12 @@ export default function Recursos() {
       <div className="mb-3">
         <MetricStrip
           items={[
-            { label: "Total recursos", value: resumen.total, detail: `${filtrados.length} visibles`, tone: "blue" },
-            { label: "Mano de obra", value: resumen.mano_de_obra, detail: "Recursos laborales", tone: "green" },
-            { label: "Materiales", value: resumen.material, detail: "Insumos directos", tone: "slate" },
-            { label: "Equipos", value: resumen.equipo, detail: "Maquinaria y herramientas", tone: "slate" },
-            { label: "Transporte", value: resumen.transporte, detail: "Movilizacion y acarreo", tone: "slate" },
-            { label: "Otros", value: resumen.otros, detail: "Categorias varias", tone: "slate" },
+            { label: "Total recursos", value: resumen.total, detail: `${filtrados.length} visibles`, tone: "blue", active: filtroCategoria === "todos", onClick: () => setFiltroCategoria("todos") },
+            { label: "Mano de obra", value: resumen.mano_de_obra, detail: "Recursos laborales", tone: "green", active: filtroCategoria === "mano_de_obra", onClick: () => setFiltroCategoria("mano_de_obra") },
+            { label: "Materiales", value: resumen.material, detail: "Insumos directos", tone: "slate", active: filtroCategoria === "material", onClick: () => setFiltroCategoria("material") },
+            { label: "Equipos", value: resumen.equipo, detail: "Maquinaria y herramientas", tone: "slate", active: filtroCategoria === "equipo", onClick: () => setFiltroCategoria("equipo") },
+            { label: "Transporte", value: resumen.transporte, detail: "Movilizacion y acarreo", tone: "slate", active: filtroCategoria === "transporte", onClick: () => setFiltroCategoria("transporte") },
+            { label: "Otros", value: resumen.otros, detail: "Categorias varias", tone: "slate", active: filtroCategoria === "otros", onClick: () => setFiltroCategoria("otros") },
           ]}
         />
       </div>
@@ -511,7 +506,6 @@ export default function Recursos() {
           onChange={(e) => setBusqueda(e.target.value)}
           className={`${fieldClass} max-w-xs`}
         />
-        <ToolbarFilter options={filtros} value={filtroCategoria} onChange={setFiltroCategoria} />
       </div>
 
       {cargando ? (

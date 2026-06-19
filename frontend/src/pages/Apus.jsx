@@ -7,7 +7,6 @@ import {
   PageHeader,
   SectionHeader,
   StatusBadge,
-  ToolbarFilter,
   fieldClass,
   labelClass,
 } from "../components/ui";
@@ -166,17 +165,6 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
     return <StatusBadge tone="green">OK</StatusBadge>;
   };
 
-  const filtros = [
-    { value: "todos", label: `Todos (${resumen.total})` },
-    { value: "revisar_costo", label: `Revisar costo (${resumen.revisar})` },
-    { value: "ok", label: `OK (${resumen.ok})` },
-    { value: "referencial", label: `Referencial (${resumen.referencial})` },
-    { value: "activo", label: "Activo" },
-    { value: "en_revision", label: "En revision" },
-    { value: "estado_revisar_costo", label: "Estado revisar costo" },
-    { value: "inactivo", label: "Inactivo" },
-  ];
-
   const columns = [
     { key: "codigo", label: "Codigo", width: "12%", render: (apu) => apu.codigo || "-" },
     {
@@ -248,11 +236,11 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
       <div className="mb-3">
         <MetricStrip
           items={[
-            { label: "Total APUs", value: resumen.total, detail: `${apusFiltrados.length} visibles`, tone: "blue" },
-            { label: "OK", value: resumen.ok, detail: "Sin alerta de costo", tone: "green" },
-            { label: "Revisar costo", value: resumen.revisar, detail: "Bloquear automatizacion", tone: resumen.revisar > 0 ? "red" : "green", onClick: () => setFiltro("revisar_costo") },
-            { label: "En revision", value: resumen.enRevision, detail: "Estado tecnico", tone: resumen.enRevision > 0 ? "amber" : "green", onClick: () => setFiltro("en_revision") },
-            { label: "Inactivos", value: resumen.inactivos, detail: "Fuera de uso", tone: "slate", onClick: () => setFiltro("inactivo") },
+            { label: "Total APUs", value: resumen.total, detail: `${apusFiltrados.length} visibles`, tone: "blue", active: filtro === "todos", onClick: () => setFiltro("todos") },
+            { label: "OK", value: resumen.ok, detail: "Sin alerta de costo", tone: "green", active: filtro === "ok", onClick: () => setFiltro("ok") },
+            { label: "Revisar costo", value: resumen.revisar, detail: "Bloquear automatizacion", tone: resumen.revisar > 0 ? "red" : "green", active: filtro === "revisar_costo", onClick: () => setFiltro("revisar_costo") },
+            { label: "En revision", value: resumen.enRevision, detail: "Estado tecnico", tone: resumen.enRevision > 0 ? "amber" : "green", active: filtro === "en_revision", onClick: () => setFiltro("en_revision") },
+            { label: "Inactivos", value: resumen.inactivos, detail: "Fuera de uso", tone: "slate", active: filtro === "inactivo", onClick: () => setFiltro("inactivo") },
           ]}
         />
       </div>
@@ -260,7 +248,6 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
       <SectionHeader
         title="Listado de APUs"
         countLabel={`${apusFiltrados.length} APU${apusFiltrados.length !== 1 ? "s" : ""} visible${apusFiltrados.length !== 1 ? "s" : ""}`}
-        filters={<ToolbarFilter options={filtros} value={filtro} onChange={setFiltro} />}
       />
 
       <div className="filter-bar">

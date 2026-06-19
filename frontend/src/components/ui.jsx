@@ -121,7 +121,7 @@ export function MetricStrip({ items }) {
             type="button"
             onClick={item.onClick}
             disabled={!interactive}
-            className={`metric-card ${tones[item.tone] || tones.slate} ${interactive ? "metric-card-interactive" : ""}`}
+            className={`metric-card ${tones[item.tone] || tones.slate} ${interactive ? "metric-card-interactive" : ""} ${item.active ? "metric-card-active" : ""}`}
           >
             <div className="metric-label">{item.label}</div>
             <div className="metric-value">{item.value}</div>
