@@ -18,10 +18,10 @@ const PERF_DEBUG = false;
 const COLORES_TIPO = {
   FASE:        { bg: "#14532d", text: "#fff", indent: 0  },
   CATEGORIA:   { bg: "#166534", text: "#fff", indent: 16 },
-  SUBCATEGORIA:{ bg: "#166534", text: "#fff", indent: 32 },
-  CAPITULO:    { bg: "#15803d", text: "#fff", indent: 48 },
-  SUBCAPITULO: { bg: "#86efac", text: "#1e3a8a", indent: 64 },
-  GRUPO:       { bg: "#bbf7d0", text: "#1e3a8a", indent: 80 },
+  SUBCATEGORIA:{ bg: "#15803d", text: "#fff", indent: 32 },
+  CAPITULO:    { bg: "#22c55e", text: "#064e3b", indent: 48 },
+  SUBCAPITULO: { bg: "#86efac", text: "#064e3b", indent: 64 },
+  GRUPO:       { bg: "#dcfce7", text: "#14532d", indent: 80 },
   RUBRO:       { bg: "#fff",    text: "#111827", indent: 96 },
 };
 
@@ -71,6 +71,44 @@ function fmtN(v) { if (v==null) return "-"; return Number(v).toLocaleString("es-
 function fmtPct(v) { if (v==null) return "-"; return Number(v).toLocaleString("es-EC",{style:"percent",minimumFractionDigits:2,maximumFractionDigits:2}); }
 function colorDif(v) { if (v == null) return "#6b7280"; if (v > 0) return "#dc2626"; if (v < 0) return "#16a34a"; return "#6b7280"; }
 function fmtDifM(v) { if (v == null) return "-"; return `${v > 0 ? "+" : ""}${fmtM(v)}`; }
+function normalizarUnidad(unidad) {
+  const u = textoVista(unidad)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace("m²", "m2")
+    .replace("m³", "m3");
+  const aliases = {
+    u: "u",
+    und: "u",
+    unidad: "u",
+    unidades: "u",
+    m: "m",
+    ml: "m",
+    m2: "m2",
+    m3: "m3",
+    kg: "kg",
+  };
+  return aliases[u] || u;
+}
+function validarVinculacionMasiva(rubros, apu) {
+  const unidadesRubros = [...new Set(rubros.map(r => normalizarUnidad(r.unidad)).filter(Boolean))];
+  const unidadApu = normalizarUnidad(apu?.unidad);
+  if (unidadesRubros.length > 1) {
+    return { ok: false, mensaje: `No se puede vincular: los rubros seleccionados tienen unidades distintas (${unidadesRubros.join(", ")}).` };
+  }
+  if (!unidadesRubros.length) {
+    return { ok: false, mensaje: "No se puede vincular: los rubros seleccionados no tienen unidad definida." };
+  }
+  if (!unidadApu) {
+    return { ok: false, mensaje: "No se puede vincular: el APU seleccionado no tiene unidad definida." };
+  }
+  if (unidadesRubros[0] !== unidadApu) {
+    return { ok: false, mensaje: `No se puede vincular: unidad del rubro ${unidadesRubros[0]} y unidad del APU ${unidadApu} no coinciden.` };
+  }
+  return { ok: true };
+}
 function startPerf() {
   if (!PERF_DEBUG) return null;
   return performance.now();
@@ -459,6 +497,13 @@ export default function Presupuestos({ initialFilter = "todos" }) {
 
   const vincularApu = async (apu) => {
     const rubros = esGrupo ? nodoVinculando.rubros : [nodoVinculando];
+    if (rubros.length > 1) {
+      const validacion = validarVinculacionMasiva(rubros, apu);
+      if (!validacion.ok) {
+        setError(validacion.mensaje);
+        return;
+      }
+    }
     const resultados = await Promise.all(rubros.map(r =>
       fetch(`${API}/presupuestos/nodos/${r.id}/vincular-apu`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({apu_id:apu.id}) })
     ));
@@ -822,10 +867,9 @@ export default function Presupuestos({ initialFilter = "todos" }) {
   }, [unicoRubroSeleccionado, rubrosSeleccionadosDatos.length, apuResumenRubroId, rubrosPorId]);
   const metricasResumenApu = rubroResumenApu ? rubroMetricas(rubroResumenApu) : null;
   const puedeVincularSeleccion = Boolean(unicoRubroSeleccionado);
-  const puedeCrearApuSeleccion = Boolean(unicoRubroSeleccionado);
+  const puedeCrearApuSeleccion = Boolean(unicoRubroSeleccionado && !unicoRubroSeleccionado.apu_id);
   const puedeVerApuSeleccion = Boolean(unicoRubroSeleccionado?.apu_id);
   const puedeDesvincularSeleccion = rubrosSeleccionadosDatos.some(r => r.apu_id);
-  const puedeMarcarSinApuSeleccion = rubrosSeleccionadosDatos.length > 0;
   const puedeQuitarSinApuSeleccion = rubrosSeleccionadosDatos.some(r => r.observaciones === "SIN_APU");
   const textoSeleccion = rubrosSeleccionadosDatos.length === 1
     ? "1 rubro seleccionado"
@@ -1081,20 +1125,25 @@ export default function Presupuestos({ initialFilter = "todos" }) {
 
       {/* Stats bar */}
       {nodosPlanos.length>0&&(
-        <div style={{ background:"#f8fafc", borderBottom:"1px solid #e5e7eb", padding:"6px 20px", display:"flex", gap:"16px", fontSize:"11px", color:"#6b7280", flexShrink:0, flexWrap:"wrap" }}>
-          <span>Rubros: <strong style={{ color:"#111827" }}>{rubros.length}</strong></span>
-          <span style={{ color:"#16a34a" }}>OK {resumenEstados.vinculados} vinculados</span>
-          <span style={{ color:"#ca8a04" }}>Pend. {resumenEstados.pendientes} pendientes</span>
-          <span style={{ color:"#dc2626" }}>X {resumenEstados.sinApu} sin APU</span>
-          {resumenEstados.obsoletos>0&&<span style={{ color:"#6b7280" }}>Obsoletos {resumenEstados.obsoletos}</span>}
-          <span style={{ marginLeft:"auto", fontWeight:"600", color:"#111827" }}>
-            Ref total: {fmtM(totalRef)}
-            {" | "}Meta parcial: <span style={{ color:"#166534" }}>{metricasConMeta.length ? fmtM(totalMeta) : "-"}</span>
-            {" | "}Ref comparable: <span>{fmtM(refComparable)}</span>
-            {" | "}Meta comparable: <span style={{ color:"#166534" }}>{fmtM(metaComparable)}</span>
-            {" | "}Dif comparable: <span style={{ color:colorDif(difComparable) }}>{fmtDifM(difComparable)}</span>
-            {" | "}Dif %: <span style={{ color:colorDif(difComparable) }}>{fmtPct(difComparablePct)}</span>
-          </span>
+        <div style={{ background:"#f8fafc", borderBottom:"1px solid #e5e7eb", padding:"7px 20px", display:"flex", gap:"14px", fontSize:"11px", color:"#6b7280", flexShrink:0, flexWrap:"wrap", alignItems:"center" }}>
+          <div style={{ display:"flex", gap:"12px", flexWrap:"wrap", alignItems:"center" }}>
+            <span>Rubros: <strong style={{ color:"#111827" }}>{rubros.length}</strong></span>
+            <span style={{ color:"#16a34a" }}>OK {resumenEstados.vinculados} vinculados</span>
+            <span style={{ color:"#ca8a04" }}>Pend. {resumenEstados.pendientes} pendientes</span>
+            <span style={{ color:"#dc2626" }}>X {resumenEstados.sinApu} sin APU</span>
+            {resumenEstados.obsoletos>0&&<span style={{ color:"#6b7280" }}>Obsoletos {resumenEstados.obsoletos}</span>}
+          </div>
+          <div style={{ marginLeft:"auto", display:"flex", gap:"8px", flexWrap:"wrap", justifyContent:"flex-end", alignItems:"center" }}>
+            <span style={{ border:"1px solid #e5e7eb", background:"#fff", borderRadius:"6px", padding:"3px 8px", fontWeight:"700", color:colorDif(difComparable) }}>
+              Dif comparable: {fmtDifM(difComparable)} ({fmtPct(difComparablePct)})
+            </span>
+            <span style={{ color:"#374151", fontWeight:"600" }}>
+              Ref comparable: {fmtM(refComparable)} | Meta comparable: <span style={{ color:"#166534" }}>{fmtM(metaComparable)}</span>
+            </span>
+            <span style={{ color:"#6b7280" }}>
+              Ref total: {fmtM(totalRef)} | Meta parcial: <span style={{ color:"#166534" }}>{metricasConMeta.length ? fmtM(totalMeta) : "-"}</span>
+            </span>
+          </div>
         </div>
       )}
 
@@ -1176,54 +1225,92 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                 {nodoSeleccionado
                   ? <><span style={{ fontSize:"11px", color:"#6b7280" }}>Mostrando:</span><span style={{ fontSize:"11px", fontWeight:"500" }}>{textoVista(nodoSeleccionado.descripcion)}</span><span style={{ fontSize:"10px", color:"#9ca3af" }}>({rubrosSeccion.length} rubros)</span></>
                   : <span style={{ fontSize:"11px", color:"#6b7280" }}>Presupuesto completo</span>}
-                <div style={{ display:"flex", gap:"3px", flexWrap:"wrap" }}>
-                  {[
-                    ["presupuesto","Presupuesto"],
-                    ["meta","Meta"],
-                    ["unitarios","Unitarios"],
-                    ["totales","Totales"],
-                    ["diferencias","Diferencias"],
-                    ["desglose","Desglose"],
-                  ].map(([key,label])=>(
-                    <button key={key} onClick={()=>setVistaColumnas(key)}
-                      style={{ fontSize:"10px", padding:"2px 7px", border:"1px solid", borderColor:vistaColumnas===key?"#166534":"#d1d5db", borderRadius:"999px", background:vistaColumnas===key?"#166534":"#fff", color:vistaColumnas===key?"#fff":"#374151", cursor:"pointer" }}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
+                <label style={{ display:"flex", alignItems:"center", gap:"4px", fontSize:"10px", color:"#6b7280" }}>
+                  Vista:
+                  <select value={vistaColumnas} onChange={e=>setVistaColumnas(e.target.value)}
+                    style={{ fontSize:"10px", padding:"3px 22px 3px 7px", border:"1px solid #d1d5db", borderRadius:"6px", background:"#fff", color:"#374151", cursor:"pointer" }}>
+                    {[
+                      ["presupuesto","Presupuesto"],
+                      ["meta","Meta"],
+                      ["unitarios","Unitarios"],
+                      ["totales","Totales"],
+                      ["diferencias","Diferencias"],
+                      ["desglose","Desglose"],
+                    ].map(([key,label])=><option key={key} value={key}>{label}</option>)}
+                  </select>
+                </label>
                 <div style={{ display:"flex", gap:"4px", alignItems:"center", flexWrap:"wrap", marginLeft:"8px" }}>
                   <span style={{ fontSize:"10px", color:rubrosSeleccionadosDatos.length?"#166534":"#6b7280", background:rubrosSeleccionadosDatos.length?"#f0fdf4":"#f8fafc", border:"1px solid #e5e7eb", borderRadius:"999px", padding:"2px 8px", whiteSpace:"nowrap" }}>
-                    {rubrosSeleccionadosDatos.length ? textoSeleccion : "Selecciona un rubro"}
+                    {rubrosSeleccionadosDatos.length ? textoSeleccion : "Selecciona uno o varios rubros para operar"}
                     {rubrosSeleccionadosDatos.length > 0 && rubrosSeleccionadosVisibles !== rubrosSeleccionadosDatos.length ? `, ${rubrosSeleccionadosVisibles} visible(s)` : ""}
                   </span>
-                  <button onClick={vincularSeleccion} disabled={!puedeVincularSeleccion} title="Vincular un APU al rubro seleccionado"
-                    style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #166534", borderRadius:"5px", background:puedeVincularSeleccion?"#166534":"#f3f4f6", color:puedeVincularSeleccion?"#fff":"#9ca3af", cursor:puedeVincularSeleccion?"pointer":"not-allowed" }}>
-                    Vincular
-                  </button>
-                  <button onClick={verApuSeleccion} disabled={!puedeVerApuSeleccion} title="Mostrar resumen del APU vinculado"
-                    style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #bbf7d0", borderRadius:"5px", background:puedeVerApuSeleccion?"#f0fdf4":"#f3f4f6", color:puedeVerApuSeleccion?"#166534":"#9ca3af", cursor:puedeVerApuSeleccion?"pointer":"not-allowed" }}>
-                    Ver APU
-                  </button>
-                  <button onClick={crearApuSeleccion} disabled={!puedeCrearApuSeleccion} title="Crear un nuevo APU desde el rubro seleccionado"
-                    style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #86efac", borderRadius:"5px", background:puedeCrearApuSeleccion?"#f0fdf4":"#f3f4f6", color:puedeCrearApuSeleccion?"#166534":"#9ca3af", cursor:puedeCrearApuSeleccion?"pointer":"not-allowed" }}>
-                    Crear APU
-                  </button>
-                  <button onClick={desvincularSeleccion} disabled={!puedeDesvincularSeleccion} title="Quitar el APU vinculado de los rubros seleccionados"
-                    style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #fecaca", borderRadius:"5px", background:puedeDesvincularSeleccion?"#fff":"#f3f4f6", color:puedeDesvincularSeleccion?"#dc2626":"#9ca3af", cursor:puedeDesvincularSeleccion?"pointer":"not-allowed" }}>
-                    Desvincular
-                  </button>
-                  <button onClick={marcarSinApuSeleccion} disabled={!puedeMarcarSinApuSeleccion} title="Marcar los rubros seleccionados como Sin APU"
-                    style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #d1d5db", borderRadius:"5px", background:puedeMarcarSinApuSeleccion?"#fff":"#f3f4f6", color:puedeMarcarSinApuSeleccion?"#374151":"#9ca3af", cursor:puedeMarcarSinApuSeleccion?"pointer":"not-allowed" }}>
-                    Sin APU
-                  </button>
-                  <button onClick={quitarSinApuSeleccion} disabled={!puedeQuitarSinApuSeleccion} title="Quitar la marca Sin APU y devolver a Pendiente"
-                    style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #fde68a", borderRadius:"5px", background:puedeQuitarSinApuSeleccion?"#fffbeb":"#f3f4f6", color:puedeQuitarSinApuSeleccion?"#854d0e":"#9ca3af", cursor:puedeQuitarSinApuSeleccion?"pointer":"not-allowed" }}>
-                    Quitar Sin APU
-                  </button>
-                  <button onClick={limpiarSeleccion} disabled={!rubrosSeleccionadosDatos.length} title="Limpiar seleccion actual"
-                    style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #d1d5db", borderRadius:"5px", background:"#fff", color:rubrosSeleccionadosDatos.length?"#374151":"#9ca3af", cursor:rubrosSeleccionadosDatos.length?"pointer":"not-allowed" }}>
-                    Limpiar
-                  </button>
+                  {unicoRubroSeleccionado&&(
+                    <>
+                      <button onClick={vincularSeleccion} disabled={!puedeVincularSeleccion} title="Vincular o cambiar el APU del rubro seleccionado"
+                        style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #166534", borderRadius:"5px", background:"#166534", color:"#fff", cursor:"pointer" }}>
+                        Vincular APU
+                      </button>
+                      {puedeVerApuSeleccion&&(
+                        <button onClick={verApuSeleccion} title="Mostrar resumen del APU vinculado"
+                          style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #bbf7d0", borderRadius:"5px", background:"#f0fdf4", color:"#166534", cursor:"pointer" }}>
+                          Ver APU
+                        </button>
+                      )}
+                      {puedeCrearApuSeleccion&&(
+                        <button onClick={crearApuSeleccion} title="Crear un nuevo APU desde el rubro seleccionado"
+                          style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #86efac", borderRadius:"5px", background:"#f0fdf4", color:"#166534", cursor:"pointer" }}>
+                          Crear APU
+                        </button>
+                      )}
+                    </>
+                  )}
+                  {rubrosSeleccionadosDatos.length > 1&&(
+                    <>
+                      <button onClick={marcarSinApuSeleccion} title="Marcar los rubros seleccionados como Sin APU"
+                        style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #d1d5db", borderRadius:"5px", background:"#fff", color:"#374151", cursor:"pointer" }}>
+                        Marcar Sin APU
+                      </button>
+                      {puedeQuitarSinApuSeleccion&&(
+                        <button onClick={quitarSinApuSeleccion} title="Quitar la marca Sin APU y devolver a Pendiente"
+                          style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #fde68a", borderRadius:"5px", background:"#fffbeb", color:"#854d0e", cursor:"pointer" }}>
+                          Quitar Sin APU
+                        </button>
+                      )}
+                    </>
+                  )}
+                  {rubrosSeleccionadosDatos.length > 0&&(
+                    <details style={{ position:"relative" }}>
+                      <summary style={{ listStyle:"none", fontSize:"10px", padding:"3px 8px", border:"1px solid #d1d5db", borderRadius:"5px", background:"#fff", color:"#374151", cursor:"pointer" }}>
+                        Mas acciones
+                      </summary>
+                      <div style={{ position:"absolute", top:"24px", right:0, zIndex:5, minWidth:"150px", background:"#fff", border:"1px solid #e5e7eb", borderRadius:"6px", boxShadow:"0 8px 18px rgba(15,23,42,0.12)", padding:"4px", display:"grid", gap:"3px" }}>
+                        {puedeDesvincularSeleccion&&(
+                          <button onClick={desvincularSeleccion} title="Quitar el APU vinculado de los rubros seleccionados"
+                            style={{ fontSize:"10px", padding:"5px 7px", textAlign:"left", border:"none", borderRadius:"4px", background:"#fff", color:"#dc2626", cursor:"pointer" }}>
+                            Desvincular
+                          </button>
+                        )}
+                        {rubrosSeleccionadosDatos.length === 1&&(
+                          <>
+                            <button onClick={marcarSinApuSeleccion} title="Marcar el rubro seleccionado como Sin APU"
+                              style={{ fontSize:"10px", padding:"5px 7px", textAlign:"left", border:"none", borderRadius:"4px", background:"#fff", color:"#374151", cursor:"pointer" }}>
+                              Marcar Sin APU
+                            </button>
+                            {puedeQuitarSinApuSeleccion&&(
+                              <button onClick={quitarSinApuSeleccion} title="Quitar la marca Sin APU y devolver a Pendiente"
+                                style={{ fontSize:"10px", padding:"5px 7px", textAlign:"left", border:"none", borderRadius:"4px", background:"#fff", color:"#854d0e", cursor:"pointer" }}>
+                                Quitar Sin APU
+                              </button>
+                            )}
+                          </>
+                        )}
+                        <button onClick={limpiarSeleccion} title="Limpiar seleccion actual"
+                          style={{ fontSize:"10px", padding:"5px 7px", textAlign:"left", border:"none", borderRadius:"4px", background:"#fff", color:"#374151", cursor:"pointer" }}>
+                          Limpiar seleccion
+                        </button>
+                      </div>
+                    </details>
+                  )}
                 </div>
                 <div style={{ marginLeft:"auto", display:"flex", gap:"4px", alignItems:"center" }}>
                   <input type="text" placeholder="Buscar rubro..." value={buscarRubro} onChange={e=>setBuscarRubro(e.target.value)}
