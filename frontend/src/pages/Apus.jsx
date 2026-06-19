@@ -236,20 +236,21 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
     {
       key: "unidad",
       label: "Unidad",
+      align: "center",
       width: "10%",
       render: (apu) => (
         editandoRapidoId === apu.id ? (
           <input
             value={formRapido.unidad}
             onChange={(e) => setFormRapido({ ...formRapido, unidad: e.target.value })}
-            className={fieldClass}
+            className={`${fieldClass} text-center`}
           />
         ) : apu.unidad
       ),
     },
-    { key: "precio", label: "PU Calc.", align: "right", width: "10%", render: (apu) => fmtPrecio(costos[apu.id]?.precio_unitario) },
-    { key: "control", label: "Control", width: "12%", render: (apu) => controlBadge(apu) },
-    { key: "estado", label: "Estado", width: "12%", render: (apu) => <StatusBadge tone={estadoTone(apu.estado)}>{apu.estado}</StatusBadge> },
+    { key: "precio", label: "PU Calc.", align: "center", width: "10%", render: (apu) => fmtPrecio(costos[apu.id]?.precio_unitario) },
+    { key: "control", label: "Control", align: "center", width: "12%", render: (apu) => controlBadge(apu) },
+    { key: "estado", label: "Estado", align: "center", width: "12%", render: (apu) => <StatusBadge tone={estadoTone(apu.estado)}>{apu.estado}</StatusBadge> },
     {
       key: "acciones",
       label: "Acciones",

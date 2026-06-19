@@ -710,6 +710,7 @@ textarea {
 .resource-price-display {
   display: inline-block;
   min-width: 72px;
+  text-align: center;
   color: #17211a;
   font-variant-numeric: tabular-nums;
   font-weight: 700;

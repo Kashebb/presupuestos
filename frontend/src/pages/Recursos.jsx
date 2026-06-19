@@ -404,10 +404,11 @@ export default function Recursos() {
     {
       key: "unidad",
       label: "Unidad",
+      align: "center",
       width: "9%",
       render: (recurso) => edicionFila[recurso.id] ? (
         <input
-          className={`${fieldClass} max-w-24`}
+          className={`${fieldClass} mx-auto max-w-24 text-center`}
           value={edicionFila[recurso.id].unidad}
           onChange={(e) => setEdicionFila((prev) => ({ ...prev, [recurso.id]: { ...prev[recurso.id], unidad: e.target.value } }))}
         />
@@ -416,7 +417,7 @@ export default function Recursos() {
     {
       key: "precio_unitario",
       label: "Precio",
-      align: "right",
+      align: "center",
       width: "14%",
       render: (recurso) => {
         if (!edicionFila[recurso.id]) {
@@ -429,7 +430,7 @@ export default function Recursos() {
             inputMode="decimal"
             value={edicionFila[recurso.id].precio_unitario}
             onChange={(e) => setEdicionFila((prev) => ({ ...prev, [recurso.id]: { ...prev[recurso.id], precio_unitario: e.target.value } }))}
-            className={`${fieldClass} ml-auto max-w-28 text-right tabular-nums`}
+            className={`${fieldClass} mx-auto max-w-28 text-center tabular-nums`}
           />
         );
       },
