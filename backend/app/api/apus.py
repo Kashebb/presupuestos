@@ -107,6 +107,10 @@ def listar_costos_apus(
         for apu in apus
     ]
 
+@router.get("/siguiente-codigo")
+def obtener_siguiente_codigo_apu(db: Session = Depends(get_db)):
+    return {"codigo": siguiente_codigo_apu(db)}
+
 @router.get("/{apu_id}", response_model=APUOut)
 def obtener_apu(apu_id: int, db: Session = Depends(get_db)):
     apu = db.query(APU).options(joinedload(APU.items)).filter(APU.id == apu_id).first()

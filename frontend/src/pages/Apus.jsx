@@ -3,7 +3,11 @@ import {
   ActionButton,
   CategoryStrip,
   DataTable,
+  ErrorBanner,
   MetricStrip,
+  ModalCodeHeader,
+  ModalFormFull,
+  ModalFormGrid,
   ModalShell,
   PageHeader,
   SectionHeader,
@@ -47,6 +51,7 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
   const [buscar, setBuscar] = useState("");
   const [modalAbierto, setModalAbierto] = useState(false);
   const [form, setForm] = useState(modalBase);
+  const [cargandoCodigo, setCargandoCodigo] = useState(false);
   const [editandoRapidoId, setEditandoRapidoId] = useState(null);
   const [formRapido, setFormRapido] = useState({ nombre: "", unidad: "" });
   const [error, setError] = useState("");
@@ -111,10 +116,24 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
     };
   }, [apus, controlApu]);
 
+  const generarCodigoApu = useCallback(async () => {
+    setCargandoCodigo(true);
+    const res = await fetch(`${API}/apus/siguiente-codigo`);
+    setCargandoCodigo(false);
+    if (!res.ok) {
+      setForm((prev) => ({ ...prev, codigo: "" }));
+      setError("No se pudo generar el codigo automatico del APU.");
+      return;
+    }
+    const data = await res.json();
+    setForm((prev) => ({ ...prev, codigo: data.codigo || "" }));
+  }, []);
+
   const abrirNuevo = () => {
     setForm(modalBase);
     setError("");
     setModalAbierto(true);
+    generarCodigoApu();
   };
 
   const abrirEditarRapido = (apu) => {
@@ -123,6 +142,10 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
   };
 
   const guardar = async () => {
+    if (!form.codigo.trim()) {
+      setError("No hay codigo automatico disponible para este APU.");
+      return;
+    }
     if (!form.nombre.trim()) {
       setError("El nombre es obligatorio.");
       return;
@@ -277,7 +300,8 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
 
       {modalAbierto && (
         <ModalShell
-          title="Nuevo APU"
+          title=""
+          size="form"
           footer={
             <>
               <ActionButton onClick={() => setModalAbierto(false)}>Cancelar</ActionButton>
@@ -285,18 +309,16 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
             </>
           }
         >
-          <div className="grid grid-cols-2 gap-3 text-xs">
+          <ModalCodeHeader title="Nuevo APU" code={form.codigo} loading={cargandoCodigo} />
+
+          <ModalFormGrid>
             <div>
-              <label className={labelClass}>Codigo</label>
-              <input value={form.codigo} onChange={(e) => setForm({ ...form, codigo: e.target.value })} className={fieldClass} placeholder="Ej: APU-001" />
+              <label className={labelClass}>Nombre *</label>
+              <input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} className={fieldClass} placeholder="Descripcion del rubro" />
             </div>
             <div>
               <label className={labelClass}>Unidad *</label>
               <input value={form.unidad} onChange={(e) => setForm({ ...form, unidad: e.target.value })} className={fieldClass} placeholder="m3, m2, kg..." />
-            </div>
-            <div className="col-span-2">
-              <label className={labelClass}>Nombre *</label>
-              <input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} className={fieldClass} placeholder="Descripcion del rubro" />
             </div>
             <div>
               <label className={labelClass}>Rendimiento (h/unidad)</label>
@@ -319,12 +341,14 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
               <label className={labelClass}>Subcategoria</label>
               <input value={form.subcategoria} onChange={(e) => setForm({ ...form, subcategoria: e.target.value })} className={fieldClass} />
             </div>
-            <div className="col-span-2">
+            <ModalFormFull>
               <label className={labelClass}>Observacion</label>
               <textarea value={form.observacion} onChange={(e) => setForm({ ...form, observacion: e.target.value })} className={fieldClass} rows={2} />
-            </div>
+            </ModalFormFull>
+          </ModalFormGrid>
+          <div className="mt-3">
+            <ErrorBanner>{error}</ErrorBanner>
           </div>
-          {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
         </ModalShell>
       )}
     </div>

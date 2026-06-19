@@ -83,6 +83,29 @@ export function ErrorBanner({ children }) {
   return <div className="error-banner">{children}</div>;
 }
 
+export function ModalCodeHeader({ title, code, loading = false, placeholder = "Pendiente" }) {
+  return (
+    <div className="modal-code-title-row">
+      <h2>{title}</h2>
+      <input
+        className="code-display"
+        value={loading ? "Generando..." : code}
+        readOnly
+        placeholder={placeholder}
+        aria-label="Codigo automatico"
+      />
+    </div>
+  );
+}
+
+export function ModalFormGrid({ children }) {
+  return <div className="modal-form-grid">{children}</div>;
+}
+
+export function ModalFormFull({ children }) {
+  return <div className="modal-form-full">{children}</div>;
+}
+
 export function StatusBadge({ children, tone = "slate" }) {
   const tones = {
     slate: "status-slate",
@@ -222,6 +245,7 @@ export function ModalShell({ title, children, footer, size = "md" }) {
   const sizes = {
     sm: "modal-shell-sm",
     md: "",
+    form: "modal-shell-form",
     lg: "modal-shell-lg",
   };
 

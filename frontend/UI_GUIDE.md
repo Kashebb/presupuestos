@@ -71,6 +71,9 @@ Evitar bloques pegados sin margen. Si dos controles tienen funciones distintas, 
 | `LoadingState` | Estado de carga |
 | `ErrorBanner` | Errores visibles |
 | `ModalShell` | Modales centrados |
+| `ModalCodeHeader` | Encabezado de modal con titulo y codigo automatico |
+| `ModalFormGrid` | Grilla formal de dos columnas para formularios de modal |
+| `ModalFormFull` | Campo que ocupa todo el ancho dentro de `ModalFormGrid` |
 | `BottomSheet` | Panel inferior temporal |
 
 ## Reglas Por Patron
@@ -118,8 +121,19 @@ Usar:
 - `fieldClass` para inputs, selects y textareas
 - `labelClass` para etiquetas
 - `.form-stack` para formularios verticales
+- `ModalShell size="form"` para modales de captura con varios campos
+- `ModalFormGrid` para formularios de dos columnas dentro de modales
+- `ModalFormFull` para campos que deben ocupar todo el ancho
 
 Los errores deben ir en `ErrorBanner` o texto corto debajo del campo si aplica solo a una fila.
+
+Regla de alineacion para modales de formulario:
+
+- Todas las filas de dos campos deben usar la misma grilla.
+- Las dos columnas deben tener el mismo ancho salvo que haya una razon funcional fuerte.
+- El gap entre columnas debe ser unico y consistente.
+- Los bordes izquierdo y derecho de los campos deben quedar alineados.
+- No mezclar `grid-cols-*`, clases puntuales y estilos inline dentro del mismo formulario.
 
 ### Modales
 
@@ -129,6 +143,7 @@ Tamanos:
 
 - `sm`: formularios pequenos
 - `md`: formulario normal
+- `form`: formularios de captura con codigo automatico o varias filas
 - `lg`: previews, importaciones o contenido ancho
 
 No escribir manualmente `modal-overlay` y `modal-shell` dentro de una pagina.

@@ -4,6 +4,9 @@ import {
   DataTable,
   EmptyState,
   MetricStrip,
+  ModalCodeHeader,
+  ModalFormFull,
+  ModalFormGrid,
   ModalShell,
   PageHeader,
   SectionHeader,
@@ -536,6 +539,7 @@ export default function Recursos() {
       {modal && (
         <ModalShell
           title=""
+          size="form"
           footer={
             <>
               <ActionButton onClick={() => setModal(false)}>Cancelar</ActionButton>
@@ -545,17 +549,14 @@ export default function Recursos() {
             </>
           }
         >
-          <div className="resource-modal-title-row">
-            <h2>{modoModal === "duplicar" ? "Duplicar recurso" : "Nuevo recurso"}</h2>
-            <input className="resource-code-display" value={form.codigo} readOnly placeholder="Pendiente" aria-label="Codigo automatico" />
-          </div>
+          <ModalCodeHeader title={modoModal === "duplicar" ? "Duplicar recurso" : "Nuevo recurso"} code={form.codigo} />
 
-          <div>
-            <label className={labelClass}>Nombre *</label>
-            <input className={fieldClass} value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} placeholder="Nombre del recurso" />
-          </div>
+          <ModalFormGrid>
+            <ModalFormFull>
+              <label className={labelClass}>Nombre *</label>
+              <input className={fieldClass} value={form.descripcion} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} placeholder="Nombre del recurso" />
+            </ModalFormFull>
 
-          <div className="resource-classification-grid">
             <div>
               <label className={labelClass}>Categoria *</label>
               <select
@@ -584,7 +585,7 @@ export default function Recursos() {
               </select>
             </div>
 
-            <div>
+            <ModalFormFull>
               <label className={labelClass}>Familia</label>
               <select
                 className={fieldClass}
@@ -594,14 +595,18 @@ export default function Recursos() {
                 <option value="">Sin familia</option>
                 {familiasFormulario.map((familia) => <option key={familia} value={familia}>{familia}</option>)}
               </select>
+            </ModalFormFull>
+
+            <div>
+              <label className={labelClass}>Unidad *</label>
+              <input className={fieldClass} value={form.unidad} onChange={(e) => setForm({ ...form, unidad: e.target.value })} placeholder="Ej: m3, kg, gl, u" />
             </div>
-          </div>
 
-          <label className={`${labelClass} mt-3`}>Unidad *</label>
-          <input className={fieldClass} value={form.unidad} onChange={(e) => setForm({ ...form, unidad: e.target.value })} placeholder="Ej: m3, kg, gl, u" />
-
-          <label className={`${labelClass} mt-3`}>Precio unitario *</label>
-          <input className={fieldClass} type="text" inputMode="decimal" value={form.precio_unitario} onChange={(e) => setForm({ ...form, precio_unitario: e.target.value })} placeholder="0.00" />
+            <div>
+              <label className={labelClass}>Precio unitario *</label>
+              <input className={fieldClass} type="text" inputMode="decimal" value={form.precio_unitario} onChange={(e) => setForm({ ...form, precio_unitario: e.target.value })} placeholder="0.00" />
+            </div>
+          </ModalFormGrid>
 
           {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
         </ModalShell>
