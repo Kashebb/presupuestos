@@ -952,6 +952,27 @@ export default function Presupuestos({ initialFilter = "todos" }) {
     setApuResumenRubroId(unicoRubroSeleccionado.id);
   };
 
+  const cambiarApuResumen = () => {
+    if (!rubroResumenApu) return;
+    setRubrosSeleccionados([rubroResumenApu.id]);
+    abrirVincular(rubroResumenApu, false);
+  };
+
+  const desvincularApuResumen = async () => {
+    if (!rubroResumenApu?.apu_id) return;
+    if (!confirm("Desvincular el APU de este rubro?")) return;
+    registrarAccion({ tipo:"desvincular", nodoId:rubroResumenApu.id, apuId:rubroResumenApu.apu_id });
+    const resultado = await fetch(`${API}/presupuestos/nodos/${rubroResumenApu.id}/desvincular-apu`, { method:"PATCH" });
+    if (!resultado.ok) {
+      setError("No se pudo desvincular el APU del rubro seleccionado.");
+      return;
+    }
+    setApuResumenRubroId(null);
+    setApuResumen(null);
+    mostrarExito("APU desvinculado");
+    cargarNodos(proyectoActual);
+  };
+
   const desvincularSeleccion = async () => {
     const conApu = rubrosSeleccionadosDatos.filter(r => r.apu_id);
     if (!conApu.length) {
@@ -1399,11 +1420,11 @@ export default function Presupuestos({ initialFilter = "todos" }) {
               </div>
             </div>
             {rubroResumenApu&&(
-              <aside style={{ width:"300px", borderLeft:"1px solid #e5e7eb", background:"#f8fafc", display:"flex", flexDirection:"column", flexShrink:0 }}>
+              <aside style={{ width:"320px", borderLeft:"1px solid #e5e7eb", background:"#f8fafc", display:"flex", flexDirection:"column", flexShrink:0 }}>
                 <div style={{ padding:"10px 12px", borderBottom:"1px solid #e5e7eb", background:"#fff", display:"flex", alignItems:"center", justifyContent:"space-between", gap:"8px" }}>
                   <div>
-                    <div style={{ fontSize:"11px", color:"#166534", fontWeight:"700", textTransform:"uppercase" }}>Ver APU</div>
-                    <div style={{ fontSize:"10px", color:"#6b7280" }}>Resumen del vinculo seleccionado</div>
+                    <div style={{ fontSize:"11px", color:"#166534", fontWeight:"700", textTransform:"uppercase" }}>Panel APU</div>
+                    <div style={{ fontSize:"10px", color:"#6b7280" }}>Rubro, vinculo y comparacion</div>
                   </div>
                   <button onClick={limpiarSeleccion}
                     style={{ border:"1px solid #d1d5db", background:"#fff", color:"#374151", borderRadius:"5px", fontSize:"10px", padding:"3px 7px", cursor:"pointer" }}>
@@ -1412,20 +1433,11 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                 </div>
                 <div style={{ padding:"12px", overflowY:"auto", flex:1 }}>
                   <div style={{ background:"#fff", border:"1px solid #e5e7eb", borderRadius:"8px", padding:"10px", marginBottom:"10px" }}>
-                    <div style={{ fontSize:"13px", fontWeight:"700", color:"#111827", lineHeight:1.3, marginBottom:"4px" }}>
-                      {textoVista(apuResumen?.nombre || rubroResumenApu.descripcion)}
+                    <div style={{ fontSize:"10px", color:"#6b7280", fontWeight:"700", textTransform:"uppercase", marginBottom:"6px" }}>Rubro seleccionado</div>
+                    <div style={{ fontSize:"13px", fontWeight:"700", color:"#111827", lineHeight:1.35 }}>
+                      {textoVista(rubroResumenApu.descripcion)}
                     </div>
-                    <div style={{ display:"flex", gap:"6px", flexWrap:"wrap", fontSize:"10px", color:"#6b7280" }}>
-                      <span style={{ background:"#f3f4f6", border:"1px solid #e5e7eb", borderRadius:"4px", padding:"2px 6px" }}>{apuResumen?.codigo || `APU #${rubroResumenApu.apu_id}`}</span>
-                      <span style={{ background:"#f3f4f6", border:"1px solid #e5e7eb", borderRadius:"4px", padding:"2px 6px" }}>{apuResumen?.unidad || rubroResumenApu.unidad || "-"}</span>
-                      <span style={{ background:"#f3f4f6", border:"1px solid #e5e7eb", borderRadius:"4px", padding:"2px 6px" }}>{apuResumen?.estado || "cargando"}</span>
-                    </div>
-                  </div>
-
-                  <div style={{ background:"#fff", border:"1px solid #e5e7eb", borderRadius:"8px", padding:"10px", marginBottom:"10px" }}>
-                    <div style={{ fontSize:"10px", color:"#6b7280", fontWeight:"700", textTransform:"uppercase", marginBottom:"6px" }}>Rubro vinculado</div>
-                    <div style={{ fontSize:"12px", color:"#111827", lineHeight:1.35 }}>{textoVista(rubroResumenApu.descripcion)}</div>
-                    <div style={{ marginTop:"6px", display:"grid", gridTemplateColumns:"1fr 1fr", gap:"6px", fontSize:"11px", color:"#6b7280" }}>
+                    <div style={{ marginTop:"8px", display:"grid", gridTemplateColumns:"1fr 1fr", gap:"6px", fontSize:"11px", color:"#6b7280" }}>
                       <div>Und: <strong style={{ color:"#111827" }}>{rubroResumenApu.unidad || "-"}</strong></div>
                       <div>Metrado: <strong style={{ color:"#111827" }}>{fmtN(rubroResumenApu.metrado)}</strong></div>
                       <div>P.U. Ref: <strong style={{ color:"#111827" }}>{fmtM(metricasResumenApu?.puRef)}</strong></div>
@@ -1434,9 +1446,31 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                   </div>
 
                   <div style={{ background:"#fff", border:"1px solid #e5e7eb", borderRadius:"8px", padding:"10px", marginBottom:"10px" }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", gap:"8px", alignItems:"flex-start", marginBottom:"6px" }}>
+                      <div style={{ fontSize:"10px", color:"#6b7280", fontWeight:"700", textTransform:"uppercase" }}>APU vinculado</div>
+                      <span style={{ background:"#f0fdf4", border:"1px solid #bbf7d0", color:"#166534", borderRadius:"4px", padding:"2px 6px", fontSize:"10px", fontWeight:"700" }}>
+                        {apuResumen?.estado || "cargando"}
+                      </span>
+                    </div>
+                    <div style={{ fontSize:"13px", fontWeight:"700", color:"#111827", lineHeight:1.3, marginBottom:"4px" }}>
+                      {textoVista(apuResumen?.nombre || rubroResumenApu.descripcion)}
+                    </div>
+                    <div style={{ display:"flex", gap:"6px", flexWrap:"wrap", fontSize:"10px", color:"#6b7280" }}>
+                      <span style={{ background:"#f3f4f6", border:"1px solid #e5e7eb", borderRadius:"4px", padding:"2px 6px" }}>{apuResumen?.codigo || `APU #${rubroResumenApu.apu_id}`}</span>
+                      <span style={{ background:"#f3f4f6", border:"1px solid #e5e7eb", borderRadius:"4px", padding:"2px 6px" }}>Und {apuResumen?.unidad || "-"}</span>
+                      <span style={{ background:"#f3f4f6", border:"1px solid #e5e7eb", borderRadius:"4px", padding:"2px 6px" }}>Rend. {apuResumen?.rendimiento ?? "-"}</span>
+                    </div>
+                  </div>
+
+                  <div style={{ background:"#fff", border:"1px solid #e5e7eb", borderRadius:"8px", padding:"10px", marginBottom:"10px" }}>
+                    <div style={{ fontSize:"10px", color:"#6b7280", fontWeight:"700", textTransform:"uppercase", marginBottom:"8px" }}>Comparacion economica</div>
+                    <div style={{ background:"#f8fafc", border:"1px solid #e5e7eb", borderRadius:"6px", padding:"8px", marginBottom:"8px" }}>
+                      <div style={{ fontSize:"10px", color:"#6b7280" }}>Dif total</div>
+                      <div style={{ color:colorDif(metricasResumenApu?.difTotal), fontWeight:"800", fontSize:"16px", fontVariantNumeric:"tabular-nums" }}>{fmtDifM(metricasResumenApu?.difTotal)}</div>
+                    </div>
                     <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"8px", fontSize:"11px" }}>
                       <div>
-                        <div style={{ color:"#6b7280" }}>Dif P.U.</div>
+                        <div style={{ color:"#6b7280" }}>Dif unit.</div>
                         <div style={{ color:colorDif(metricasResumenApu?.difPu), fontWeight:"700" }}>{fmtDifM(metricasResumenApu?.difPu)}</div>
                       </div>
                       <div>
@@ -1469,10 +1503,22 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                     ))}
                   </div>
 
-                  <button onClick={editarApuResumen} disabled={cargandoApuResumen}
-                    style={{ width:"100%", background:cargandoApuResumen?"#f3f4f6":"#166534", color:cargandoApuResumen?"#9ca3af":"#fff", border:"none", borderRadius:"6px", padding:"8px 10px", fontSize:"12px", fontWeight:"700", cursor:cargandoApuResumen?"wait":"pointer" }}>
-                    {cargandoApuResumen ? "Cargando APU..." : "Editar APU"}
-                  </button>
+                  <div style={{ display:"grid", gap:"6px" }}>
+                    <button onClick={editarApuResumen} disabled={cargandoApuResumen}
+                      style={{ width:"100%", background:cargandoApuResumen?"#f3f4f6":"#166534", color:cargandoApuResumen?"#9ca3af":"#fff", border:"none", borderRadius:"6px", padding:"8px 10px", fontSize:"12px", fontWeight:"700", cursor:cargandoApuResumen?"wait":"pointer" }}>
+                      {cargandoApuResumen ? "Cargando APU..." : "Editar APU completo"}
+                    </button>
+                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"6px" }}>
+                      <button onClick={cambiarApuResumen}
+                        style={{ background:"#fff", color:"#166534", border:"1px solid #bbf7d0", borderRadius:"6px", padding:"7px 8px", fontSize:"11px", fontWeight:"700", cursor:"pointer" }}>
+                        Cambiar APU
+                      </button>
+                      <button onClick={desvincularApuResumen}
+                        style={{ background:"#fff", color:"#dc2626", border:"1px solid #fecaca", borderRadius:"6px", padding:"7px 8px", fontSize:"11px", fontWeight:"700", cursor:"pointer" }}>
+                        Desvincular
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </aside>
             )}

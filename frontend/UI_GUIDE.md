@@ -169,6 +169,43 @@ No escribir manualmente `modal-overlay` y `modal-shell` dentro de una pagina.
 
 Todo modal debe pasar `onClose` cuando pueda cerrarse. `Escape` debe cancelar la accion activa sin guardar.
 
+## Patrones Operativos De Presupuestos
+
+La pantalla `Presupuestos` concentra trabajo operativo con presupuestos grandes. Estos patrones deben reutilizarse antes de crear variantes nuevas en `Recursos`, `APUs` u otras pantallas.
+
+### Barra Contextual Por Seleccion
+
+- Sin seleccion, mostrar solo contexto, busqueda, filtros y selectores de vista.
+- Con un rubro seleccionado, mostrar acciones individuales que aplican a ese rubro.
+- Con varios rubros seleccionados, mostrar acciones masivas seguras y mover acciones destructivas o secundarias a `Mas acciones`.
+- Reservar `Mas acciones` para opciones futuras como editar rubro, agregar rubro debajo o marcar obsoleto; no saturar la barra principal.
+
+Pendiente de extraccion: `SelectionActionBar`.
+
+### Selector Compacto De Vista
+
+- Cuando existan mas de 4 vistas de columnas, usar un selector compacto con etiqueta clara, por ejemplo `Vista: Presupuesto`.
+- No eliminar vistas existentes para ganar espacio.
+- La vista activa debe ser visible sin obligar a abrir el selector.
+
+Pendiente de extraccion: `ColumnViewSelector`.
+
+### KPI Economico Priorizado
+
+- En presupuestos, la diferencia comparable y su porcentaje deben leerse primero.
+- Los valores de referencia y meta comparables quedan visibles como soporte.
+- No cambiar la semantica de color sin validar la logica de negocio.
+
+Pendiente de extraccion: `BudgetKpiBar`.
+
+### Acciones Masivas Con Validacion
+
+- Antes de una accion masiva que vincule rubros con APUs, validar unidades normalizadas.
+- Equivalencias iniciales: `u`, `und`, `unidad` -> `u`; `m`, `ml` -> `m`; `m2`, `m²` -> `m2`; `m3`, `m³` -> `m3`; `kg` -> `kg`.
+- Bloquear acciones masivas con unidades mezcladas o incompatibles.
+
+Pendiente de extraccion: `normalizeUnit` y `validateBulkApuLink`.
+
 ## Anti-Patrones
 
 - Crear botones con `style={{ ... }}` en cada pantalla.
