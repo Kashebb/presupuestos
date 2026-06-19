@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ActionButton, PageHeader } from "../components/ui";
+import { ActionButton, PageHeader, SectionHeader } from "../components/ui";
 
 const API = "http://127.0.0.1:8000";
 
@@ -117,14 +117,14 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
       setCargando(true);
       const [resApu, resRec] = await Promise.all([
         fetch(`${API}/apus/${apu.id}`),
-        fetch(`${API}/recursos/?limit=500&estado=activo`)
+        fetch(`${API}/recursos/?estado=activos`)
       ]);
       const dataApu = await resApu.json();
       const dataRec = await resRec.json();
       setApu(dataApu);
       setRendimientoEdit(dataApu.rendimiento);
       setItems(dataApu.items || []);
-      setRecursos(dataRec);
+      setRecursos(Array.isArray(dataRec) ? dataRec : []);
       fetch(`${API}/apus/${apu.id}/costo`)
         .then(r => r.ok ? r.json() : null)
         .then(setCostoOficial)
@@ -474,29 +474,14 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
         return (
           <div key={key} style={{ ...card, marginBottom: "16px", overflow: "hidden" }}>
 
-            {/* Header sección — clickeable para contraer/expandir */}
-            <div
-              onClick={() => toggleSeccion(key)}
-              style={{
-                background: "#f0fdf4",
-                borderLeft: "4px solid #15803d",
-                padding: "10px 20px",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                cursor: "pointer",
-                userSelect: "none",
-              }}>
-              <h2 style={{ margin: 0, fontSize: "0.8rem", fontWeight: 700, color: "#14532d", textTransform: "uppercase", letterSpacing: "0.06em", display: "flex", alignItems: "center", gap: "8px" }}>
-                <span style={{ fontSize: "0.7rem", display: "inline-block", width: "12px" }}>
-                  {contraida ? "▶" : "▼"}
-                </span>
-                {label}
-              </h2>
-              <span style={{ fontSize: "0.85rem", color: "#14532d" }}>
-                Subtotal: <strong>${fmt2(subtotalDe(key))}</strong>
-              </span>
-            </div>
+            <SectionHeader
+              title={label}
+              countLabel={`${itemsSeccion.length} item${itemsSeccion.length !== 1 ? "s" : ""}`}
+              status={<span>Subtotal: <strong>${fmt2(subtotalDe(key))}</strong></span>}
+              collapsible
+              collapsed={contraida}
+              onToggle={() => toggleSeccion(key)}
+            />
 
             {/* Tabla (oculta si está contraída) */}
             {!contraida && (

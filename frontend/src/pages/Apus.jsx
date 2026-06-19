@@ -5,6 +5,7 @@ import {
   MetricStrip,
   ModalShell,
   PageHeader,
+  SectionHeader,
   StatusBadge,
   ToolbarFilter,
   fieldClass,
@@ -256,6 +257,12 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
         />
       </div>
 
+      <SectionHeader
+        title="Listado de APUs"
+        countLabel={`${apusFiltrados.length} APU${apusFiltrados.length !== 1 ? "s" : ""} visible${apusFiltrados.length !== 1 ? "s" : ""}`}
+        filters={<ToolbarFilter options={filtros} value={filtro} onChange={setFiltro} />}
+      />
+
       <div className="filter-bar">
         <input
           type="text"
@@ -264,7 +271,6 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
           onChange={(e) => setBuscar(e.target.value)}
           className={`${fieldClass} max-w-xs`}
         />
-        <ToolbarFilter options={filtros} value={filtro} onChange={setFiltro} />
       </div>
 
       <DataTable columns={columns} rows={apusFiltrados} rowKey={(apu) => apu.id} emptyText="No hay APUs con ese filtro." />

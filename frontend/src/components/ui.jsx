@@ -11,6 +11,40 @@ export function PageHeader({ title, subtitle, actions, meta }) {
   );
 }
 
+export function SectionHeader({ title, subtitle, countLabel, status, filters, actions, collapsible = false, collapsed = false, onToggle }) {
+  const content = (
+    <>
+      <div className="section-header-main">
+        {collapsible && (
+          <span className="section-header-caret" aria-hidden="true">
+            {collapsed ? ">" : "v"}
+          </span>
+        )}
+        <div>
+          <h2 className="section-header-title">{title}</h2>
+          {subtitle && <p className="section-header-subtitle">{subtitle}</p>}
+        </div>
+      </div>
+      <div className="section-header-actions">
+        {filters}
+        {status && <span className="section-header-status">{status}</span>}
+        {countLabel && <span className="section-header-count">{countLabel}</span>}
+        {actions}
+      </div>
+    </>
+  );
+
+  if (collapsible) {
+    return (
+      <button type="button" className="section-header section-header-clickable" onClick={onToggle} aria-expanded={!collapsed}>
+        {content}
+      </button>
+    );
+  }
+
+  return <div className="section-header">{content}</div>;
+}
+
 export function ActionButton({ children, variant = "secondary", onClick, disabled, type = "button", compact = false }) {
   const variants = {
     primary: "btn-primary",

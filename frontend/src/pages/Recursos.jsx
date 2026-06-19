@@ -5,6 +5,7 @@ import {
   MetricStrip,
   ModalShell,
   PageHeader,
+  SectionHeader,
   ToolbarFilter,
   fieldClass,
   labelClass,
@@ -521,13 +522,11 @@ export default function Recursos() {
         <div className="space-y-4">
           {grupos.map((grupo) => (
             <section key={grupo.categoria}>
-              <div className="resource-group-header">
-                <h2>{ETIQUETAS[grupo.categoria] || grupo.categoria}</h2>
-                <div className="resource-group-actions">
-                  <ToolbarFilter options={FILTROS_ESTADO} value={filtroEstado} onChange={setFiltroEstado} />
-                  <span>{grupo.recursos.length} recurso{grupo.recursos.length !== 1 ? "s" : ""}</span>
-                </div>
-              </div>
+              <SectionHeader
+                title={ETIQUETAS[grupo.categoria] || grupo.categoria}
+                countLabel={`${grupo.recursos.length} recurso${grupo.recursos.length !== 1 ? "s" : ""}`}
+                filters={<ToolbarFilter options={FILTROS_ESTADO} value={filtroEstado} onChange={setFiltroEstado} />}
+              />
               <DataTable columns={columns} rows={grupo.recursos} rowKey={(recurso) => recurso.id} emptyText="No se encontraron recursos." />
             </section>
           ))}
