@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActionButton,
+  CategoryStrip,
   DataTable,
   MetricStrip,
   ModalShell,
@@ -51,6 +52,7 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
   const [error, setError] = useState("");
   const [costos, setCostos] = useState({});
   const [filtro, setFiltro] = useState(initialFilter);
+  const [categoriaFiltro, setCategoriaFiltro] = useState("todas");
 
   useEffect(() => {
     setFiltro(initialFilter || "todos");
@@ -78,6 +80,7 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
 
   const apusFiltrados = useMemo(() => {
     return apus.filter((apu) => {
+      if (categoriaFiltro !== "todas" && (apu.categoria || "Sin categoria") !== categoriaFiltro) return false;
       const control = controlApu(apu);
       if (filtro === "revisar_costo") return control === "revisar_costo";
       if (filtro === "ok") return control !== "revisar_costo";
@@ -85,7 +88,16 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
       if (["activo", "referencial", "en_revision", "inactivo"].includes(filtro)) return apu.estado === filtro;
       return true;
     });
-  }, [apus, controlApu, filtro]);
+  }, [apus, categoriaFiltro, controlApu, filtro]);
+
+  const categorias = useMemo(() => {
+    const categoriasBase = [...new Set(apus.map((apu) => apu.categoria || "Sin categoria"))]
+      .sort((a, b) => a.localeCompare(b, "es"));
+    return [
+      { label: "Todas", value: "todas" },
+      ...categoriasBase.map((categoria) => ({ label: categoria, value: categoria })),
+    ];
+  }, [apus]);
 
   const resumen = useMemo(() => {
     const revisar = apus.filter((apu) => controlApu(apu) === "revisar_costo").length;
@@ -233,7 +245,7 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
         actions={<ActionButton variant="primary" onClick={abrirNuevo}>Nuevo APU</ActionButton>}
       />
 
-      <div className="mb-3">
+      <div className="mb-4">
         <MetricStrip
           items={[
             { label: "Total APUs", value: resumen.total, detail: `${apusFiltrados.length} visibles`, tone: "blue", active: filtro === "todos", onClick: () => setFiltro("todos") },
@@ -243,6 +255,7 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
             { label: "Inactivos", value: resumen.inactivos, detail: "Fuera de uso", tone: "slate", active: filtro === "inactivo", onClick: () => setFiltro("inactivo") },
           ]}
         />
+        <CategoryStrip label="Categorias" items={categorias} value={categoriaFiltro} onChange={setCategoriaFiltro} />
       </div>
 
       <SectionHeader

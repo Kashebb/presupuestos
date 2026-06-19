@@ -150,6 +150,29 @@ export function MetricStrip({ items }) {
   );
 }
 
+export function CategoryStrip({ items, value, onChange, label }) {
+  return (
+    <div className="category-filter">
+      {label && <div className="category-filter-label">{label}</div>}
+      <div className="category-strip">
+        {items.map((item) => {
+          const active = item.value === value;
+          return (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => onChange(item.value)}
+              className={`category-card ${active ? "category-card-active" : ""}`}
+            >
+              {item.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function DataTable({ columns, rows, rowKey, emptyText = "Sin registros." }) {
   return (
     <div className="data-table-shell">
