@@ -36,6 +36,8 @@ class NodoPresupuesto(Base):
     padre_id = Column(Integer, ForeignKey("nodos_presupuesto.id", ondelete="CASCADE"), nullable=True)
 
     tipo = Column(String(20), nullable=False)
+    tipo_origen = Column(String(20), nullable=True)
+    nivel = Column(Integer, nullable=True)
     item = Column(String(60), nullable=True)
     descripcion = Column(String(500), nullable=False)
     orden = Column(Integer, default=0)
@@ -44,6 +46,7 @@ class NodoPresupuesto(Base):
     metrado = Column(Float, nullable=True)
     precio_unitario_ref = Column(Float, nullable=True)
     apu_id = Column(Integer, ForeignKey("apus.id", ondelete="SET NULL"), nullable=True)
+    activo_como_rubro = Column(Boolean, default=True, nullable=True)
     tipo_rubro = Column(String(20), nullable=True)
     observaciones = Column(Text, nullable=True)
 

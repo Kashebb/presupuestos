@@ -26,6 +26,17 @@ const COLORES_TIPO = {
   GRUPO:       { bg: "#dcfce7", text: "#14532d", indent: 80 },
   RUBRO:       { bg: "#fff",    text: "#111827", indent: 96 },
 };
+const COLORES_NIVEL = [
+  { bg: "#14532d", text: "#fff" },
+  { bg: "#166534", text: "#fff" },
+  { bg: "#15803d", text: "#fff" },
+  { bg: "#22c55e", text: "#064e3b" },
+  { bg: "#86efac", text: "#064e3b" },
+  { bg: "#dcfce7", text: "#14532d" },
+  { bg: "#f0fdf4", text: "#14532d" },
+  { bg: "#f8fafc", text: "#374151" },
+];
+const NIVEL_TIPO_FALLBACK = { FASE:0, CATEGORIA:1, SUBCATEGORIA:2, CAPITULO:3, SUBCAPITULO:4, GRUPO:5, RUBRO:6 };
 
 const BADGE = {
   VINCULADO: { bg: "#dcfce7", text: "#166534", label: "Vinculado" },
@@ -44,6 +55,33 @@ function textoVista(t) {
   return String(t).replace(/\u00c2(?=\u00b0)/g, "").replace(/\u00c2/g, "");
 }
 
+function esRubroNodo(n) {
+  if (!n) return false;
+  if (typeof n.es_rubro_operativo === "boolean") return n.es_rubro_operativo;
+  if (typeof n.activo_como_rubro === "boolean" && typeof n.tiene_hijos === "boolean") return n.activo_como_rubro && !n.tiene_hijos;
+  return n.tipo === "RUBRO";
+}
+
+function esGrupoNodo(n) {
+  if (!n) return false;
+  if (typeof n.es_grupo === "boolean") return n.es_grupo;
+  if (typeof n.tiene_hijos === "boolean") return n.tiene_hijos;
+  return n.tipo !== "RUBRO";
+}
+
+function nivelNodo(n) {
+  const nivel = Number(n?.nivel);
+  if (Number.isInteger(nivel)) return Math.max(0, Math.min(7, nivel));
+  return NIVEL_TIPO_FALLBACK[n?.tipo] ?? 0;
+}
+
+function configNodo(n) {
+  if (esRubroNodo(n)) return COLORES_TIPO.RUBRO;
+  const nivel = nivelNodo(n);
+  const color = COLORES_NIVEL[nivel] || COLORES_NIVEL[COLORES_NIVEL.length - 1];
+  return { ...color, indent: nivel * 16 };
+}
+
 function construirArbol(nodos) {
   const m = {}; nodos.forEach(n => { m[n.id] = { ...n, hijos: [] }; });
   const r = [];
@@ -58,7 +96,7 @@ function aplanar(nodos, nv = 0, res = []) {
 
 function calcularGrupos(planos) {
   const norm = {}, ind = {};
-  planos.filter(n => n.tipo === "RUBRO").forEach(n => {
+  planos.filter(esRubroNodo).forEach(n => {
     const k = normalizar(n.descripcion) + "|||" + (n.unidad||"").toLowerCase().trim();
     const dest = n.individualizado ? ind : norm;
     if (!dest[k]) dest[k] = { descripcion: n.descripcion, unidad: n.unidad, rubros: [] };
@@ -123,7 +161,7 @@ function debugPerf(label, startedAt, extra = {}) {
 const DOT_COLOR = { completo: "#16a34a", parcial: "#ca8a04", ninguno: "#dc2626", sin_rubros: "#d1d5db" };
 
 const VISTAS_COLUMNAS = {
-  editar: ["item", "descripcion", "unidad", "metrado", "pu_ref", "total_ref", "estado"],
+  editar: ["descripcion", "unidad", "metrado", "pu_ref", "total_ref", "estado"],
   presupuesto: ["descripcion", "unidad", "metrado", "pu_ref", "total_ref", "estado"],
   meta: ["descripcion", "unidad", "metrado", "pu_meta", "total_meta", "estado"],
   unitarios: ["descripcion", "unidad", "pu_ref", "pu_meta", "dif_pu", "dif_pu_pct", "estado"],
@@ -420,15 +458,6 @@ export default function Presupuestos({ initialFilter = "todos" }) {
     else { const e=await r.json(); setError(e.detail||"Error."); }
   };
 
-  const abrirActualizarExcel = () => {
-    setArchivoActualizacion(null);
-    setHojaActualizacion("PPTO 260615");
-    setPreviewActualizacion(null);
-    setPaqueteActualizacionAbierto("automatico");
-    setError("");
-    setModalActualizar(true);
-  };
-
   const generarPreviewActualizacion = async () => {
     if (!archivoActualizacion) { setError("Selecciona un archivo."); return; }
     setPreviewCargando(true); setError("");
@@ -497,6 +526,8 @@ export default function Presupuestos({ initialFilter = "todos" }) {
   const ejecutarAccion = async (accion) => {
     if (accion.tipo === "vincular") {
       await fetch(`${API}/presupuestos/nodos/${accion.nodoId}/vincular-apu`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({apu_id: accion.apuId}) });
+    } else if (accion.tipo === "estructura") {
+      await restaurarSnapshotEstructura(accion.despues, accion.proyectoId);
     } else if (accion.tipo === "desvincular") {
       await fetch(`${API}/presupuestos/nodos/${accion.nodoId}/desvincular-apu`, {method:"PATCH"});
     } else if (accion.tipo === "marcar_sin_apu") {
@@ -513,6 +544,8 @@ export default function Presupuestos({ initialFilter = "todos" }) {
   const ejecutarInverso = async (accion) => {
     if (accion.tipo === "vincular") {
       await fetch(`${API}/presupuestos/nodos/${accion.nodoId}/desvincular-apu`, {method:"PATCH"});
+    } else if (accion.tipo === "estructura") {
+      await restaurarSnapshotEstructura(accion.antes, accion.proyectoId);
     } else if (accion.tipo === "desvincular") {
       if (accion.apuId) await fetch(`${API}/presupuestos/nodos/${accion.nodoId}/vincular-apu`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({apu_id: accion.apuId}) });
     } else if (accion.tipo === "marcar_sin_apu") {
@@ -525,6 +558,29 @@ export default function Presupuestos({ initialFilter = "todos" }) {
     } else if (accion.tipo === "reagrupar") {
       await fetch(`${API}/presupuestos/nodos/${accion.nodoId}/individualizar`, {method:"PATCH"});
     }
+  };
+
+  const snapshotEstructura = (nodos) => nodos.map(n => ({
+    id: n.id,
+    padre_id: n.padre_id ?? null,
+    nivel: n.nivel ?? null,
+    orden: n.orden ?? 0,
+    activo_como_rubro: n.activo_como_rubro ?? null,
+  }));
+
+  const restaurarSnapshotEstructura = async (snapshot, proyectoId = proyectoActual?.id) => {
+    if (!proyectoId || !snapshot?.length) return null;
+    const res = await fetch(`${API}/presupuestos/proyectos/${proyectoId}/nodos/estructura`, {
+      method:"PATCH",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({ nodos: snapshot }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setError(err.detail || "No se pudo restaurar la estructura.");
+      return null;
+    }
+    return res.json();
   };
 
   // Vincular APU
@@ -607,7 +663,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
 
     nodosPlanos.forEach(n => {
       nodoPorIdLocal.set(n.id, n);
-      if (n.tipo === "RUBRO") rubrosLocal.push(n);
+      if (esRubroNodo(n)) rubrosLocal.push(n);
       const padreKey = n.padre_id ?? null;
       if (!hijosPorPadreLocal.has(padreKey)) hijosPorPadreLocal.set(padreKey, []);
       hijosPorPadreLocal.get(padreKey).push(n);
@@ -625,7 +681,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
 
     const estadoNodoPorIdLocal = new Map();
     nodosPlanos.forEach(nodo => {
-      if (nodo.tipo === "RUBRO") return;
+      if (esRubroNodo(nodo)) return;
       const hijos = rubrosPorContenedorLocal.get(nodo.id) || [];
       if (!hijos.length) {
         estadoNodoPorIdLocal.set(nodo.id, "sin_rubros");
@@ -707,7 +763,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
     const t0 = startPerf();
     const mapa = new Map();
     nodosPlanos.forEach(nodo => {
-      if (nodo.tipo === "RUBRO") return;
+      if (esRubroNodo(nodo)) return;
       const hijos = rubrosPorContenedor.get(nodo.id) || [];
       const metricas = hijos.map(r => metricasRubroPorId.get(r.id)).filter(Boolean);
       const totalRefC = metricas.reduce((s,m)=>s+(m.totalRef||0),0);
@@ -762,7 +818,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
     let visibles = nodosPlanos.filter(n => !ocultos.has(n.id));
     const mostrarObsoletos = esVistaEditar ? filtroEditarEstado !== "activos" : false;
     visibles = visibles.filter(n => {
-      if (n.tipo !== "RUBRO") return true;
+      if (!esRubroNodo(n)) return true;
       const obsoleto = n.estado_actualizacion === "obsoleto";
       if (esVistaEditar && filtroEditarEstado === "obsoletos") return obsoleto;
       if (esVistaEditar && filtroEditarEstado === "todos") return true;
@@ -788,7 +844,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
     // Filtro por estado rubro
     if (filtroEstadoAplicado !== "todos") {
       visibles = visibles.filter(n => {
-        if (n.tipo !== "RUBRO") return true; // siempre mostrar nodos padre
+        if (!esRubroNodo(n)) return true; // siempre mostrar nodos padre
         if (filtroEstadoAplicado === "SIN_APU") return n.observaciones === "SIN_APU";
         return n.tipo_rubro === filtroEstadoAplicado && n.observaciones !== "SIN_APU";
       });
@@ -796,7 +852,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
 
     if (filtroAnalisisAplicado !== "todos") {
       visibles = visibles.filter(n => {
-        if (n.tipo !== "RUBRO") return true;
+        if (!esRubroNodo(n)) return true;
         const m = metricasRubroPorId.get(n.id);
         if (filtroAnalisisAplicado === "impacto") return Number.isFinite(m?.difTotal) && Math.abs(m.difTotal) > 0;
         if (filtroAnalisisAplicado === "positivos") return Number.isFinite(m?.difTotal) && m.difTotal > 0;
@@ -809,7 +865,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
 
     if (buscarRubro.trim()) {
       const q = buscarRubro.toLowerCase();
-      visibles = visibles.filter(n => n.tipo !== "RUBRO" || n.descripcion.toLowerCase().includes(q));
+      visibles = visibles.filter(n => !esRubroNodo(n) || n.descripcion.toLowerCase().includes(q));
     }
 
     debugPerf("nodos visibles", t0, { visibles: visibles.length });
@@ -817,17 +873,17 @@ export default function Presupuestos({ initialFilter = "todos" }) {
   }, [nodosPlanos, colapsados, esVistaEditar, filtroEditarEstado, nodoSeleccionado, nodoPorId, hijosPorPadre, esVistaVincular, filtroEstado, esVistaAnalisis, filtroAnalisis, metricasRubroPorId, buscarRubro]);
 
   // Nodos sidebar filtrados
-  const nodosSidebar = useMemo(() => nodosPlanos.filter(n => n.tipo !== "RUBRO").filter(n => {
+  const nodosSidebar = useMemo(() => nodosPlanos.filter(esGrupoNodo).filter(n => {
     if (!buscarSidebar.trim()) return true;
     return n.descripcion.toLowerCase().includes(buscarSidebar.toLowerCase());
   }), [nodosPlanos, buscarSidebar]);
 
   useEffect(() => {
     if (!rubrosSeleccionados.length) return;
-    const idsExistentes = new Set(rubros.map(r => r.id));
+    const idsExistentes = esVistaEditar ? new Set(nodosPlanos.map(n => n.id)) : new Set(rubros.map(r => r.id));
     const seleccionVigente = rubrosSeleccionados.filter(id => idsExistentes.has(id));
     if (seleccionVigente.length !== rubrosSeleccionados.length) setRubrosSeleccionados(seleccionVigente);
-  }, [rubros, rubrosSeleccionados]);
+  }, [esVistaEditar, nodosPlanos, rubros, rubrosSeleccionados]);
 
   const {
     totalRef,
@@ -900,7 +956,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
 
   const nodosParaGrupos = useMemo(() => {
     const base = nodoSeleccionado ? (rubrosPorContenedor.get(nodoSeleccionado.id) || []) : nodosPlanos;
-    return base.filter(n => n.tipo !== "RUBRO" || n.estado_actualizacion !== "obsoleto");
+    return base.filter(n => !esRubroNodo(n) || n.estado_actualizacion !== "obsoleto");
   }, [nodoSeleccionado, nodosPlanos, rubrosPorContenedor]);
 
   const { grupos, individualizados } = useMemo(() => calcularGrupos(nodosParaGrupos), [nodosParaGrupos]);
@@ -935,17 +991,21 @@ export default function Presupuestos({ initialFilter = "todos" }) {
   }), [grupos, individualizados]);
 
   const idsSeleccionados = useMemo(() => new Set(rubrosSeleccionados), [rubrosSeleccionados]);
+  const nodosSeleccionadosDatos = useMemo(
+    () => rubrosSeleccionados.map(id => nodoPorId.get(id)).filter(Boolean),
+    [rubrosSeleccionados, nodoPorId]
+  );
   const rubrosSeleccionadosDatos = useMemo(
-    () => rubrosSeleccionados.map(id => rubrosPorId.get(id)).filter(Boolean),
-    [rubrosSeleccionados, rubrosPorId]
+    () => nodosSeleccionadosDatos.filter(esRubroNodo),
+    [nodosSeleccionadosDatos]
   );
   const rubrosSeleccionadosVisibles = useMemo(
-    () => nodosVisibles.filter(n => n.tipo === "RUBRO" && idsSeleccionados.has(n.id)).length,
+    () => nodosVisibles.filter(n => esRubroNodo(n) && idsSeleccionados.has(n.id)).length,
     [nodosVisibles, idsSeleccionados]
   );
-  const idsRubrosVisibles = useMemo(
-    () => new Set(nodosVisibles.filter(n => n.tipo === "RUBRO").map(n => n.id)),
-    [nodosVisibles]
+  const idsSeleccionablesVisibles = useMemo(
+    () => new Set(nodosVisibles.filter(n => esVistaEditar || esRubroNodo(n)).map(n => n.id)),
+    [esVistaEditar, nodosVisibles]
   );
   const unicoRubroSeleccionado = rubrosSeleccionadosDatos.length === 1 ? rubrosSeleccionadosDatos[0] : null;
   const rubroResumenApu = useMemo(() => {
@@ -963,12 +1023,17 @@ export default function Presupuestos({ initialFilter = "todos" }) {
   const textoSeleccion = rubrosSeleccionadosDatos.length === 1
     ? "1 rubro seleccionado"
     : `${rubrosSeleccionadosDatos.length} rubros seleccionados`;
+  const textoSeleccionEstructura = nodosSeleccionadosDatos.length === 1
+    ? "1 fila seleccionada"
+    : `${nodosSeleccionadosDatos.length} filas seleccionadas`;
+  const nodosEstructuraSeleccionados = esVistaEditar ? nodosSeleccionadosDatos : [];
+  const puedeMoverEstructura = esVistaEditar && (nodosEstructuraSeleccionados.length > 0 || Boolean(nodoSeleccionado));
 
   const toggleRubroSeleccionado = (id) => {
     setRubrosSeleccionados(prev => {
-      const tieneSeleccionOculta = prev.some(prevId => !idsRubrosVisibles.has(prevId));
+      const tieneSeleccionOculta = prev.some(prevId => !idsSeleccionablesVisibles.has(prevId));
       const base = tieneSeleccionOculta && !prev.includes(id)
-        ? prev.filter(prevId => idsRubrosVisibles.has(prevId))
+        ? prev.filter(prevId => idsSeleccionablesVisibles.has(prevId))
         : prev;
       const siguiente = new Set(base);
       if (siguiente.has(id)) siguiente.delete(id);
@@ -1081,7 +1146,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
   };
 
   const guardarCambiosRubro = async (rubro, cambios, { refrescar = false, silencioso = false } = {}) => {
-    if (!rubro || rubro.tipo !== "RUBRO" || !Object.keys(cambios).length) return null;
+    if (!rubro || !esRubroNodo(rubro) || !Object.keys(cambios).length) return null;
     const res = await fetch(`${API}/presupuestos/nodos/${rubro.id}`, {
       method:"PATCH",
       headers:{"Content-Type":"application/json"},
@@ -1142,7 +1207,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
     };
     const colIndex = columnasPegables.indexOf(colInicio);
     if (colIndex < 0) return;
-    const rubrosVisibles = nodosVisibles.filter(n => n.tipo === "RUBRO");
+    const rubrosVisibles = nodosVisibles.filter(esRubroNodo);
     const filaInicio = rubrosVisibles.findIndex(n => n.id === rubro.id);
     if (filaInicio < 0) return;
     const filas = texto.replace(/\r/g, "").split("\n").filter((fila, idx, arr) => fila.length || idx < arr.length - 1);
@@ -1177,6 +1242,32 @@ export default function Presupuestos({ initialFilter = "todos" }) {
     setApuResumenRubroId(null);
     mostrarExito("Fila agregada debajo");
     cargarNodos(proyectoActual);
+  };
+
+  const moverEstructura = async (accion) => {
+    const seleccion = nodosEstructuraSeleccionados.length ? nodosEstructuraSeleccionados : (nodoSeleccionado ? [nodoSeleccionado] : []);
+    if (!seleccion.length) return;
+    const antes = snapshotEstructura(nodosPlanos);
+    const res = await fetch(`${API}/presupuestos/nodos/${seleccion[0].id}/mover-estructura`, {
+      method:"PATCH",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({ accion, nodo_ids: seleccion.map(n => n.id) }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setError(err.detail || "No se pudo mover la estructura.");
+      return;
+    }
+    const data = await res.json();
+    registrarAccion({
+      tipo: "estructura",
+      proyectoId: proyectoActual.id,
+      antes,
+      despues: snapshotEstructura(data),
+    });
+    setNodosPlanos(data);
+    setError("");
+    mostrarExito("Estructura actualizada");
   };
 
   const marcarObsoletoSeleccion = async () => {
@@ -1446,7 +1537,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
         </div>
         <div style={{ marginLeft:"auto", display:"flex", gap:"6px", alignItems:"center" }}>
           {msgExito&&<span style={{ fontSize:"12px", color:"#16a34a", background:"#f0fdf4", border:"1px solid #86efac", borderRadius:"4px", padding:"3px 10px" }}>{msgExito}</span>}
-          <button onClick={deshacer} disabled={!historial.length} title="Deshacer"
+          <button onClick={deshacer} disabled={!historial.length} title="Cancelar accion anterior"
             style={{ fontSize:"12px", padding:"4px 10px", cursor:historial.length?"pointer":"not-allowed", opacity:historial.length?1:0.4, border:"1px solid #d1d5db", borderRadius:"6px", background:"#fff" }}>
             Deshacer
           </button>
@@ -1457,10 +1548,6 @@ export default function Presupuestos({ initialFilter = "todos" }) {
           {nodosPlanos.length===0&&(
             <button onClick={()=>{setArchivoImport(null);setError("");setModalImportar(true);}}
               style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:"6px", padding:"6px 14px", fontSize:"12px", cursor:"pointer" }}>Importar Excel</button>
-          )}
-          {nodosPlanos.length>0&&(
-            <button onClick={abrirActualizarExcel} disabled title="Temporalmente inhabilitado durante la reorganizacion de vistas"
-              style={{ background:"#e5e7eb", color:"#6b7280", border:"1px solid #d1d5db", borderRadius:"6px", padding:"6px 14px", fontSize:"12px", cursor:"not-allowed" }}>Actualizar desde Excel inhabilitado</button>
           )}
         </div>
       </div>
@@ -1531,7 +1618,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
               {/* Arbol */}
               <div style={{ overflowY:"auto", flex:1 }}>
                 {nodosSidebar.map(n=>{
-                  const cfg = COLORES_TIPO[n.tipo]||COLORES_TIPO.GRUPO;
+                  const cfg = configNodo(n);
                   const tieneHijos = Boolean(hijosPorPadre.get(n.id)?.length);
                   const seleccionado = nodoSeleccionado?.id===n.id;
                   const est = estadoNodoPorId.get(n.id) || "sin_rubros";
@@ -1573,6 +1660,19 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                     style={{ fontSize:"11px", padding:"5px 9px", border:"1px solid #166534", borderRadius:"6px", background:unicoRubroSeleccionado?"#166534":"#f3f4f6", color:unicoRubroSeleccionado?"#fff":"#9ca3af", cursor:unicoRubroSeleccionado?"pointer":"not-allowed" }}>
                     Agregar fila debajo
                   </button>
+                  <div style={{ display:"flex", gap:"3px", alignItems:"center", borderLeft:"1px solid #e5e7eb", paddingLeft:"8px" }}>
+                    {[
+                      ["subir","Subir"],
+                      ["bajar","Bajar"],
+                      ["sangrar","Sangrar"],
+                      ["quitar_sangria","Quitar sangria"],
+                    ].map(([accion,label])=>(
+                      <button key={accion} onClick={()=>moverEstructura(accion)} disabled={!puedeMoverEstructura}
+                        style={{ fontSize:"10px", padding:"4px 7px", border:"1px solid #d1d5db", borderRadius:"5px", background:"#fff", color:puedeMoverEstructura?"#374151":"#9ca3af", cursor:puedeMoverEstructura?"pointer":"not-allowed" }}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                   <button onClick={marcarObsoletoSeleccion} disabled={!rubrosSeleccionadosDatos.some(r=>r.estado_actualizacion!=="obsoleto")}
                     style={{ fontSize:"11px", padding:"5px 9px", border:"1px solid #fecaca", borderRadius:"6px", background:"#fef2f2", color:rubrosSeleccionadosDatos.some(r=>r.estado_actualizacion!=="obsoleto")?"#b91c1c":"#9ca3af", cursor:rubrosSeleccionadosDatos.some(r=>r.estado_actualizacion!=="obsoleto")?"pointer":"not-allowed" }}>
                     Marcar obsoleto{rubrosSeleccionadosDatos.length>1?` (${rubrosSeleccionadosDatos.length})`:""}
@@ -1586,7 +1686,13 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                       </button>
                     ))}
                   </div>
-                  <span style={{ fontSize:"11px", color:"#6b7280" }}>{rubrosSeleccionadosDatos.length ? textoSeleccion : "Edita celdas directamente o pega rangos desde Excel"}</span>
+                  <span style={{ fontSize:"11px", color:"#6b7280" }}>
+                    {nodosEstructuraSeleccionados.length
+                      ? `Estructura: ${textoSeleccionEstructura}`
+                      : nodoSeleccionado
+                        ? `Estructura: ${textoVista(nodoSeleccionado.descripcion)}`
+                        : "Edita celdas directamente o pega rangos desde Excel"}
+                  </span>
                 </ToolbarShell>
               )}
               {esVistaVincular&&(
@@ -1756,7 +1862,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                     </colgroup>
                     <thead>
                       <tr style={{ background:"#f3f4f6", position:"sticky", top:0, zIndex:1 }}>
-                        {permiteSeleccionTabla&&<th style={{ padding:"7px 3px", textAlign:"center", borderBottom:"1px solid #e5e7eb", color:"#374151", fontWeight:"600", width:"24px", minWidth:"24px", maxWidth:"24px", whiteSpace:"nowrap" }} title="Seleccion manual por rubro">
+                        {permiteSeleccionTabla&&<th style={{ padding:"7px 3px", textAlign:"center", borderBottom:"1px solid #e5e7eb", color:"#374151", fontWeight:"600", width:"24px", minWidth:"24px", maxWidth:"24px", whiteSpace:"nowrap" }} title="Seleccion manual de fila">
                           Sel.
                         </th>}
                         {columnasActivas.map((key)=>{
@@ -1767,25 +1873,31 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                     </thead>
                     <tbody>
                       {nodosVisibles.map(n=>{
-                        const cfg = COLORES_TIPO[n.tipo]||COLORES_TIPO.RUBRO;
-                        const esR = n.tipo==="RUBRO";
+                        const cfg = configNodo(n);
+                        const esR = esRubroNodo(n);
                         const sinApu = n.observaciones==="SIN_APU";
                         const obsoleto = n.estado_actualizacion==="obsoleto";
                         const badge = esR?(obsoleto?BADGE.OBSOLETO:(sinApu?BADGE.SIN_APU:BADGE[n.tipo_rubro]||BADGE.PENDIENTE)):null;
                         const tieneHijos = !esR&&Boolean(hijosPorPadre.get(n.id)?.length);
+                        const tablaTipoGrilla = esVistaEditar;
+                        const sangriaDescripcion = tablaTipoGrilla ? Math.min(nivelNodo(n) * 10, 56) : 0;
                         const m = esR ? rubroMetricas(n) : {};
                         const mc = !esR ? metricasContenedor(n) : {};
-                        const estaSeleccionado = esR && idsSeleccionados.has(n.id);
+                        const seleccionable = esVistaEditar || esR;
+                        const estaSeleccionado = seleccionable && idsSeleccionados.has(n.id);
+                        const fondoFila = estaSeleccionado
+                          ? "#ecfdf5"
+                          : (tablaTipoGrilla ? (obsoleto ? "#f3f4f6" : "#fff") : (esR ? (obsoleto ? "#f3f4f6" : "#fff") : cfg.bg));
+                        const colorTexto = tablaTipoGrilla ? "#111827" : (esR ? "#111827" : cfg.text);
                         return (
-                          <tr key={n.id} style={{ background:estaSeleccionado?"#ecfdf5":(esR?(obsoleto?"#f3f4f6":"#fff"):cfg.bg), borderBottom:estaSeleccionado?"1px solid #bbf7d0":"1px solid #e5e7eb", cursor:tieneHijos?"pointer":"default", opacity:obsoleto?0.72:1 }}
-                            onClick={()=>tieneHijos&&toggleColapsar(n.id)}>
+                          <tr key={n.id} style={{ background:fondoFila, borderBottom:estaSeleccionado?"1px solid #bbf7d0":"1px solid #e5e7eb", cursor:"default", opacity:obsoleto?0.72:1 }}>
                             {permiteSeleccionTabla&&<td style={{ padding:"5px 3px", textAlign:"center", width:"24px", minWidth:"24px", maxWidth:"24px", borderLeft:estaSeleccionado?"3px solid #16a34a":"3px solid transparent" }} onClick={e=>e.stopPropagation()}>
-                              {esR&&(
+                              {seleccionable&&(
                                 <input
                                   type="checkbox"
                                   checked={estaSeleccionado}
                                   onChange={()=>toggleRubroSeleccionado(n.id)}
-                                  title="Seleccionar rubro"
+                                  title={esR ? "Seleccionar rubro" : "Seleccionar grupo"}
                                   style={{ width:"13px", height:"13px", cursor:"pointer", accentColor:"#166534" }}
                                 />
                               )}
@@ -1797,7 +1909,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                               if (col === "descripcion") {
                                 if (editable) {
                                   return (
-                                    <td key={col} style={{ padding:"3px 5px" }} onClick={e=>e.stopPropagation()}>
+                                    <td key={col} style={{ padding:"3px 5px", paddingLeft:`${sangriaDescripcion + 5}px` }} onClick={e=>e.stopPropagation()}>
                                       {celdaEditable(n, col)}
                                       <div style={{ display:"flex", gap:"4px", marginTop:"2px", flexWrap:"wrap" }}>
                                         {sinApu&&<span style={{ fontSize:"9px", background:"#fee2e2", color:"#991b1b", borderRadius:"3px", padding:"1px 4px" }}>SIN APU</span>}
@@ -1808,11 +1920,11 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                                   );
                                 }
                                 return (
-                                  <td key={col} style={{ padding:"5px 8px", paddingLeft:`${cfg.indent+8}px` }}>
+                                  <td key={col} style={{ padding:"5px 8px", paddingLeft:`${sangriaDescripcion + 8}px` }}>
                                     <div style={{ display:"flex", alignItems:"center", gap:"5px" }}>
-                                      {tieneHijos&&<span style={{ fontSize:"9px", opacity:0.7 }}>{colapsados[n.id]?">":"v"}</span>}
-                                      <span style={{ color:esR?"#111827":cfg.text, fontWeight:esR?"400":"600", fontSize:"11px" }}>{textoVista(n.descripcion)}</span>
-                                      {!esR&&mc.totalRef!=null&&<span style={{ fontSize:"9px", opacity:0.8 }}>total real</span>}
+                                      {tieneHijos&&!tablaTipoGrilla&&<span style={{ fontSize:"9px", opacity:0.7 }}>{colapsados[n.id]?">":"v"}</span>}
+                                      <span style={{ color:colorTexto, fontWeight:!esR?"600":"400", fontSize:"11px" }}>{textoVista(n.descripcion)}</span>
+                                      {!esR&&mc.totalRef!=null&&!tablaTipoGrilla&&<span style={{ fontSize:"9px", opacity:0.8 }}>total real</span>}
                                       {sinApu&&<span style={{ fontSize:"9px", background:"#fee2e2", color:"#991b1b", borderRadius:"3px", padding:"1px 4px" }}>SIN APU</span>}
                                       {obsoleto&&<span style={{ fontSize:"9px", background:"#e5e7eb", color:"#374151", borderRadius:"3px", padding:"1px 4px" }}>OBSOLETO</span>}
                                     </div>
@@ -1825,7 +1937,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                               if (editable) {
                                 return <td key={col} style={{ padding:"3px 4px", textAlign:c.align }} onClick={e=>e.stopPropagation()}>{celdaEditable(n, col)}</td>;
                               }
-                              return <td key={col} style={{ padding:"5px 4px", textAlign:c.align, color:col.includes("dif")?colorDif(diffValue):(esR?"#374151":cfg.text), fontWeight:col.includes("dif")?"500":"400" }}>{valorCelda(n, col, esR, m, mc)}</td>;
+                              return <td key={col} style={{ padding:"5px 4px", textAlign:c.align, color:col.includes("dif")?colorDif(diffValue):(tablaTipoGrilla?"#374151":(esR?"#374151":cfg.text)), fontWeight:col.includes("dif")?"500":"400" }}>{valorCelda(n, col, esR, m, mc)}</td>;
                             })}
                           </tr>
                         );
@@ -1961,7 +2073,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                 )}
                 <div style={{ overflowY:"auto", flex:1 }}>
                   {nodosSidebar.map(n=>{
-                    const cfg = COLORES_TIPO[n.tipo]||COLORES_TIPO.GRUPO;
+                    const cfg = configNodo(n);
                     const seleccionado = nodoSeleccionado?.id===n.id;
                     const est = estadoNodoPorId.get(n.id) || "sin_rubros";
                     return (

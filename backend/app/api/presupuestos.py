@@ -19,7 +19,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -514,6 +514,8 @@ class NodoOut(BaseModel):
     proyecto_id: int
     padre_id: Optional[int]
     tipo: str
+    tipo_origen: Optional[str] = None
+    nivel: Optional[int] = None
     item: Optional[str]
     descripcion: str
     orden: int
@@ -521,6 +523,10 @@ class NodoOut(BaseModel):
     metrado: Optional[float]
     precio_unitario_ref: Optional[float]
     apu_id: Optional[int]
+    activo_como_rubro: Optional[bool] = None
+    tiene_hijos: Optional[bool] = None
+    es_grupo: Optional[bool] = None
+    es_rubro_operativo: Optional[bool] = None
     tipo_rubro: Optional[str]
     observaciones: Optional[str]
     individualizado: Optional[bool] = None
@@ -539,6 +545,67 @@ class NodoOut(BaseModel):
         from_attributes = True
 
 
+def _nodo_out(nodo: NodoPresupuesto, hijos_por_padre: Optional[dict[int, int]] = None) -> NodoOut:
+    hijos_por_padre = hijos_por_padre or {}
+    tiene_hijos = hijos_por_padre.get(nodo.id, 0) > 0
+    activo = bool(nodo.activo_como_rubro) if nodo.activo_como_rubro is not None else nodo.tipo == "RUBRO"
+    salida = NodoOut.model_validate(nodo)
+    salida.tiene_hijos = tiene_hijos
+    salida.es_grupo = tiene_hijos
+    salida.es_rubro_operativo = activo and not tiene_hijos
+    return salida
+
+
+def _tiene_hijos(db: Session, nodo: NodoPresupuesto) -> bool:
+    return (
+        db.query(NodoPresupuesto.id)
+        .filter(NodoPresupuesto.padre_id == nodo.id)
+        .first()
+        is not None
+    )
+
+
+def _es_rubro_operativo(db: Session, nodo: NodoPresupuesto) -> bool:
+    activo = bool(nodo.activo_como_rubro) if nodo.activo_como_rubro is not None else nodo.tipo == "RUBRO"
+    return activo and not _tiene_hijos(db, nodo)
+
+
+def _descendientes_ids(nodo_id: int, hijos_por_padre: dict[Optional[int], list[NodoPresupuesto]]) -> set[int]:
+    ids = set()
+    pendientes = list(hijos_por_padre.get(nodo_id, []))
+    while pendientes:
+        actual = pendientes.pop()
+        ids.add(actual.id)
+        pendientes.extend(hijos_por_padre.get(actual.id, []))
+    return ids
+
+
+def _reordenar_nodos(nodos: list[NodoPresupuesto]) -> None:
+    for idx, nodo in enumerate(nodos):
+        nodo.orden = idx
+
+
+def _aplanar_hijos(hijos_por_padre: dict[Optional[int], list[NodoPresupuesto]]) -> list[NodoPresupuesto]:
+    resultado = []
+
+    def visitar(padre_id: Optional[int]) -> None:
+        for hijo in hijos_por_padre.get(padre_id, []):
+            resultado.append(hijo)
+            visitar(hijo.id)
+
+    visitar(None)
+    return resultado
+
+
+def _actualizar_estado_rubro_por_hijos(db: Session, nodo: Optional[NodoPresupuesto]) -> None:
+    if not nodo:
+        return
+    if _tiene_hijos(db, nodo):
+        nodo.activo_como_rubro = False
+    elif nodo.activo_como_rubro is False:
+        nodo.activo_como_rubro = True
+
+
 class NodoUpdate(BaseModel):
     item: Optional[str] = None
     descripcion: Optional[str] = None
@@ -555,6 +622,23 @@ class NodoCreate(BaseModel):
     unidad: Optional[str] = None
     metrado: Optional[float] = None
     precio_unitario_ref: Optional[float] = None
+
+
+class NodoMoverRequest(BaseModel):
+    accion: str
+    nodo_ids: Optional[list[int]] = None
+
+
+class NodoEstructuraSnapshot(BaseModel):
+    id: int
+    padre_id: Optional[int] = None
+    nivel: Optional[int] = None
+    orden: int
+    activo_como_rubro: Optional[bool] = None
+
+
+class EstructuraRestoreRequest(BaseModel):
+    nodos: list[NodoEstructuraSnapshot]
 
 
 class VincularAPURequest(BaseModel):
@@ -673,7 +757,13 @@ def listar_nodos(proyecto_id: int, db: Session = Depends(get_db)):
         .order_by(NodoPresupuesto.orden)
         .all()
     )
-    return nodos
+    hijos_por_padre = dict(
+        db.query(NodoPresupuesto.padre_id, func.count(NodoPresupuesto.id))
+        .filter(NodoPresupuesto.proyecto_id == proyecto_id, NodoPresupuesto.padre_id.isnot(None))
+        .group_by(NodoPresupuesto.padre_id)
+        .all()
+    )
+    return [_nodo_out(n, hijos_por_padre) for n in nodos]
 
 
 @router.patch("/nodos/{nodo_id}", response_model=NodoOut)
@@ -681,8 +771,8 @@ def editar_nodo(nodo_id: int, data: NodoUpdate, db: Session = Depends(get_db)):
     nodo = db.query(NodoPresupuesto).filter(NodoPresupuesto.id == nodo_id).first()
     if not nodo:
         raise HTTPException(status_code=404, detail="Nodo no encontrado")
-    if nodo.tipo != "RUBRO":
-        raise HTTPException(status_code=400, detail="Por ahora solo se editan nodos tipo RUBRO")
+    if not _es_rubro_operativo(db, nodo):
+        raise HTTPException(status_code=400, detail="Por ahora solo se editan nodos operativos tipo rubro")
     if data.estado_actualizacion is not None and data.estado_actualizacion not in ("activo", "obsoleto"):
         raise HTTPException(status_code=400, detail="Estado debe ser 'activo' u 'obsoleto'")
 
@@ -722,7 +812,7 @@ def editar_nodo(nodo_id: int, data: NodoUpdate, db: Session = Depends(get_db)):
 
     db.commit()
     db.refresh(nodo)
-    salida = NodoOut.model_validate(nodo)
+    salida = _nodo_out(nodo)
     salida.advertencia_edicion_apu = advertencia
     return salida
 
@@ -740,8 +830,8 @@ def crear_rubro_debajo(proyecto_id: int, data: NodoCreate, db: Session = Depends
     )
     if not referencia:
         raise HTTPException(status_code=404, detail="Nodo de referencia no encontrado")
-    if referencia.tipo != "RUBRO":
-        raise HTTPException(status_code=400, detail="La fila nueva debe agregarse debajo de un RUBRO")
+    if not _es_rubro_operativo(db, referencia):
+        raise HTTPException(status_code=400, detail="La fila nueva debe agregarse debajo de un rubro operativo")
 
     orden_referencia = referencia.orden or 0
     (
@@ -754,12 +844,15 @@ def crear_rubro_debajo(proyecto_id: int, data: NodoCreate, db: Session = Depends
         proyecto_id=proyecto_id,
         padre_id=referencia.padre_id,
         tipo="RUBRO",
+        tipo_origen="RUBRO",
+        nivel=referencia.nivel if referencia.nivel is not None else 6,
         item=_siguiente_item_rubro(db, proyecto_id, referencia.padre_id, referencia.item),
         descripcion=_texto(data.descripcion) or "(nuevo rubro)",
         orden=orden_referencia + 1,
         unidad=_texto(data.unidad),
         metrado=float(data.metrado) if data.metrado is not None else None,
         precio_unitario_ref=float(data.precio_unitario_ref) if data.precio_unitario_ref is not None else None,
+        activo_como_rubro=True,
         tipo_rubro="PENDIENTE",
         observaciones=None,
         estado_actualizacion="activo",
@@ -774,7 +867,7 @@ def crear_rubro_debajo(proyecto_id: int, data: NodoCreate, db: Session = Depends
     proyecto.fecha_actualizacion = datetime.utcnow()
     db.commit()
     db.refresh(nuevo)
-    return nuevo
+    return _nodo_out(nuevo)
 
 
 @router.patch("/nodos/{nodo_id}/marcar-obsoleto", response_model=NodoOut)
@@ -782,8 +875,8 @@ def marcar_obsoleto(nodo_id: int, db: Session = Depends(get_db)):
     nodo = db.query(NodoPresupuesto).filter(NodoPresupuesto.id == nodo_id).first()
     if not nodo:
         raise HTTPException(status_code=404, detail="Nodo no encontrado")
-    if nodo.tipo != "RUBRO":
-        raise HTTPException(status_code=400, detail="Solo se pueden marcar obsoletos nodos tipo RUBRO")
+    if not _es_rubro_operativo(db, nodo):
+        raise HTTPException(status_code=400, detail="Solo se pueden marcar obsoletos nodos operativos tipo rubro")
 
     nodo.estado_actualizacion = "obsoleto"
     nodo.origen_edicion = "manual"
@@ -795,12 +888,197 @@ def marcar_obsoleto(nodo_id: int, db: Session = Depends(get_db)):
         proyecto.fecha_actualizacion = datetime.utcnow()
     db.commit()
     db.refresh(nodo)
-    return nodo
+    return _nodo_out(nodo)
 
 
 # ════════════════════════════════════════
 # Importación desde Excel
 # ════════════════════════════════════════
+
+@router.patch("/nodos/{nodo_id}/mover-estructura", response_model=list[NodoOut])
+def mover_estructura(nodo_id: int, data: NodoMoverRequest, db: Session = Depends(get_db)):
+    accion = (data.accion or "").strip().lower()
+    if accion not in ("subir", "bajar", "sangrar", "quitar_sangria"):
+        raise HTTPException(status_code=400, detail="Accion invalida")
+
+    nodo_base = db.query(NodoPresupuesto).filter(NodoPresupuesto.id == nodo_id).first()
+    if not nodo_base:
+        raise HTTPException(status_code=404, detail="Nodo no encontrado")
+
+    nodos = (
+        db.query(NodoPresupuesto)
+        .filter(NodoPresupuesto.proyecto_id == nodo_base.proyecto_id)
+        .order_by(NodoPresupuesto.orden, NodoPresupuesto.id)
+        .all()
+    )
+    por_id = {n.id: n for n in nodos}
+    hijos_por_padre: dict[Optional[int], list[NodoPresupuesto]] = {}
+    for n in nodos:
+        hijos_por_padre.setdefault(n.padre_id, []).append(n)
+
+    ids_solicitados = data.nodo_ids or [nodo_id]
+    ids_unicos = []
+    for seleccion_id in ids_solicitados:
+        if seleccion_id not in ids_unicos:
+            ids_unicos.append(seleccion_id)
+    if not ids_unicos:
+        raise HTTPException(status_code=400, detail="Selecciona al menos una fila")
+
+    seleccion = []
+    for seleccion_id in ids_unicos:
+        nodo = por_id.get(seleccion_id)
+        if not nodo or nodo.proyecto_id != nodo_base.proyecto_id:
+            raise HTTPException(status_code=404, detail="Alguna fila seleccionada no existe en este proyecto")
+        seleccion.append(nodo)
+
+    seleccion_ids = {n.id for n in seleccion}
+    descendientes_por_nodo = {n.id: _descendientes_ids(n.id, hijos_por_padre) for n in seleccion}
+    for n in seleccion:
+        if descendientes_por_nodo[n.id] & seleccion_ids:
+            raise HTTPException(
+                status_code=400,
+                detail="La seleccion mezcla un grupo con sus hijos. Selecciona solo el grupo o solo sus filas hijas.",
+            )
+
+    padres = {n.padre_id for n in seleccion}
+    if len(padres) != 1:
+        raise HTTPException(status_code=400, detail="Selecciona filas contiguas del mismo nivel")
+
+    padre_anterior_id = seleccion[0].padre_id
+    hermanos = hijos_por_padre.get(padre_anterior_id, [])
+    indices = sorted(next((i for i, h in enumerate(hermanos) if h.id == n.id), -1) for n in seleccion)
+    if any(i < 0 for i in indices) or indices != list(range(indices[0], indices[-1] + 1)):
+        raise HTTPException(status_code=400, detail="Selecciona filas contiguas del mismo nivel")
+
+    seleccion_ordenada = [hermanos[i] for i in indices]
+    bloque_ids = set(seleccion_ids)
+    for ids in descendientes_por_nodo.values():
+        bloque_ids.update(ids)
+    padres_para_actualizar: set[Optional[int]] = {padre_anterior_id}
+
+    def aplicar_delta_nivel(delta: int) -> None:
+        for i in bloque_ids:
+            por_id[i].nivel = max(0, (por_id[i].nivel or 0) + delta)
+
+    def extraer_bloque_de_hermanos() -> list[NodoPresupuesto]:
+        return [n for n in hermanos if n.id in seleccion_ids]
+
+    if accion in ("subir", "bajar"):
+        inicio = indices[0]
+        fin = indices[-1]
+        if (accion == "subir" and inicio == 0) or (accion == "bajar" and fin >= len(hermanos) - 1):
+            raise HTTPException(status_code=400, detail="No hay nodo hermano para mover")
+        bloque = extraer_bloque_de_hermanos()
+        restantes = [n for n in hermanos if n.id not in seleccion_ids]
+        destino = inicio - 1 if accion == "subir" else inicio + 1
+        if accion == "bajar":
+            destino = min(destino, len(restantes))
+        restantes[destino:destino] = bloque
+        hijos_por_padre[padre_anterior_id] = restantes
+
+    elif accion == "sangrar":
+        inicio = indices[0]
+        if inicio <= 0:
+            raise HTTPException(status_code=400, detail="No hay nodo anterior para usar como grupo")
+        nuevo_padre = hermanos[inicio - 1]
+        if any(nuevo_padre.id in descendientes_por_nodo[n.id] for n in seleccion_ordenada):
+            raise HTTPException(status_code=400, detail="No se puede mover un nodo dentro de sus propios hijos")
+        delta = (nuevo_padre.nivel or 0) + 1 - (seleccion_ordenada[0].nivel or 0)
+        if any(((por_id[i].nivel or 0) + delta) > 7 for i in bloque_ids):
+            raise HTTPException(status_code=400, detail="Nivel maximo de jerarquia alcanzado (8 niveles)")
+        hijos_por_padre[padre_anterior_id] = [n for n in hermanos if n.id not in seleccion_ids]
+        hijos_destino = hijos_por_padre.setdefault(nuevo_padre.id, [])
+        for n in seleccion_ordenada:
+            n.padre_id = nuevo_padre.id
+            hijos_destino.append(n)
+        padres_para_actualizar.add(nuevo_padre.id)
+        nuevo_padre.activo_como_rubro = False
+        aplicar_delta_nivel(delta)
+
+    elif accion == "quitar_sangria":
+        padre = por_id.get(padre_anterior_id)
+        if not padre:
+            raise HTTPException(status_code=400, detail="La seleccion ya esta en el nivel superior")
+        delta = (padre.nivel or 0) - (seleccion_ordenada[0].nivel or 0)
+        hijos_por_padre[padre_anterior_id] = [n for n in hermanos if n.id not in seleccion_ids]
+        hermanos_destino = hijos_por_padre.setdefault(padre.padre_id, [])
+        idx_padre = next((i for i, h in enumerate(hermanos_destino) if h.id == padre.id), len(hermanos_destino) - 1)
+        for offset, n in enumerate(seleccion_ordenada, start=1):
+            n.padre_id = padre.padre_id
+            hermanos_destino.insert(idx_padre + offset, n)
+        padres_para_actualizar.update({padre.id, padre.padre_id})
+        aplicar_delta_nivel(delta)
+
+    nodos = _aplanar_hijos(hijos_por_padre)
+    _reordenar_nodos(nodos)
+    db.flush()
+    for padre_id in padres_para_actualizar:
+        _actualizar_estado_rubro_por_hijos(db, por_id.get(padre_id) if padre_id else None)
+
+    proyecto = db.query(Proyecto).filter(Proyecto.id == nodo_base.proyecto_id).first()
+    if proyecto:
+        proyecto.fecha_actualizacion = datetime.utcnow()
+    db.commit()
+
+    hijos_counts = dict(
+        db.query(NodoPresupuesto.padre_id, func.count(NodoPresupuesto.id))
+        .filter(NodoPresupuesto.proyecto_id == nodo_base.proyecto_id, NodoPresupuesto.padre_id.isnot(None))
+        .group_by(NodoPresupuesto.padre_id)
+        .all()
+    )
+    actualizados = (
+        db.query(NodoPresupuesto)
+        .filter(NodoPresupuesto.proyecto_id == nodo_base.proyecto_id)
+        .order_by(NodoPresupuesto.orden, NodoPresupuesto.id)
+        .all()
+    )
+    return [_nodo_out(n, hijos_counts) for n in actualizados]
+
+
+@router.patch("/proyectos/{proyecto_id}/nodos/estructura", response_model=list[NodoOut])
+def restaurar_estructura(proyecto_id: int, data: EstructuraRestoreRequest, db: Session = Depends(get_db)):
+    proyecto = db.query(Proyecto).filter(Proyecto.id == proyecto_id).first()
+    if not proyecto:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    if not data.nodos:
+        raise HTTPException(status_code=400, detail="No hay estructura para restaurar")
+
+    nodos = (
+        db.query(NodoPresupuesto)
+        .filter(NodoPresupuesto.proyecto_id == proyecto_id)
+        .all()
+    )
+    por_id = {n.id: n for n in nodos}
+    snapshot_ids = {n.id for n in data.nodos}
+    if snapshot_ids != set(por_id):
+        raise HTTPException(status_code=400, detail="La estructura guardada ya no coincide con el presupuesto actual")
+
+    for snap in data.nodos:
+        if snap.padre_id is not None and snap.padre_id not in por_id:
+            raise HTTPException(status_code=400, detail="La estructura guardada contiene un padre inexistente")
+        nodo = por_id[snap.id]
+        nodo.padre_id = snap.padre_id
+        nodo.nivel = snap.nivel
+        nodo.orden = snap.orden
+        nodo.activo_como_rubro = snap.activo_como_rubro
+
+    proyecto.fecha_actualizacion = datetime.utcnow()
+    db.commit()
+
+    hijos_counts = dict(
+        db.query(NodoPresupuesto.padre_id, func.count(NodoPresupuesto.id))
+        .filter(NodoPresupuesto.proyecto_id == proyecto_id, NodoPresupuesto.padre_id.isnot(None))
+        .group_by(NodoPresupuesto.padre_id)
+        .all()
+    )
+    actualizados = (
+        db.query(NodoPresupuesto)
+        .filter(NodoPresupuesto.proyecto_id == proyecto_id)
+        .order_by(NodoPresupuesto.orden, NodoPresupuesto.id)
+        .all()
+    )
+    return [_nodo_out(n, hijos_counts) for n in actualizados]
+
 
 @router.post("/proyectos/{proyecto_id}/importar", status_code=201)
 def importar_excel(
@@ -940,12 +1218,15 @@ def importar_excel(
             proyecto_id=proyecto_id,
             padre_id=padre_nodo.id if padre_nodo else None,
             tipo=tipo,
+            tipo_origen=tipo,
+            nivel=nivel_actual,
             item=item,
             descripcion=descripcion,
             orden=orden_global,
             unidad=unidad,
             metrado=metrado,
             precio_unitario_ref=precio_ref,
+            activo_como_rubro=(tipo == "RUBRO"),
             tipo_rubro=tipo_rubro,
             observaciones=observaciones,
         )
@@ -1132,12 +1413,15 @@ def aplicar_actualizacion_excel(
                 proyecto_id=proyecto_id,
                 padre_id=padre.id if padre else None,
                 tipo=fila["tipo"],
+                tipo_origen=fila["tipo"],
+                nivel=nivel,
                 item=item,
                 descripcion=fila["descripcion"],
                 orden=max_orden,
                 unidad=fila["unidad"] if es_rubro else None,
                 metrado=fila["metrado"] if es_rubro else None,
                 precio_unitario_ref=fila["precio_unitario_ref"] if es_rubro else None,
+                activo_como_rubro=es_rubro,
                 tipo_rubro="PENDIENTE" if es_rubro else None,
                 observaciones=fila["observaciones_excel"] if es_rubro else None,
                 estado_actualizacion="activo",
@@ -1201,9 +1485,9 @@ def vincular_apu(
     nodo = db.query(NodoPresupuesto).filter(NodoPresupuesto.id == nodo_id).first()
     if not nodo:
         raise HTTPException(status_code=404, detail="Nodo no encontrado")
-    if nodo.tipo != "RUBRO":
+    if not _es_rubro_operativo(db, nodo):
         raise HTTPException(
-            status_code=400, detail="Solo se puede vincular un APU a nodos tipo RUBRO"
+            status_code=400, detail="Solo se puede vincular un APU a nodos operativos tipo rubro"
         )
 
     apu = db.query(APU).filter(APU.id == data.apu_id).first()
@@ -1214,7 +1498,7 @@ def vincular_apu(
     nodo.tipo_rubro = "VINCULADO"
     db.commit()
     db.refresh(nodo)
-    return nodo
+    return _nodo_out(nodo)
 
 
 @router.patch("/nodos/{nodo_id}/desvincular-apu", response_model=NodoOut)
@@ -1231,7 +1515,7 @@ def desvincular_apu(nodo_id: int, db: Session = Depends(get_db)):
     nodo.tipo_rubro = "PENDIENTE"
     db.commit()
     db.refresh(nodo)
-    return nodo
+    return _nodo_out(nodo)
 
 
 @router.post("/nodos/{nodo_id}/crear-apu", response_model=CrearAPUDesdeRubroOut, status_code=201)
@@ -1242,8 +1526,8 @@ def crear_apu_desde_rubro(nodo_id: int, db: Session = Depends(get_db)):
     nodo = db.query(NodoPresupuesto).filter(NodoPresupuesto.id == nodo_id).first()
     if not nodo:
         raise HTTPException(status_code=404, detail="Nodo no encontrado")
-    if nodo.tipo != "RUBRO":
-        raise HTTPException(status_code=400, detail="Solo se puede crear APU desde nodos tipo RUBRO")
+    if not _es_rubro_operativo(db, nodo):
+        raise HTTPException(status_code=400, detail="Solo se puede crear APU desde nodos operativos tipo rubro")
     if not nodo.unidad:
         raise HTTPException(status_code=400, detail="El rubro no tiene unidad para crear el APU")
 
@@ -1282,7 +1566,7 @@ def individualizar_nodo(nodo_id: int, db: Session = Depends(get_db)):
     nodo.individualizado = True
     db.commit()
     db.refresh(nodo)
-    return nodo
+    return _nodo_out(nodo)
 
 
 @router.patch("/nodos/{nodo_id}/reagrupar", response_model=NodoOut)
@@ -1293,7 +1577,7 @@ def reagrupar_nodo(nodo_id: int, db: Session = Depends(get_db)):
     nodo.individualizado = False
     db.commit()
     db.refresh(nodo)
-    return nodo
+    return _nodo_out(nodo)
 
 @router.patch("/nodos/{nodo_id}/marcar-sin-apu", response_model=NodoOut)
 def marcar_sin_apu(nodo_id: int, db: Session = Depends(get_db)):
@@ -1301,15 +1585,15 @@ def marcar_sin_apu(nodo_id: int, db: Session = Depends(get_db)):
     nodo = db.query(NodoPresupuesto).filter(NodoPresupuesto.id == nodo_id).first()
     if not nodo:
         raise HTTPException(status_code=404, detail="Nodo no encontrado")
-    if nodo.tipo != "RUBRO":
-        raise HTTPException(status_code=400, detail="Solo se pueden marcar nodos tipo RUBRO")
+    if not _es_rubro_operativo(db, nodo):
+        raise HTTPException(status_code=400, detail="Solo se pueden marcar nodos operativos tipo rubro")
     # Si tenía APU vinculado, lo quitamos
     nodo.apu_id = None
     nodo.tipo_rubro = "PENDIENTE"
     nodo.observaciones = "SIN_APU"
     db.commit()
     db.refresh(nodo)
-    return nodo
+    return _nodo_out(nodo)
 
 
 @router.patch("/nodos/{nodo_id}/desmarcar-sin-apu", response_model=NodoOut)
@@ -1322,4 +1606,4 @@ def desmarcar_sin_apu(nodo_id: int, db: Session = Depends(get_db)):
     nodo.tipo_rubro = "PENDIENTE"
     db.commit()
     db.refresh(nodo)
-    return nodo
+    return _nodo_out(nodo)
