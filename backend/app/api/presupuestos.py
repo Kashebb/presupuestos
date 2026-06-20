@@ -19,6 +19,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -229,6 +230,112 @@ def _detalle_excel(registro: dict) -> dict:
     }
 
 
+def _siguiente_item_rubro(db: Session, proyecto_id: int, padre_id: Optional[int], referencia_item: Optional[str]) -> Optional[str]:
+    if referencia_item:
+        partes = referencia_item.split(".")
+        ultimo = partes[-1]
+        if ultimo.isdigit():
+            ancho = len(ultimo)
+            base = partes[:-1]
+            valor = int(ultimo) + 1
+            existentes = {
+                item for (item,) in db.query(NodoPresupuesto.item)
+                .filter(NodoPresupuesto.proyecto_id == proyecto_id)
+                .filter(NodoPresupuesto.item.isnot(None))
+                .all()
+            }
+            while True:
+                candidato = ".".join([*base, str(valor).zfill(ancho)])
+                if candidato not in existentes:
+                    return candidato
+                valor += 1
+
+    padre = db.query(NodoPresupuesto).filter(NodoPresupuesto.id == padre_id).first() if padre_id else None
+    prefijo = padre.item if padre and padre.item else None
+    if not prefijo:
+        return None
+
+    existentes_hermanos = [
+        item for (item,) in db.query(NodoPresupuesto.item)
+        .filter(
+            NodoPresupuesto.proyecto_id == proyecto_id,
+            NodoPresupuesto.padre_id == padre_id,
+            NodoPresupuesto.tipo == "RUBRO",
+            NodoPresupuesto.item.isnot(None),
+        )
+        .all()
+    ]
+    maximo = 0
+    for item in existentes_hermanos:
+        if not item.startswith(f"{prefijo}."):
+            continue
+        ultimo = item.split(".")[-1]
+        if ultimo.isdigit():
+            maximo = max(maximo, int(ultimo))
+    return f"{prefijo}.{str(maximo + 1).zfill(2)}"
+
+
+def _renumerar_rubros_hermanos_desde(
+    db: Session,
+    proyecto_id: int,
+    padre_id: Optional[int],
+    referencia_item: Optional[str],
+    orden_referencia: int,
+) -> None:
+    if not referencia_item:
+        return
+    partes = referencia_item.split(".")
+    ultimo = partes[-1]
+    if not ultimo.isdigit():
+        return
+
+    base = partes[:-1]
+    ancho = len(ultimo)
+    siguiente = int(ultimo) + 1
+    rubros = (
+        db.query(NodoPresupuesto)
+        .filter(
+            NodoPresupuesto.proyecto_id == proyecto_id,
+            NodoPresupuesto.padre_id == padre_id,
+            NodoPresupuesto.tipo == "RUBRO",
+            NodoPresupuesto.orden > orden_referencia,
+        )
+        .order_by(NodoPresupuesto.orden, NodoPresupuesto.id)
+        .all()
+    )
+    for idx, rubro in enumerate(rubros):
+        rubro.item = ".".join([*base, str(siguiente + idx).zfill(ancho)])
+
+
+def _renumerar_rubros_activos_hermanos(db: Session, proyecto_id: int, padre_id: Optional[int]) -> None:
+    padre = db.query(NodoPresupuesto).filter(NodoPresupuesto.id == padre_id).first() if padre_id else None
+    rubros = (
+        db.query(NodoPresupuesto)
+        .filter(
+            NodoPresupuesto.proyecto_id == proyecto_id,
+            NodoPresupuesto.padre_id == padre_id,
+            NodoPresupuesto.tipo == "RUBRO",
+            or_(NodoPresupuesto.estado_actualizacion != "obsoleto", NodoPresupuesto.estado_actualizacion.is_(None)),
+        )
+        .order_by(NodoPresupuesto.orden, NodoPresupuesto.id)
+        .all()
+    )
+    if not rubros:
+        return
+
+    if padre and padre.item:
+        base = padre.item.split(".")
+        ancho = 2
+    else:
+        partes = (rubros[0].item or "").split(".")
+        ultimo = partes[-1] if partes else ""
+        base = partes[:-1]
+        ancho = len(ultimo) if ultimo.isdigit() else 2
+
+    for idx, rubro in enumerate(rubros, start=1):
+        rubro.item = ".".join([*base, str(idx).zfill(ancho)])
+
+
 def _construir_preview_actualizacion(
     db: Session,
     proyecto_id: int,
@@ -418,14 +525,36 @@ class NodoOut(BaseModel):
     observaciones: Optional[str]
     individualizado: Optional[bool] = None
     estado_actualizacion: Optional[str] = None
+    origen_edicion: Optional[str] = None
+    requiere_revision_apu: Optional[bool] = None
     actualizacion_lote_id: Optional[int] = None
     excel_fila: Optional[int] = None
     excel_hoja: Optional[str] = None
     excel_archivo: Optional[str] = None
     fecha_actualizacion_fuente: Optional[datetime] = None
+    fecha_edicion_manual: Optional[datetime] = None
+    advertencia_edicion_apu: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+
+class NodoUpdate(BaseModel):
+    item: Optional[str] = None
+    descripcion: Optional[str] = None
+    unidad: Optional[str] = None
+    metrado: Optional[float] = None
+    precio_unitario_ref: Optional[float] = None
+    orden: Optional[int] = None
+    estado_actualizacion: Optional[str] = None
+
+
+class NodoCreate(BaseModel):
+    despues_de_id: int
+    descripcion: Optional[str] = None
+    unidad: Optional[str] = None
+    metrado: Optional[float] = None
+    precio_unitario_ref: Optional[float] = None
 
 
 class VincularAPURequest(BaseModel):
@@ -545,6 +674,128 @@ def listar_nodos(proyecto_id: int, db: Session = Depends(get_db)):
         .all()
     )
     return nodos
+
+
+@router.patch("/nodos/{nodo_id}", response_model=NodoOut)
+def editar_nodo(nodo_id: int, data: NodoUpdate, db: Session = Depends(get_db)):
+    nodo = db.query(NodoPresupuesto).filter(NodoPresupuesto.id == nodo_id).first()
+    if not nodo:
+        raise HTTPException(status_code=404, detail="Nodo no encontrado")
+    if nodo.tipo != "RUBRO":
+        raise HTTPException(status_code=400, detail="Por ahora solo se editan nodos tipo RUBRO")
+    if data.estado_actualizacion is not None and data.estado_actualizacion not in ("activo", "obsoleto"):
+        raise HTTPException(status_code=400, detail="Estado debe ser 'activo' u 'obsoleto'")
+
+    cambia_nombre = data.descripcion is not None and _distinto_texto(nodo.descripcion, data.descripcion)
+    cambia_unidad = data.unidad is not None and _distinto_texto(nodo.unidad, data.unidad)
+    advertencia = None
+
+    campos = data.model_fields_set
+
+    if "item" in campos:
+        raise HTTPException(status_code=400, detail="El item/codigo es automatico y no se edita manualmente")
+    if "descripcion" in campos:
+        texto = _texto(data.descripcion)
+        if not texto:
+            raise HTTPException(status_code=400, detail="La descripcion no puede quedar vacia")
+        nodo.descripcion = texto
+    if "unidad" in campos:
+        nodo.unidad = _texto(data.unidad)
+    if "metrado" in campos:
+        nodo.metrado = float(data.metrado) if data.metrado is not None else None
+    if "precio_unitario_ref" in campos:
+        nodo.precio_unitario_ref = float(data.precio_unitario_ref) if data.precio_unitario_ref is not None else None
+    if "orden" in campos:
+        nodo.orden = int(data.orden) if data.orden is not None else nodo.orden
+    if "estado_actualizacion" in campos:
+        nodo.estado_actualizacion = data.estado_actualizacion
+
+    if nodo.apu_id and (cambia_nombre or cambia_unidad):
+        nodo.requiere_revision_apu = True
+        advertencia = "El rubro tiene APU vinculado; revisa compatibilidad de descripcion/unidad."
+
+    nodo.origen_edicion = "manual"
+    nodo.fecha_edicion_manual = datetime.utcnow()
+    proyecto = db.query(Proyecto).filter(Proyecto.id == nodo.proyecto_id).first()
+    if proyecto:
+        proyecto.fecha_actualizacion = datetime.utcnow()
+
+    db.commit()
+    db.refresh(nodo)
+    salida = NodoOut.model_validate(nodo)
+    salida.advertencia_edicion_apu = advertencia
+    return salida
+
+
+@router.post("/proyectos/{proyecto_id}/nodos", response_model=NodoOut, status_code=201)
+def crear_rubro_debajo(proyecto_id: int, data: NodoCreate, db: Session = Depends(get_db)):
+    proyecto = db.query(Proyecto).filter(Proyecto.id == proyecto_id).first()
+    if not proyecto:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+
+    referencia = (
+        db.query(NodoPresupuesto)
+        .filter(NodoPresupuesto.id == data.despues_de_id, NodoPresupuesto.proyecto_id == proyecto_id)
+        .first()
+    )
+    if not referencia:
+        raise HTTPException(status_code=404, detail="Nodo de referencia no encontrado")
+    if referencia.tipo != "RUBRO":
+        raise HTTPException(status_code=400, detail="La fila nueva debe agregarse debajo de un RUBRO")
+
+    orden_referencia = referencia.orden or 0
+    (
+        db.query(NodoPresupuesto)
+        .filter(NodoPresupuesto.proyecto_id == proyecto_id, NodoPresupuesto.orden > orden_referencia)
+        .update({NodoPresupuesto.orden: NodoPresupuesto.orden + 1}, synchronize_session=False)
+    )
+
+    nuevo = NodoPresupuesto(
+        proyecto_id=proyecto_id,
+        padre_id=referencia.padre_id,
+        tipo="RUBRO",
+        item=_siguiente_item_rubro(db, proyecto_id, referencia.padre_id, referencia.item),
+        descripcion=_texto(data.descripcion) or "(nuevo rubro)",
+        orden=orden_referencia + 1,
+        unidad=_texto(data.unidad),
+        metrado=float(data.metrado) if data.metrado is not None else None,
+        precio_unitario_ref=float(data.precio_unitario_ref) if data.precio_unitario_ref is not None else None,
+        tipo_rubro="PENDIENTE",
+        observaciones=None,
+        estado_actualizacion="activo",
+        origen_edicion="manual",
+        requiere_revision_apu=False,
+        fecha_edicion_manual=datetime.utcnow(),
+    )
+    db.add(nuevo)
+    db.flush()
+    _renumerar_rubros_activos_hermanos(db, proyecto_id, referencia.padre_id)
+    db.flush()
+    proyecto.fecha_actualizacion = datetime.utcnow()
+    db.commit()
+    db.refresh(nuevo)
+    return nuevo
+
+
+@router.patch("/nodos/{nodo_id}/marcar-obsoleto", response_model=NodoOut)
+def marcar_obsoleto(nodo_id: int, db: Session = Depends(get_db)):
+    nodo = db.query(NodoPresupuesto).filter(NodoPresupuesto.id == nodo_id).first()
+    if not nodo:
+        raise HTTPException(status_code=404, detail="Nodo no encontrado")
+    if nodo.tipo != "RUBRO":
+        raise HTTPException(status_code=400, detail="Solo se pueden marcar obsoletos nodos tipo RUBRO")
+
+    nodo.estado_actualizacion = "obsoleto"
+    nodo.origen_edicion = "manual"
+    nodo.fecha_edicion_manual = datetime.utcnow()
+    db.flush()
+    _renumerar_rubros_activos_hermanos(db, nodo.proyecto_id, nodo.padre_id)
+    proyecto = db.query(Proyecto).filter(Proyecto.id == nodo.proyecto_id).first()
+    if proyecto:
+        proyecto.fecha_actualizacion = datetime.utcnow()
+    db.commit()
+    db.refresh(nodo)
+    return nodo
 
 
 # ════════════════════════════════════════

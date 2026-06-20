@@ -51,11 +51,14 @@ class NodoPresupuesto(Base):
     individualizado = Column(Boolean, default=False, nullable=True)
 
     estado_actualizacion = Column(String(20), default="activo", nullable=True)
+    origen_edicion = Column(String(30), default="importado", nullable=True)
+    requiere_revision_apu = Column(Boolean, default=False, nullable=True)
     actualizacion_lote_id = Column(Integer, ForeignKey("actualizaciones_presupuesto_lotes.id", ondelete="SET NULL"), nullable=True)
     excel_fila = Column(Integer, nullable=True)
     excel_hoja = Column(String(120), nullable=True)
     excel_archivo = Column(String(260), nullable=True)
     fecha_actualizacion_fuente = Column(DateTime, nullable=True)
+    fecha_edicion_manual = Column(DateTime, nullable=True)
 
     proyecto = relationship(
         "Proyecto",

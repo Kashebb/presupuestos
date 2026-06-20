@@ -123,6 +123,7 @@ function debugPerf(label, startedAt, extra = {}) {
 const DOT_COLOR = { completo: "#16a34a", parcial: "#ca8a04", ninguno: "#dc2626", sin_rubros: "#d1d5db" };
 
 const VISTAS_COLUMNAS = {
+  editar: ["item", "descripcion", "unidad", "metrado", "pu_ref", "total_ref", "estado"],
   presupuesto: ["descripcion", "unidad", "metrado", "pu_ref", "total_ref", "estado"],
   meta: ["descripcion", "unidad", "metrado", "pu_meta", "total_meta", "estado"],
   unitarios: ["descripcion", "unidad", "pu_ref", "pu_meta", "dif_pu", "dif_pu_pct", "estado"],
@@ -132,6 +133,7 @@ const VISTAS_COLUMNAS = {
 };
 
 const COLUMNAS = {
+  item: { label: "Item/codigo", align: "left", width: "11%" },
   descripcion: { label: "Descripcion", align: "left", width: "28%" },
   unidad: { label: "Und", align: "center", width: "5%" },
   metrado: { label: "Metrado", align: "right", width: "8%" },
@@ -261,6 +263,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
   // Filtros vista jerarquica
   const [filtroEstado, setFiltroEstado] = useState("PENDIENTE"); // todos|VINCULADO|PENDIENTE|SIN_APU
   const [filtroAnalisis, setFiltroAnalisis] = useState("todos"); // todos|impacto|positivos|negativos|sin_meta|sin_apu
+  const [filtroEditarEstado, setFiltroEditarEstado] = useState("activos"); // activos|obsoletos|todos
   const [buscarRubro, setBuscarRubro] = useState("");
   const [buscarSidebar, setBuscarSidebar] = useState("");
 
@@ -649,15 +652,17 @@ export default function Presupuestos({ initialFilter = "todos" }) {
   const esVistaEditar = vistaInterna === "editar";
   const esVistaVincular = vistaInterna === "vincular";
   const esVistaAnalisis = vistaInterna === "analisis";
+  const permiteSeleccionTabla = esVistaEditar || esVistaVincular;
 
   const columnasActivas = useMemo(
     () => {
+      if (vistaInterna === "editar") return VISTAS_COLUMNAS.editar;
       if (vistaInterna === "analisis") return VISTAS_COLUMNAS[vistaColumnas] || VISTAS_COLUMNAS.presupuesto;
       return VISTAS_COLUMNAS.presupuesto;
     },
     [vistaColumnas, vistaInterna]
   );
-  const anchoColumnaSeleccion = esVistaVincular ? 24 : 0;
+  const anchoColumnaSeleccion = permiteSeleccionTabla ? 24 : 0;
   const anchoOtrasColumnas = useMemo(() => columnasActivas
     .filter((key) => key !== "descripcion")
     .reduce((s, key) => s + (Number.parseFloat(COLUMNAS[key].width) || 0), 0), [columnasActivas]);
@@ -755,6 +760,14 @@ export default function Presupuestos({ initialFilter = "todos" }) {
     const ocultos = new Set();
     nodosPlanos.forEach(n => { if (n.padre_id && (ocultos.has(n.padre_id)||colapsados[n.padre_id])) ocultos.add(n.id); });
     let visibles = nodosPlanos.filter(n => !ocultos.has(n.id));
+    const mostrarObsoletos = esVistaEditar ? filtroEditarEstado !== "activos" : false;
+    visibles = visibles.filter(n => {
+      if (n.tipo !== "RUBRO") return true;
+      const obsoleto = n.estado_actualizacion === "obsoleto";
+      if (esVistaEditar && filtroEditarEstado === "obsoletos") return obsoleto;
+      if (esVistaEditar && filtroEditarEstado === "todos") return true;
+      return !obsoleto && !mostrarObsoletos;
+    });
 
     // Filtro por nodo seleccionado en sidebar
     if (nodoSeleccionado && nodoPorId.has(nodoSeleccionado.id)) {
@@ -801,7 +814,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
 
     debugPerf("nodos visibles", t0, { visibles: visibles.length });
     return visibles;
-  }, [nodosPlanos, colapsados, nodoSeleccionado, nodoPorId, hijosPorPadre, esVistaVincular, filtroEstado, esVistaAnalisis, filtroAnalisis, metricasRubroPorId, buscarRubro]);
+  }, [nodosPlanos, colapsados, esVistaEditar, filtroEditarEstado, nodoSeleccionado, nodoPorId, hijosPorPadre, esVistaVincular, filtroEstado, esVistaAnalisis, filtroAnalisis, metricasRubroPorId, buscarRubro]);
 
   // Nodos sidebar filtrados
   const nodosSidebar = useMemo(() => nodosPlanos.filter(n => n.tipo !== "RUBRO").filter(n => {
@@ -886,9 +899,8 @@ export default function Presupuestos({ initialFilter = "todos" }) {
   }, [nodoSeleccionado, rubros, rubrosPorContenedor, metricasRubroPorId]);
 
   const nodosParaGrupos = useMemo(() => {
-    if (!nodoSeleccionado) return nodosPlanos;
-    const rubrosGrupo = rubrosPorContenedor.get(nodoSeleccionado.id) || [];
-    return rubrosGrupo;
+    const base = nodoSeleccionado ? (rubrosPorContenedor.get(nodoSeleccionado.id) || []) : nodosPlanos;
+    return base.filter(n => n.tipo !== "RUBRO" || n.estado_actualizacion !== "obsoleto");
   }, [nodoSeleccionado, nodosPlanos, rubrosPorContenedor]);
 
   const { grupos, individualizados } = useMemo(() => calcularGrupos(nodosParaGrupos), [nodosParaGrupos]);
@@ -931,6 +943,10 @@ export default function Presupuestos({ initialFilter = "todos" }) {
     () => nodosVisibles.filter(n => n.tipo === "RUBRO" && idsSeleccionados.has(n.id)).length,
     [nodosVisibles, idsSeleccionados]
   );
+  const idsRubrosVisibles = useMemo(
+    () => new Set(nodosVisibles.filter(n => n.tipo === "RUBRO").map(n => n.id)),
+    [nodosVisibles]
+  );
   const unicoRubroSeleccionado = rubrosSeleccionadosDatos.length === 1 ? rubrosSeleccionadosDatos[0] : null;
   const rubroResumenApu = useMemo(() => {
     if (unicoRubroSeleccionado?.apu_id) return unicoRubroSeleccionado;
@@ -950,7 +966,11 @@ export default function Presupuestos({ initialFilter = "todos" }) {
 
   const toggleRubroSeleccionado = (id) => {
     setRubrosSeleccionados(prev => {
-      const siguiente = new Set(prev);
+      const tieneSeleccionOculta = prev.some(prevId => !idsRubrosVisibles.has(prevId));
+      const base = tieneSeleccionOculta && !prev.includes(id)
+        ? prev.filter(prevId => idsRubrosVisibles.has(prevId))
+        : prev;
+      const siguiente = new Set(base);
       if (siguiente.has(id)) siguiente.delete(id);
       else siguiente.add(id);
       const seleccion = [...siguiente];
@@ -1020,6 +1040,165 @@ export default function Presupuestos({ initialFilter = "todos" }) {
   const vincularSeleccion = () => {
     if (!unicoRubroSeleccionado) return;
     abrirVincular(unicoRubroSeleccionado, false);
+  };
+
+  const vincularSeleccionMultiple = () => {
+    if (rubrosSeleccionadosDatos.length < 2) return;
+    abrirVincular({
+      descripcion: `${rubrosSeleccionadosDatos.length} rubros seleccionados`,
+      unidad: rubrosSeleccionadosDatos[0]?.unidad,
+      rubros: rubrosSeleccionadosDatos,
+    }, true);
+  };
+
+  const valorNumeroONull = (valor) => {
+    if (valor === "" || valor == null) return null;
+    let texto = String(valor).trim();
+    if (!texto) return null;
+    texto = texto.replace(/[^\d,.-]/g, "");
+    const ultimaComa = texto.lastIndexOf(",");
+    const ultimoPunto = texto.lastIndexOf(".");
+    if (ultimaComa > -1 && ultimoPunto > -1) {
+      texto = ultimaComa > ultimoPunto
+        ? texto.replace(/\./g, "").replace(",", ".")
+        : texto.replace(/,/g, "");
+    } else if (ultimaComa > -1) {
+      texto = texto.replace(",", ".");
+    }
+    const n = Number(texto);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const normalizarValorCeldaEdicion = (col, valor) => {
+    if (col === "metrado" || col === "pu_ref") return valorNumeroONull(valor);
+    if (col === "item" || col === "descripcion" || col === "unidad") return valor ?? "";
+    return valor;
+  };
+
+  const campoApiPorColumna = (col) => {
+    if (col === "pu_ref") return "precio_unitario_ref";
+    return col;
+  };
+
+  const guardarCambiosRubro = async (rubro, cambios, { refrescar = false, silencioso = false } = {}) => {
+    if (!rubro || rubro.tipo !== "RUBRO" || !Object.keys(cambios).length) return null;
+    const res = await fetch(`${API}/presupuestos/nodos/${rubro.id}`, {
+      method:"PATCH",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(cambios),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setError(err.detail || "No se pudo guardar el rubro.");
+      return null;
+    }
+    const data = await res.json();
+    setNodosPlanos(prev => prev.map(n => n.id === data.id ? { ...n, ...data } : n));
+    setError("");
+    if (!silencioso) mostrarExito(data.advertencia_edicion_apu || "Cambio guardado");
+    if (refrescar) cargarNodos(proyectoActual);
+    return data;
+  };
+
+  const guardarCeldaInline = async (rubro, col, valorOriginal) => {
+    const campo = campoApiPorColumna(col);
+    const valor = normalizarValorCeldaEdicion(col, valorOriginal);
+    const actual = col === "pu_ref" ? rubro.precio_unitario_ref : rubro[col];
+    if ((actual ?? "") === (valor ?? "")) return;
+    await guardarCambiosRubro(rubro, { [campo]: valor });
+  };
+
+  const pegarRangoExcel = async (event, rubro, colInicio) => {
+    const texto = event.clipboardData?.getData("text/plain") || "";
+    if (!texto.includes("\t") && !texto.includes("\n")) return;
+    event.preventDefault();
+    const columnasPegables = ["descripcion", "unidad", "metrado", "pu_ref"];
+    const pareceItemAutomatico = (valor) => /^\s*\d+(?:\.\d+)*\s*$/.test(valor || "");
+    const pareceNumero = (valor) => {
+      return valorNumeroONull(valor) !== null;
+    };
+    const columnasDesdeValores = (valores) => {
+      if (valores.length >= 5 && pareceItemAutomatico(valores[0])) return columnasPegables;
+      if (valores.length >= 4 && !pareceNumero(valores[0]) && pareceNumero(valores[2])) return columnasPegables;
+      return columnasPegables.slice(columnasPegables.indexOf(colInicio));
+    };
+    const cambiosDesdeFila = (valores) => {
+      let celdas = valores.map(v => v ?? "");
+      if (celdas.length >= 5 && pareceItemAutomatico(celdas[0])) celdas = celdas.slice(1);
+      const cambios = {};
+      const columnasDestino = columnasDesdeValores(celdas);
+      celdas.forEach((valor, offset) => {
+        const col = columnasDestino[offset];
+        if (!col) return;
+        cambios[campoApiPorColumna(col)] = normalizarValorCeldaEdicion(col, valor);
+      });
+
+      const tieneFilaCompleta = columnasDestino[0] === "descripcion";
+      if (tieneFilaCompleta && (cambios.precio_unitario_ref == null || Number.isNaN(cambios.precio_unitario_ref))) {
+        const numeros = celdas.map(valorNumeroONull).filter(v => v != null);
+        if (numeros.length >= 2) cambios.precio_unitario_ref = numeros[1];
+      }
+      return cambios;
+    };
+    const colIndex = columnasPegables.indexOf(colInicio);
+    if (colIndex < 0) return;
+    const rubrosVisibles = nodosVisibles.filter(n => n.tipo === "RUBRO");
+    const filaInicio = rubrosVisibles.findIndex(n => n.id === rubro.id);
+    if (filaInicio < 0) return;
+    const filas = texto.replace(/\r/g, "").split("\n").filter((fila, idx, arr) => fila.length || idx < arr.length - 1);
+    let aplicados = 0;
+    for (let i = 0; i < filas.length; i += 1) {
+      const destino = rubrosVisibles[filaInicio + i];
+      if (!destino) break;
+      const cambios = cambiosDesdeFila(filas[i].split("\t"));
+      if (Object.keys(cambios).length) {
+        const guardado = await guardarCambiosRubro(destino, cambios, { silencioso: true });
+        if (guardado) aplicados += 1;
+      }
+    }
+    mostrarExito(`Pegado aplicado: ${aplicados} fila(s)`);
+    cargarNodos(proyectoActual);
+  };
+
+  const agregarFilaDebajo = async () => {
+    if (!unicoRubroSeleccionado) return;
+    const res = await fetch(`${API}/presupuestos/proyectos/${proyectoActual.id}/nodos`, {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({ despues_de_id: unicoRubroSeleccionado.id }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setError(err.detail || "No se pudo agregar la fila.");
+      return;
+    }
+    const nuevo = await res.json();
+    setRubrosSeleccionados([nuevo.id]);
+    setApuResumenRubroId(null);
+    mostrarExito("Fila agregada debajo");
+    cargarNodos(proyectoActual);
+  };
+
+  const marcarObsoletoSeleccion = async () => {
+    const seleccionActiva = rubrosSeleccionadosDatos.filter(r => r.estado_actualizacion !== "obsoleto");
+    if (!seleccionActiva.length) return;
+    const etiqueta = seleccionActiva.length === 1 ? "este rubro" : `${seleccionActiva.length} rubros`;
+    if (!confirm(`Marcar ${etiqueta} como obsoleto(s)? Se conserva el APU historico si existe y se renumeran los rubros activos.`)) return;
+
+    let errores = 0;
+    for (const rubro of seleccionActiva) {
+      const res = await fetch(`${API}/presupuestos/nodos/${rubro.id}/marcar-obsoleto`, { method:"PATCH" });
+      if (!res.ok) errores += 1;
+    }
+    if (errores) {
+      setError(`${errores} rubro(s) no se pudieron marcar obsoletos.`);
+      await cargarNodos(proyectoActual);
+      return;
+    }
+    setRubrosSeleccionados([]);
+    setApuResumenRubroId(null);
+    mostrarExito(`${seleccionActiva.length} rubro(s) marcados como obsoletos`);
+    cargarNodos(proyectoActual);
   };
 
   const crearApuSeleccion = () => {
@@ -1105,6 +1284,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
 
   const valorCelda = (n, col, esR, m, mc) => {
     if (!esR && ["unidad","metrado","pu_ref","pu_meta","dif_pu","dif_pu_pct","material","mano_de_obra","equipo","transporte","otros","estado"].includes(col)) return "";
+    if (col === "item") return n.item || "";
     if (col === "unidad") return n.unidad || "";
     if (col === "metrado") return esR && n.metrado != null ? fmtN(n.metrado) : "";
     if (col === "pu_ref") return esR ? fmtM(m.puRef) : "";
@@ -1125,6 +1305,56 @@ export default function Presupuestos({ initialFilter = "todos" }) {
     if (col === "transporte") return esR ? fmtM(m.subtotales.transporte ?? null) : "";
     if (col === "otros") return esR ? fmtM(m.subtotales.otros ?? null) : "";
     return "";
+  };
+
+  const valorEditable = (n, col) => {
+    if (col === "pu_ref") return n.precio_unitario_ref ?? "";
+    if (col === "metrado") return n.metrado ?? "";
+    return n[col] ?? "";
+  };
+
+  const celdaEditable = (n, col) => {
+    const esTextoLargo = col === "descripcion";
+    const commonStyle = {
+      width:"100%",
+      boxSizing:"border-box",
+      border:"1px solid transparent",
+      borderRadius:"4px",
+      background:"transparent",
+      color:"#111827",
+      fontSize:"11px",
+      lineHeight:1.25,
+      padding:"3px 5px",
+      outline:"none",
+    };
+    const props = {
+      defaultValue: valorEditable(n, col),
+      onClick: e => e.stopPropagation(),
+      onFocus: e => {
+        e.currentTarget.style.borderColor = "#86efac";
+        e.currentTarget.style.background = "#fff";
+      },
+      onBlur: e => {
+        e.currentTarget.style.borderColor = "transparent";
+        e.currentTarget.style.background = "transparent";
+        guardarCeldaInline(n, col, e.currentTarget.value);
+      },
+      onPaste: e => pegarRangoExcel(e, n, col),
+      onKeyDown: e => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
+        if (e.key === "Escape") {
+          e.currentTarget.value = valorEditable(n, col);
+          e.currentTarget.blur();
+        }
+      },
+      style: commonStyle,
+    };
+    const editorKey = `${n.id}-${col}-${valorEditable(n, col) ?? ""}`;
+    if (esTextoLargo) return <textarea key={editorKey} {...props} rows={1} style={{ ...commonStyle, resize:"vertical", minHeight:"24px" }} />;
+    return <input key={editorKey} {...props} type={col === "metrado" || col === "pu_ref" ? "number" : "text"} step="0.0001" />;
   };
 
   // VISTA: Lista de proyectos
@@ -1338,14 +1568,25 @@ export default function Presupuestos({ initialFilter = "todos" }) {
             <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
               {esVistaEditar&&(
                 <ToolbarShell>
-                  <span style={{ fontSize:"11px", color:"#6b7280", fontWeight:"700", textTransform:"uppercase" }}>Edicion preparada</span>
-                  {["Agregar fila debajo","Editar fila","Marcar obsoleto","Guardar cambios","Cancelar cambios"].map(label=>(
-                    <button key={label} disabled title="Disponible cuando se creen los endpoints de edicion"
-                      style={{ fontSize:"11px", padding:"5px 9px", border:"1px solid #d1d5db", borderRadius:"6px", background:"#f3f4f6", color:"#9ca3af", cursor:"not-allowed" }}>
-                      {label}
-                    </button>
-                  ))}
-                  <span style={{ fontSize:"11px", color:"#6b7280" }}>Solo lectura: no hay persistencia manual habilitada.</span>
+                  <span style={{ fontSize:"11px", color:"#6b7280", fontWeight:"700", textTransform:"uppercase" }}>Editar presupuesto</span>
+                  <button onClick={agregarFilaDebajo} disabled={!unicoRubroSeleccionado}
+                    style={{ fontSize:"11px", padding:"5px 9px", border:"1px solid #166534", borderRadius:"6px", background:unicoRubroSeleccionado?"#166534":"#f3f4f6", color:unicoRubroSeleccionado?"#fff":"#9ca3af", cursor:unicoRubroSeleccionado?"pointer":"not-allowed" }}>
+                    Agregar fila debajo
+                  </button>
+                  <button onClick={marcarObsoletoSeleccion} disabled={!rubrosSeleccionadosDatos.some(r=>r.estado_actualizacion!=="obsoleto")}
+                    style={{ fontSize:"11px", padding:"5px 9px", border:"1px solid #fecaca", borderRadius:"6px", background:"#fef2f2", color:rubrosSeleccionadosDatos.some(r=>r.estado_actualizacion!=="obsoleto")?"#b91c1c":"#9ca3af", cursor:rubrosSeleccionadosDatos.some(r=>r.estado_actualizacion!=="obsoleto")?"pointer":"not-allowed" }}>
+                    Marcar obsoleto{rubrosSeleccionadosDatos.length>1?` (${rubrosSeleccionadosDatos.length})`:""}
+                  </button>
+                  <div style={{ display:"flex", gap:"4px", alignItems:"center", marginLeft:"8px" }}>
+                    <span style={{ fontSize:"10px", color:"#6b7280" }}>Mostrar:</span>
+                    {[["activos","Activos"],["obsoletos","Obsoletos"],["todos","Todos"]].map(([val,label])=>(
+                      <button key={val} onClick={()=>setFiltroEditarEstado(val)}
+                        style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid", borderColor:filtroEditarEstado===val?"#166534":"#d1d5db", borderRadius:"999px", background:filtroEditarEstado===val?"#166534":"#fff", color:filtroEditarEstado===val?"#fff":"#374151", cursor:"pointer" }}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <span style={{ fontSize:"11px", color:"#6b7280" }}>{rubrosSeleccionadosDatos.length ? textoSeleccion : "Edita celdas directamente o pega rangos desde Excel"}</span>
                 </ToolbarShell>
               )}
               {esVistaVincular&&(
@@ -1442,6 +1683,10 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                   )}
                   {rubrosSeleccionadosDatos.length > 1&&(
                     <>
+                      <button onClick={vincularSeleccionMultiple} title="Vincular los rubros seleccionados al mismo APU si sus unidades son compatibles"
+                        style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #166534", borderRadius:"5px", background:"#166534", color:"#fff", cursor:"pointer" }}>
+                        Vincular seleccion
+                      </button>
                       <button onClick={marcarSinApuSeleccion} title="Marcar los rubros seleccionados como Sin APU"
                         style={{ fontSize:"10px", padding:"3px 8px", border:"1px solid #d1d5db", borderRadius:"5px", background:"#fff", color:"#374151", cursor:"pointer" }}>
                         Marcar Sin APU
@@ -1504,14 +1749,14 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                 ):(
                   <table style={{ width:"100%", borderCollapse:"collapse", fontSize:"11px", tableLayout:"fixed" }}>
                     <colgroup>
-                      {esVistaVincular&&<col style={{ width:`${anchoColumnaSeleccion}px` }} />}
+                      {permiteSeleccionTabla&&<col style={{ width:`${anchoColumnaSeleccion}px` }} />}
                       {columnasActivas.map((key) => (
                         <col key={key} style={{ width:key === "descripcion" ? anchoDescripcion : COLUMNAS[key].width }} />
                       ))}
                     </colgroup>
                     <thead>
                       <tr style={{ background:"#f3f4f6", position:"sticky", top:0, zIndex:1 }}>
-                        {esVistaVincular&&<th style={{ padding:"7px 3px", textAlign:"center", borderBottom:"1px solid #e5e7eb", color:"#374151", fontWeight:"600", width:"24px", minWidth:"24px", maxWidth:"24px", whiteSpace:"nowrap" }} title="Seleccion manual por rubro">
+                        {permiteSeleccionTabla&&<th style={{ padding:"7px 3px", textAlign:"center", borderBottom:"1px solid #e5e7eb", color:"#374151", fontWeight:"600", width:"24px", minWidth:"24px", maxWidth:"24px", whiteSpace:"nowrap" }} title="Seleccion manual por rubro">
                           Sel.
                         </th>}
                         {columnasActivas.map((key)=>{
@@ -1534,7 +1779,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                         return (
                           <tr key={n.id} style={{ background:estaSeleccionado?"#ecfdf5":(esR?(obsoleto?"#f3f4f6":"#fff"):cfg.bg), borderBottom:estaSeleccionado?"1px solid #bbf7d0":"1px solid #e5e7eb", cursor:tieneHijos?"pointer":"default", opacity:obsoleto?0.72:1 }}
                             onClick={()=>tieneHijos&&toggleColapsar(n.id)}>
-                            {esVistaVincular&&<td style={{ padding:"5px 3px", textAlign:"center", width:"24px", minWidth:"24px", maxWidth:"24px", borderLeft:estaSeleccionado?"3px solid #16a34a":"3px solid transparent" }} onClick={e=>e.stopPropagation()}>
+                            {permiteSeleccionTabla&&<td style={{ padding:"5px 3px", textAlign:"center", width:"24px", minWidth:"24px", maxWidth:"24px", borderLeft:estaSeleccionado?"3px solid #16a34a":"3px solid transparent" }} onClick={e=>e.stopPropagation()}>
                               {esR&&(
                                 <input
                                   type="checkbox"
@@ -1548,7 +1793,20 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                             {columnasActivas.map((col) => {
                               const c = COLUMNAS[col];
                               const diffValue = col.includes("dif") ? (col.includes("pu") ? m.difPu : (esR ? m.difTotal : mc.difTotal)) : null;
+                              const editable = esVistaEditar && esR && ["descripcion","unidad","metrado","pu_ref"].includes(col);
                               if (col === "descripcion") {
+                                if (editable) {
+                                  return (
+                                    <td key={col} style={{ padding:"3px 5px" }} onClick={e=>e.stopPropagation()}>
+                                      {celdaEditable(n, col)}
+                                      <div style={{ display:"flex", gap:"4px", marginTop:"2px", flexWrap:"wrap" }}>
+                                        {sinApu&&<span style={{ fontSize:"9px", background:"#fee2e2", color:"#991b1b", borderRadius:"3px", padding:"1px 4px" }}>SIN APU</span>}
+                                        {obsoleto&&<span style={{ fontSize:"9px", background:"#e5e7eb", color:"#374151", borderRadius:"3px", padding:"1px 4px" }}>OBSOLETO</span>}
+                                        {n.requiere_revision_apu&&<span style={{ fontSize:"9px", background:"#fffbeb", color:"#854d0e", borderRadius:"3px", padding:"1px 4px" }}>APU POR REVISAR</span>}
+                                      </div>
+                                    </td>
+                                  );
+                                }
                                 return (
                                   <td key={col} style={{ padding:"5px 8px", paddingLeft:`${cfg.indent+8}px` }}>
                                     <div style={{ display:"flex", alignItems:"center", gap:"5px" }}>
@@ -1563,6 +1821,9 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                               }
                               if (col === "estado") {
                                 return <td key={col} style={{ padding:"5px 4px", textAlign:"center" }}>{badge&&<span style={{ background:badge.bg, color:badge.text, borderRadius:"4px", padding:"2px 6px", fontSize:"9px", fontWeight:"600" }}>{badge.label}</span>}</td>;
+                              }
+                              if (editable) {
+                                return <td key={col} style={{ padding:"3px 4px", textAlign:c.align }} onClick={e=>e.stopPropagation()}>{celdaEditable(n, col)}</td>;
                               }
                               return <td key={col} style={{ padding:"5px 4px", textAlign:c.align, color:col.includes("dif")?colorDif(diffValue):(esR?"#374151":cfg.text), fontWeight:col.includes("dif")?"500":"400" }}>{valorCelda(n, col, esR, m, mc)}</td>;
                             })}
