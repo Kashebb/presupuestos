@@ -21,3 +21,7 @@
 - En `Editar`, se oculta la columna `Item/codigo` para que la organizacion se trabaje como grilla jerarquica y no por numeracion.
 - `Deshacer` ahora cancela la ultima accion de estructura restaurando una foto previa del arbol.
 - Se retiro de la interfaz el acceso a `Actualizar desde Excel` mientras se estabiliza la edicion estructural.
+- `Sangrar` sigue el comportamiento Project: una tarea puede convertirse en grupo/resumen al recibir hijos, conservando sus datos para volver a ser rubro si queda sin hijos.
+- La celda editable de descripcion elimina padding interno extra para alinear mejor texto seleccionado y no seleccionado.
+- Luego de mover estructura, los niveles se recalculan desde el arbol real para que los hijos de un mismo grupo queden alineados.
+- En `Editar`, la sangria visual usa la profundidad real del arbol y no el nivel historico guardado.

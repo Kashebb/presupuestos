@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Consulta a experto - estructura tipo Project en presupuestos</title>
+  <style>
+    :root {
+      --text: #111827;
+      --muted: #6b7280;
+      --border: #d1d5db;
+      --soft: #f8fafc;
+      --green: #166534;
+      --warn: #92400e;
+      --danger: #991b1b;
+    }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--text);
+      background: #fff;
+      line-height: 1.45;
+      font-size: 14px;
+    }
+    main {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 28px 32px 48px;
+    }
+    h1, h2, h3 {
+      line-height: 1.2;
+      margin: 0 0 10px;
+    }
+    h1 {
+      font-size: 26px;
+      margin-bottom: 6px;
+    }
+    h2 {
+      font-size: 19px;
+      margin-top: 28px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 6px;
+    }
+    h3 {
+      font-size: 15px;
+      margin-top: 18px;
+    }
+    p {
+      margin: 8px 0;
+    }
+    ul, ol {
+      margin-top: 8px;
+      padding-left: 22px;
+    }
+    li {
+      margin: 5px 0;
+    }
+    code {
+      background: #f3f4f6;
+      padding: 1px 4px;
+      border-radius: 4px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 12px;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 18px;
+    }
+    .callout {
+      border: 1px solid var(--border);
+      background: var(--soft);
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin: 12px 0;
+    }
+    .callout strong {
+      color: var(--green);
+    }
+    .warning {
+      border-color: #fbbf24;
+      background: #fffbeb;
+    }
+    .warning strong {
+      color: var(--warn);
+    }
+    .danger {
+      border-color: #fecaca;
+      background: #fef2f2;
+    }
+    .danger strong {
+      color: var(--danger);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0;
+      font-size: 13px;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 8px 9px;
+      vertical-align: top;
+      text-align: left;
+    }
+    th {
+      background: #f3f4f6;
+      font-weight: 700;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin: 14px 0;
+    }
+    figure {
+      margin: 0;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }
+    figure img {
+      display: block;
+      width: 100%;
+      height: auto;
+      background: #fff;
+    }
+    figcaption {
+      border-top: 1px solid var(--border);
+      padding: 8px 10px;
+      color: var(--muted);
+      font-size: 12px;
+      background: #f9fafb;
+    }
+    .outline {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 13px;
+      background: #f9fafb;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      white-space: pre;
+      overflow-x: auto;
+    }
+    .tag {
+      display: inline-block;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 11px;
+      color: #374151;
+      background: #fff;
+      margin-right: 4px;
+    }
+    @media (max-width: 760px) {
+      main { padding: 20px 16px 36px; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Consulta a experto: estructura tipo Project para presupuesto</h1>
+  <div class="meta">Documento preparado para validar reglas de sangria, grupos/resumen y rubros/tareas en la app de presupuestos.</div>
+
+  <div class="callout">
+    <strong>Objetivo:</strong>
+    Necesitamos que la vista <code>Editar</code> permita reorganizar capitulos, subcapitulos, grupos y rubros como un esquema tipo Microsoft Project, usando sangria y subir/bajar, sin depender del codigo <code>item</code>.
+  </div>
+
+  <h2>Contexto funcional</h2>
+  <p>La app maneja presupuestos de construccion. Cada fila puede representar una parte de la estructura del presupuesto o un rubro operativo.</p>
+  <p>Actualmente existen filas como:</p>
+  <ul>
+    <li>Capitulos o agrupadores: por ejemplo <code>OBRAS DE CONTENCION DE TERRENO</code>, <code>DUCTO CAJON</code>, <code>MOVIMIENTO DE TIERRA</code>.</li>
+    <li>Rubros/tareas: por ejemplo <code>RN - RELLENO CON PIEDRA</code>, <code>RN EXCAVACION A MAQUINA</code>.</li>
+  </ul>
+  <p>La estructura real debe estar dada por el arbol, no por el codigo:</p>
+  <p>
+    <span class="tag">padre_id</span>
+    <span class="tag">orden</span>
+    <span class="tag">profundidad visual</span>
+  </p>
+  <p>El <code>item/codigo</code> se quiere dejar como referencia historica o dato de exportacion, no como motor de organizacion.</p>
+
+  <h2>Concepto que queremos validar</h2>
+  <p>La referencia conceptual solicitada es Microsoft Project:</p>
+  <ul>
+    <li>Una fila sin hijos es una tarea/rubro operativo.</li>
+    <li>Una fila con hijos es una tarea resumen/grupo.</li>
+    <li>Al aplicar sangria a una fila, esta pasa a ser hija de la fila inmediatamente superior que corresponda segun el esquema.</li>
+    <li>Si la fila superior era una tarea normal y recibe hijos, se convierte en grupo/resumen.</li>
+    <li>Si un grupo/resumen pierde todos sus hijos, vuelve a comportarse como tarea/rubro operativo.</li>
+  </ul>
+
+  <div class="warning">
+    <strong>Punto clave:</strong>
+    Cuando una tarea/rubro se convierte en grupo/resumen, sus datos propios no se deben borrar. Deben conservarse internamente, pero no usarse para subtotales ni mostrarse como rubro operativo mientras tenga hijos. Si luego vuelve a ser tarea, sus valores deben reaparecer y volver a contar.
+  </div>
+
+  <h2>Ejemplo esperado</h2>
+  <h3>Estado inicial</h3>
+  <div class="outline">MOVIMIENTO DE TIERRA
+  RN - RELLENO CON PIEDRA
+  RN - RELLENO CON MATERIAL DE SITIO
+  RN EXCAVACION A MAQUINA</div>
+
+  <h3>Si se quita sangria a <code>RN EXCAVACION A MAQUINA</code></h3>
+  <div class="outline">MOVIMIENTO DE TIERRA
+  RN - RELLENO CON PIEDRA
+  RN - RELLENO CON MATERIAL DE SITIO
+RN EXCAVACION A MAQUINA
+OBRA CIVIL</div>
+
+  <h3>Si luego se vuelve a aplicar sangria a <code>RN EXCAVACION A MAQUINA</code></h3>
+  <p>Queremos confirmar cual de estas dos interpretaciones es correcta.</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Interpretacion</th>
+        <th>Resultado</th>
+        <th>Duda</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>A. Project estricto por fila anterior inmediata</td>
+        <td><code>RN EXCAVACION A MAQUINA</code> se vuelve hija de <code>RN - RELLENO CON MATERIAL DE SITIO</code>, y ese rubro pasa a grupo/resumen.</td>
+        <td>Esto crea grupos desde rubros, que Project permite, pero en presupuestos podria ser confuso.</td>
+      </tr>
+      <tr>
+        <td>B. Restaurar al grupo anterior compatible</td>
+        <td><code>RN EXCAVACION A MAQUINA</code> vuelve a ser hija de <code>MOVIMIENTO DE TIERRA</code>, al mismo nivel que los otros rubros.</td>
+        <td>Esto coincide con lo que el usuario espera visualmente, pero no es el comportamiento Project puro de fila anterior inmediata.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="danger">
+    <strong>Problema actual:</strong>
+    Hemos intentado ambas aproximaciones parcialmente y aparecen inconsistencias visuales o estructurales. Necesitamos fijar una regla unica antes de seguir.
+  </div>
+
+  <h2>Capturas del problema</h2>
+  <div class="grid">
+    <figure>
+      <img src="file:///C:/Users/luisa/AppData/Local/Temp/codex-clipboard-b0cdaed9-3f7b-461d-95fe-8aaa4a7f021e.png" alt="Estado normal" />
+      <figcaption>Estado normal: los rubros estan bajo Movimiento de Tierra.</figcaption>
+    </figure>
+    <figure>
+      <img src="file:///C:/Users/luisa/AppData/Local/Temp/codex-clipboard-c312ff38-e1c2-40f0-ae32-e0e06dcb9bc2.png" alt="Quitar sangria" />
+      <figcaption>Despues de quitar sangria: el rubro seleccionado queda como hermano del grupo.</figcaption>
+    </figure>
+    <figure>
+      <img src="file:///C:/Users/luisa/AppData/Local/Temp/codex-clipboard-1a26d5a8-0eab-456f-8a2e-f45ed0e78b17.png" alt="Volver a aplicar sangria" />
+      <figcaption>Al volver a aplicar sangria, la alineacion y/o el padre no queda como se esperaba.</figcaption>
+    </figure>
+    <figure>
+      <img src="file:///C:/Users/luisa/AppData/Local/Temp/codex-clipboard-5a05aa33-c6be-4d20-8877-fb6ee26d8f96.png" alt="Segunda sangria" />
+      <figcaption>En pruebas previas, una segunda sangria convertia un rubro anterior en grupo.</figcaption>
+    </figure>
+  </div>
+  <figure>
+    <img src="file:///C:/Users/luisa/AppData/Local/Temp/codex-clipboard-1a38098e-61ed-433d-b6a0-e36625b38f06.png" alt="Captura reciente de error" />
+    <figcaption>Captura reciente: despues de quitar sangria y volver a aplicar, el rubro no queda alineado como sus hermanos esperados.</figcaption>
+  </figure>
+
+  <h2>Reglas ya acordadas con el usuario</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Tema</th>
+        <th>Regla acordada</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Codigo item</td>
+        <td>No debe conducir la estructura. Debe ser implicito o generado para exportacion.</td>
+      </tr>
+      <tr>
+        <td>Grupos</td>
+        <td>Una fila es grupo si tiene hijos. No depende necesariamente de un tipo fijo importado.</td>
+      </tr>
+      <tr>
+        <td>Rubro operativo</td>
+        <td>Una fila sin hijos puede operar como rubro, con unidad, metrado, PU, APU, subtotal.</td>
+      </tr>
+      <tr>
+        <td>Grupo con datos propios</td>
+        <td>Si un rubro se vuelve grupo, sus datos se conservan pero no se muestran ni se usan en subtotal mientras tenga hijos.</td>
+      </tr>
+      <tr>
+        <td>Volver a tarea</td>
+        <td>Si un grupo pierde todos sus hijos, vuelve a ser rubro operativo y recupera sus valores.</td>
+      </tr>
+      <tr>
+        <td>Seleccion multiple</td>
+        <td>Solo permitir operaciones si las filas seleccionadas son hermanas y contiguas.</td>
+      </tr>
+      <tr>
+        <td>Seleccion ambigua</td>
+        <td>Bloquear grupo + hijo seleccionado, o filas de padres/niveles distintos.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Operaciones esperadas</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Operacion</th>
+        <th>Regla esperada</th>
+        <th>Pregunta al experto</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Subir</td>
+        <td>Mover el bloque seleccionado una posicion arriba dentro del mismo padre. Si es grupo, se mueve con todos sus hijos.</td>
+        <td>Correcto para presupuestos tipo Project?</td>
+      </tr>
+      <tr>
+        <td>Bajar</td>
+        <td>Mover el bloque seleccionado una posicion abajo dentro del mismo padre. Si es grupo, se mueve con todos sus hijos.</td>
+        <td>Debe cruzar grupos o detenerse en limites de padre?</td>
+      </tr>
+      <tr>
+        <td>Sangrar</td>
+        <td>Convertir la seleccion en hija de una fila superior.</td>
+        <td>Debe ser siempre la fila anterior inmediata, o el grupo anterior compatible?</td>
+      </tr>
+      <tr>
+        <td>Quitar sangria</td>
+        <td>Sacar la seleccion un nivel arriba, colocandola despues del padre actual.</td>
+        <td>Correcto que quede inmediatamente despues del padre, antes de los siguientes hermanos del padre?</td>
+      </tr>
+      <tr>
+        <td>Deshacer</td>
+        <td>Cancelar la accion anterior restaurando la foto previa del arbol.</td>
+        <td>Es suficiente para operaciones estructurales?</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Preguntas concretas para el experto</h2>
+  <ol>
+    <li>En un presupuesto de construccion con estructura por sangria, al presionar <strong>Sangrar</strong>, la fila debe hacerse hija de la fila anterior inmediata, como Project, aunque esa fila anterior sea un rubro?</li>
+    <li>O para presupuestos conviene una regla distinta: volver al grupo superior compatible, evitando crear grupos desde rubros?</li>
+    <li>Si un rubro se convierte en grupo/resumen, es correcto ocultar sus valores del subtotal mientras tiene hijos, pero conservarlos internamente?</li>
+    <li>Al quitar sangria, es correcto insertar la fila justo despues del grupo padre, o debe insertarse despues de todo el bloque del grupo?</li>
+    <li>Para mover grupos con hijos, se debe mover siempre el bloque completo?</li>
+    <li>Para seleccion multiple, es correcto exigir filas hermanas, contiguas y sin mezcla grupo+hijo?</li>
+    <li>Que deberia pasar si se sangran varias filas a la vez debajo de un rubro? Ese rubro pasa a grupo y todas esas filas pasan a ser sus hijas?</li>
+  </ol>
+
+  <h2>Implementacion actual resumida</h2>
+  <ul>
+    <li>La base guarda cada fila como nodo con <code>padre_id</code>, <code>orden</code>, <code>nivel</code> y <code>activo_como_rubro</code>.</li>
+    <li>La app calcula si una fila es grupo segun si tiene hijos.</li>
+    <li>La vista <code>Editar</code> permite seleccionar grupos y rubros.</li>
+    <li>Los subtotales deben considerar solo rubros operativos, no grupos/resumen.</li>
+    <li>Se desactivo temporalmente <code>Actualizar desde Excel</code> para no mezclar importacion con edicion estructural.</li>
+  </ul>
+
+  <div class="callout">
+    <strong>Decision pendiente:</strong>
+    Definir la regla definitiva de <code>Sangrar</code>. Esa decision controla todo el comportamiento posterior: creacion de grupos, alineacion visual, subtotales y deshacer.
+  </div>
+</main>
+</body>
+</html>

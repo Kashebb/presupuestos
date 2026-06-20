@@ -597,6 +597,15 @@ def _aplanar_hijos(hijos_por_padre: dict[Optional[int], list[NodoPresupuesto]]) 
     return resultado
 
 
+def _recalcular_niveles_desde_arbol(hijos_por_padre: dict[Optional[int], list[NodoPresupuesto]]) -> None:
+    def visitar(padre_id: Optional[int], nivel: int) -> None:
+        for hijo in hijos_por_padre.get(padre_id, []):
+            hijo.nivel = nivel
+            visitar(hijo.id, nivel + 1)
+
+    visitar(None, 0)
+
+
 def _actualizar_estado_rubro_por_hijos(db: Session, nodo: Optional[NodoPresupuesto]) -> None:
     if not nodo:
         return
@@ -1009,6 +1018,7 @@ def mover_estructura(nodo_id: int, data: NodoMoverRequest, db: Session = Depends
         padres_para_actualizar.update({padre.id, padre.padre_id})
         aplicar_delta_nivel(delta)
 
+    _recalcular_niveles_desde_arbol(hijos_por_padre)
     nodos = _aplanar_hijos(hijos_por_padre)
     _reordenar_nodos(nodos)
     db.flush()

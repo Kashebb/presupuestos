@@ -75,6 +75,12 @@ function nivelNodo(n) {
   return NIVEL_TIPO_FALLBACK[n?.tipo] ?? 0;
 }
 
+function profundidadNodo(n) {
+  const nivel = Number(n?._nivel);
+  if (Number.isInteger(nivel)) return Math.max(0, nivel);
+  return nivelNodo(n);
+}
+
 function configNodo(n) {
   if (esRubroNodo(n)) return COLORES_TIPO.RUBRO;
   const nivel = nivelNodo(n);
@@ -1415,7 +1421,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
       color:"#111827",
       fontSize:"11px",
       lineHeight:1.25,
-      padding:"3px 5px",
+      padding: esTextoLargo ? "3px 0" : "3px 5px",
       outline:"none",
     };
     const props = {
@@ -1880,7 +1886,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                         const badge = esR?(obsoleto?BADGE.OBSOLETO:(sinApu?BADGE.SIN_APU:BADGE[n.tipo_rubro]||BADGE.PENDIENTE)):null;
                         const tieneHijos = !esR&&Boolean(hijosPorPadre.get(n.id)?.length);
                         const tablaTipoGrilla = esVistaEditar;
-                        const sangriaDescripcion = tablaTipoGrilla ? Math.min(nivelNodo(n) * 10, 56) : 0;
+                        const sangriaDescripcion = tablaTipoGrilla ? Math.min(profundidadNodo(n) * 10, 56) : 0;
                         const m = esR ? rubroMetricas(n) : {};
                         const mc = !esR ? metricasContenedor(n) : {};
                         const seleccionable = esVistaEditar || esR;
@@ -1909,7 +1915,7 @@ export default function Presupuestos({ initialFilter = "todos" }) {
                               if (col === "descripcion") {
                                 if (editable) {
                                   return (
-                                    <td key={col} style={{ padding:"3px 5px", paddingLeft:`${sangriaDescripcion + 5}px` }} onClick={e=>e.stopPropagation()}>
+                                    <td key={col} style={{ padding:"3px 5px", paddingLeft:`${sangriaDescripcion + 8}px` }} onClick={e=>e.stopPropagation()}>
                                       {celdaEditable(n, col)}
                                       <div style={{ display:"flex", gap:"4px", marginTop:"2px", flexWrap:"wrap" }}>
                                         {sinApu&&<span style={{ fontSize:"9px", background:"#fee2e2", color:"#991b1b", borderRadius:"3px", padding:"1px 4px" }}>SIN APU</span>}
