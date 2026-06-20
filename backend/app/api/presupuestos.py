@@ -606,6 +606,30 @@ def _recalcular_niveles_desde_arbol(hijos_por_padre: dict[Optional[int], list[No
     visitar(None, 0)
 
 
+def _sincronizar_niveles(db: Session, proyecto_id: int) -> None:
+    nodos = db.query(NodoPresupuesto).filter(NodoPresupuesto.proyecto_id == proyecto_id).all()
+    if not nodos:
+        return
+    hijos_por_padre: dict[Optional[int], list[NodoPresupuesto]] = {}
+    for n in nodos:
+        hijos_por_padre.setdefault(n.padre_id, []).append(n)
+    for lista in hijos_por_padre.values():
+        lista.sort(key=lambda x: (x.orden or 0, x.id))
+    cambios = False
+
+    def visitar(padre_id: Optional[int], nivel: int) -> None:
+        nonlocal cambios
+        for hijo in hijos_por_padre.get(padre_id, []):
+            if (hijo.nivel or 0) != nivel:
+                hijo.nivel = nivel
+                cambios = True
+            visitar(hijo.id, nivel + 1)
+
+    visitar(None, 0)
+    if cambios:
+        db.commit()
+
+
 def _actualizar_estado_rubro_por_hijos(db: Session, nodo: Optional[NodoPresupuesto]) -> None:
     if not nodo:
         return
@@ -759,6 +783,8 @@ def listar_nodos(proyecto_id: int, db: Session = Depends(get_db)):
     proyecto = db.query(Proyecto).filter(Proyecto.id == proyecto_id).first()
     if not proyecto:
         raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+
+    _sincronizar_niveles(db, proyecto_id)
 
     nodos = (
         db.query(NodoPresupuesto)
@@ -965,10 +991,6 @@ def mover_estructura(nodo_id: int, data: NodoMoverRequest, db: Session = Depends
         bloque_ids.update(ids)
     padres_para_actualizar: set[Optional[int]] = {padre_anterior_id}
 
-    def aplicar_delta_nivel(delta: int) -> None:
-        for i in bloque_ids:
-            por_id[i].nivel = max(0, (por_id[i].nivel or 0) + delta)
-
     def extraer_bloque_de_hermanos() -> list[NodoPresupuesto]:
         return [n for n in hermanos if n.id in seleccion_ids]
 
@@ -1002,13 +1024,13 @@ def mover_estructura(nodo_id: int, data: NodoMoverRequest, db: Session = Depends
             hijos_destino.append(n)
         padres_para_actualizar.add(nuevo_padre.id)
         nuevo_padre.activo_como_rubro = False
-        aplicar_delta_nivel(delta)
 
     elif accion == "quitar_sangria":
         padre = por_id.get(padre_anterior_id)
         if not padre:
             raise HTTPException(status_code=400, detail="La seleccion ya esta en el nivel superior")
-        delta = (padre.nivel or 0) - (seleccion_ordenada[0].nivel or 0)
+        if padre.padre_id is None:
+            raise HTTPException(status_code=400, detail="No se puede quitar mas sangria: la fila ya esta en el primer nivel")
         hijos_por_padre[padre_anterior_id] = [n for n in hermanos if n.id not in seleccion_ids]
         hermanos_destino = hijos_por_padre.setdefault(padre.padre_id, [])
         idx_padre = next((i for i, h in enumerate(hermanos_destino) if h.id == padre.id), len(hermanos_destino) - 1)
@@ -1016,7 +1038,6 @@ def mover_estructura(nodo_id: int, data: NodoMoverRequest, db: Session = Depends
             n.padre_id = padre.padre_id
             hermanos_destino.insert(idx_padre + offset, n)
         padres_para_actualizar.update({padre.id, padre.padre_id})
-        aplicar_delta_nivel(delta)
 
     _recalcular_niveles_desde_arbol(hijos_por_padre)
     nodos = _aplanar_hijos(hijos_por_padre)
