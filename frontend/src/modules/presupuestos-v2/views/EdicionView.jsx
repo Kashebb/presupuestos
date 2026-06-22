@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { editColumns, emptyEditRows } from "../mockData";
 
-export default function EdicionView({ onSelectionCountChange }) {
-  const [activeCell, setActiveCell] = useState({ rowId: "draft-1", colKey: "descripcion" });
+export default function EdicionView({ rows = [], onSelectionCountChange }) {
+  const displayRows = rows.length ? rows : emptyEditRows;
+  const [activeCell, setActiveCell] = useState({ rowId: String(displayRows[0]?.id || "draft-1"), colKey: "descripcion" });
   const [selectionAnchor, setSelectionAnchor] = useState({ rowIndex: 0, colIndex: 0 });
   const [selectionEnd, setSelectionEnd] = useState({ rowIndex: 0, colIndex: 0 });
   const [dragging, setDragging] = useState(false);
@@ -74,7 +75,7 @@ export default function EdicionView({ onSelectionCountChange }) {
         </div>
 
         <div className="budget-v2-grid-body">
-          {emptyEditRows.map((row, rowIndex) => (
+          {displayRows.map((row, rowIndex) => (
             <div key={row.id} className="budget-v2-grid-row" style={{ gridTemplateColumns: gridTemplate }}>
               <button type="button" className="budget-v2-row-number" aria-label={`Seleccionar fila ${rowIndex + 1}`}>
                 {rowIndex + 1}
@@ -92,9 +93,10 @@ export default function EdicionView({ onSelectionCountChange }) {
                     style={{
                       textAlign: column.align,
                       paddingLeft: column.key === "descripcion" ? `${12 + row.level * 18}px` : undefined,
+                      fontWeight: row.kind === "container" && column.key === "descripcion" ? 800 : undefined,
                     }}
                   >
-                    {row[column.key]}
+                    {column.key === "observacion" && row.kind === "line" ? row.raw?.node?.observaciones || "" : row[column.key]}
                   </button>
                 );
               })}

@@ -1,7 +1,52 @@
-import { statusMeta } from "../mockData";
+import { useEffect, useState } from "react";
+import { API, statusMeta } from "../data";
+
+function fmtMoney(value) {
+  if (!Number.isFinite(value)) return "-";
+  return `$${value.toLocaleString("es-EC", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
 
 export default function PanelApu({ selectedRow }) {
   const selectedHasApu = selectedRow?.kind === "line" && Boolean(selectedRow.apu);
+  const selectedApuId = selectedRow?.raw?.node?.apu_id || null;
+  const [detalleCosto, setDetalleCosto] = useState(null);
+  const [cargandoDetalle, setCargandoDetalle] = useState(false);
+  const [errorDetalle, setErrorDetalle] = useState("");
+
+  useEffect(() => {
+    if (!selectedApuId) {
+      setDetalleCosto(null);
+      setErrorDetalle("");
+      setCargandoDetalle(false);
+      return;
+    }
+
+    let cancelled = false;
+    async function loadDetalleCosto() {
+      setCargandoDetalle(true);
+      setErrorDetalle("");
+      try {
+        const response = await fetch(`${API}/apus/${selectedApuId}/costo`);
+        if (!response.ok) throw new Error("No se pudo cargar el desglose del APU.");
+        const data = await response.json();
+        if (!cancelled) setDetalleCosto(data);
+      } catch (err) {
+        if (!cancelled) {
+          setDetalleCosto(null);
+          setErrorDetalle(err.message || "No se pudo cargar el desglose del APU.");
+        }
+      } finally {
+        if (!cancelled) setCargandoDetalle(false);
+      }
+    }
+
+    loadDetalleCosto();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedApuId]);
+
+  const subtotales = detalleCosto?.subtotales || {};
 
   return (
     <aside className="budget-v2-apu-panel">
@@ -34,7 +79,7 @@ export default function PanelApu({ selectedRow }) {
                 <div className="budget-v2-apu-tags">
                   <span>{selectedRow.apu}</span>
                   <span>Und {selectedRow.unidad}</span>
-                  <span>Rend. 0.0027</span>
+                  <span>Rend. {selectedRow.rendimiento ?? "-"}</span>
                 </div>
               </div>
               <div className="budget-v2-apu-card">
@@ -44,7 +89,7 @@ export default function PanelApu({ selectedRow }) {
                   <strong className="budget-v2-diff-positive">{selectedRow.dif || "$0.00"}</strong>
                 </div>
                 <div className="budget-v2-apu-metrics">
-                  <div><span>Dif unit.</span><strong>$0.35</strong></div>
+                  <div><span>Dif unit.</span><strong>{selectedRow.raw?.puMeta != null && selectedRow.raw?.puRef != null ? `$${(selectedRow.raw.puMeta - selectedRow.raw.puRef).toLocaleString("es-EC", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "-"}</strong></div>
                   <div><span>Dif %</span><strong>{selectedRow.difPct || "-"}</strong></div>
                   <div><span>Total ref</span><strong>{selectedRow.ptRef}</strong></div>
                   <div><span>Total meta</span><strong>{selectedRow.ptMeta}</strong></div>
@@ -52,22 +97,25 @@ export default function PanelApu({ selectedRow }) {
               </div>
               <div className="budget-v2-apu-card">
                 <small>Desglose P.U.</small>
+                {cargandoDetalle && <div className="budget-v2-panel-note">Cargando desglose...</div>}
+                {errorDetalle && <div className="budget-v2-panel-note budget-v2-panel-note-error">{errorDetalle}</div>}
                 {[
-                  ["Materiales", "$0.00"],
-                  ["Mano de obra", "$0.01"],
-                  ["Equipos", "$0.10"],
-                  ["Transporte", "$0.00"],
+                  ["Materiales", subtotales.material],
+                  ["Mano de obra", subtotales.mano_de_obra],
+                  ["Equipos", subtotales.equipo],
+                  ["Transporte", subtotales.transporte],
+                  ["Herr. menor", detalleCosto?.herramienta_menor],
                 ].map(([label, value]) => (
                   <div className="budget-v2-breakdown-row" key={label}>
                     <span>{label}</span>
-                    <strong>{value}</strong>
+                    <strong>{fmtMoney(value)}</strong>
                   </div>
                 ))}
               </div>
               <div className="budget-v2-apu-actions">
-                <button type="button" className="budget-v2-apu-primary">Editar APU completo</button>
-                <button type="button">Cambiar APU</button>
-                <button type="button" className="budget-v2-apu-danger">Desvincular</button>
+                <button type="button" className="budget-v2-apu-primary" disabled>Editar APU completo</button>
+                <button type="button" disabled>Cambiar APU</button>
+                <button type="button" className="budget-v2-apu-danger" disabled>Desvincular</button>
               </div>
             </>
           ) : (

@@ -1,24 +1,39 @@
 import { useEffect, useMemo, useState } from "react";
 import DetalleAnalisis from "../components/DetalleAnalisis";
 import PresupuestoTree from "../components/PresupuestoTree";
-import { analysisFilters, budgetRows, statusMeta } from "../mockData";
+import { analysisFilters, statusMeta } from "../data";
 import { descendantsOf } from "../logic/tree";
 
-export default function AnalisisView({ selectedTreeId, setSelectedTreeId, selectedRowId, setSelectedRowId, onVisibleCountChange }) {
+export default function AnalisisView({ rows = [], selectedTreeId, setSelectedTreeId, selectedRowId, setSelectedRowId, onVisibleCountChange }) {
   const [analysisFilter, setAnalysisFilter] = useState("todos");
-  const treeRows = budgetRows.filter((row) => row.kind === "container");
+  const treeRows = rows.filter((row) => row.kind === "container");
 
   const visibleRows = useMemo(() => {
-    const scopedIds = descendantsOf(budgetRows, selectedTreeId);
-    const scopedRows = budgetRows.filter((row) => scopedIds.has(row.id));
+    const scopedIds = descendantsOf(rows, selectedTreeId);
+    const scopedRows = rows.filter((row) => scopedIds.has(row.id));
     if (analysisFilter === "todos") return scopedRows;
     if (analysisFilter === "impacto") return scopedRows.filter((row) => row.kind === "container" || row.dif);
-    if (analysisFilter === "positivos") return scopedRows.filter((row) => row.kind === "container" || row.dif?.startsWith("$"));
+    if (analysisFilter === "positivos") return scopedRows.filter((row) => row.kind === "container" || row.raw?.diff > 0);
     if (analysisFilter === "sin_meta") return scopedRows.filter((row) => row.kind === "container" || row.estado === "pendiente");
     return scopedRows.filter((row) => row.kind === "container" || row.estado === analysisFilter);
-  }, [analysisFilter, selectedTreeId]);
+  }, [analysisFilter, rows, selectedTreeId]);
 
-  const selectedRow = budgetRows.find((row) => row.id === selectedRowId);
+  const selectedRow = rows.find((row) => row.id === selectedRowId);
+  const summary = useMemo(() => {
+    const lines = rows.filter((row) => row.kind === "line");
+    const totalRef = lines.reduce((sum, row) => sum + (row.raw?.totalRef || 0), 0);
+    const metaLines = lines.filter((row) => Number.isFinite(row.raw?.totalMeta));
+    const totalMeta = metaLines.reduce((sum, row) => sum + (row.raw?.totalMeta || 0), 0);
+    const diff = metaLines.reduce((sum, row) => sum + (Number.isFinite(row.raw?.diff) ? row.raw.diff : 0), 0);
+    const money = (value) => `$${Number(value || 0).toLocaleString("es-EC", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return {
+      totalRef: money(totalRef),
+      totalMeta: metaLines.length ? money(totalMeta) : "-",
+      diff: metaLines.length ? money(diff) : "-",
+      sinMeta: lines.filter((row) => row.estado === "pendiente").length,
+    };
+  }, [rows]);
+
   useEffect(() => {
     onVisibleCountChange(visibleRows.length);
   }, [onVisibleCountChange, visibleRows.length]);
@@ -29,10 +44,10 @@ export default function AnalisisView({ selectedTreeId, setSelectedTreeId, select
 
       <section className="budget-v2-analysis-main">
         <div className="budget-v2-analysis-summary">
-          <div><small>Total ref</small><strong>$7,590.00</strong></div>
-          <div><small>Total meta</small><strong>$8,057.24</strong></div>
-          <div><small>Diferencia</small><strong className="budget-v2-diff-positive">$467.24</strong></div>
-          <div><small>Lineas sin meta</small><strong>2</strong></div>
+          <div><small>Total ref</small><strong>{summary.totalRef}</strong></div>
+          <div><small>Total meta</small><strong>{summary.totalMeta}</strong></div>
+          <div><small>Diferencia</small><strong className="budget-v2-diff-positive">{summary.diff}</strong></div>
+          <div><small>Lineas sin meta</small><strong>{summary.sinMeta}</strong></div>
         </div>
         <div className="budget-v2-linking-toolbar">
           <div className="budget-v2-filter-group">
