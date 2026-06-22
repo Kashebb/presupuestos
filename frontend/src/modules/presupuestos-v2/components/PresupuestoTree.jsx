@@ -17,7 +17,7 @@ export default function PresupuestoTree({
       <div className="budget-v2-tree-scroll">
         <button type="button" className={`budget-v2-tree-item ${selectedTreeId === "all" ? "budget-v2-tree-active" : ""}`} onClick={() => onSelect("all")}>
           <span>Presupuesto completo</span>
-          <small>{mode === "analisis" ? "Analisis global" : "Lectura global"}</small>
+          <small>{mode === "analisis" ? "Analisis global" : mode === "edicion" ? "Ir al inicio" : "Lectura global"}</small>
         </button>
         {rows.map((row) => (
           <button
@@ -27,7 +27,7 @@ export default function PresupuestoTree({
             onClick={() => onSelect(row.id)}
             style={{ paddingLeft: `${12 + row.level * 14}px` }}
           >
-            {mode === "vinculacion" ? (
+            {mode === "vinculacion" || mode === "edicion" ? (
               <span className="budget-v2-tree-label">
                 <span
                   className="budget-v2-tree-toggle"
@@ -44,7 +44,13 @@ export default function PresupuestoTree({
             ) : (
               <span>{row.descripcion}</span>
             )}
-            <small>{mode === "analisis" ? row.ptMeta : `${row.linked}/${row.lines} vinculadas`}</small>
+            <small>
+              {mode === "analisis"
+                ? row.ptMeta
+                : mode === "edicion"
+                  ? `${row.lines} rubro(s)`
+                  : `${row.linked}/${row.lines} vinculadas`}
+            </small>
           </button>
         ))}
       </div>

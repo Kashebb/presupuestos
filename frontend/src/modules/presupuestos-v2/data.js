@@ -5,7 +5,7 @@ export const API = "http://127.0.0.1:8000";
 export const statusMeta = {
   vinculado: { label: "Vinculado", className: "budget-v2-status-linked" },
   pendiente: { label: "Pendiente", className: "budget-v2-status-pending" },
-  sin_apu: { label: "No aplica", className: "budget-v2-status-noapu" },
+  sin_apu: { label: "Subcontratado", className: "budget-v2-status-noapu" },
   revisar: { label: "Revisar", className: "budget-v2-status-review" },
 };
 
@@ -13,7 +13,7 @@ export const vincFilters = [
   ["todos", "Todos"],
   ["pendiente", "Pendientes"],
   ["vinculado", "Vinculados"],
-  ["sin_apu", "No aplica"],
+  ["sin_apu", "Subcontratados"],
   ["revisar", "Revisar"],
 ];
 
@@ -22,7 +22,7 @@ export const analysisFilters = [
   ["impacto", "Mayor impacto"],
   ["positivos", "Dif +"],
   ["sin_meta", "Sin meta"],
-  ["sin_apu", "No aplica"],
+  ["sin_apu", "Subcontratados"],
   ["revisar", "Revisar"],
 ];
 
@@ -65,7 +65,7 @@ function buildRows(nodes, costsByApu, apusById) {
   const rubrosByContainer = new Map();
   const rowsById = new Map();
 
-  const rows = nodes.map((node) => {
+  const rows = nodes.filter((node) => node.estado_actualizacion !== "obsoleto").map((node) => {
     const line = isLine(node);
     const cost = node.apu_id ? costsByApu.get(node.apu_id) : null;
     const apu = node.apu_id ? apusById.get(node.apu_id) : null;
@@ -92,6 +92,7 @@ function buildRows(nodes, costsByApu, apusById) {
       ptMeta: fmtMoney(totalMeta),
       dif: fmtMoney(diff),
       difPct: comparable ? fmtPct(diff / totalRef) : "",
+      observacion: node.observaciones || "",
       estado: line ? lineStatus(node, cost) : undefined,
       apu: apu?.codigo || cost?.codigo || "",
       apuNombre: apu?.nombre || "",

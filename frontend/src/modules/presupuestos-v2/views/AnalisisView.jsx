@@ -88,7 +88,7 @@ export default function AnalisisView({ rows = [], selectedTreeId, setSelectedTre
                   <span className={metaNoApu ? "budget-v2-meta-noapu" : ""}>{row.ptMeta || "-"}</span>
                   <span className={row.dif ? "budget-v2-diff-positive" : ""}>{row.dif || "-"}</span>
                   <span>{row.difPct || "-"}</span>
-                  <span>{isContainer ? "" : <em className={meta.className}>{metaNoApu ? "Meta sin APU" : meta.label}</em>}</span>
+                  <span>{isContainer ? "" : <em className={meta.className}>{metaNoApu ? "Subcontratado" : meta.label}</em>}</span>
                 </button>
               );
             })}

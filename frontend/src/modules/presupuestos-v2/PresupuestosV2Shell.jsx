@@ -23,7 +23,7 @@ export default function PresupuestosV2Shell() {
   } = usePresupuestosV2Data();
 
   const footerText = {
-    edicion: "Modo lectura: datos reales del presupuesto, sin guardar cambios.",
+    edicion: "Edicion activa: cambios manuales controlados sobre filas operativas.",
     vinculacion: "Modo lectura: contenedores y rubros reales, acciones APU deshabilitadas.",
     analisis: "Modo lectura: comparacion con costos APU existentes.",
   };
@@ -44,7 +44,7 @@ export default function PresupuestosV2Shell() {
         </div>
         <div className="budget-v2-status">
           <span>{view === "edicion" ? "Edicion" : view === "vinculacion" ? "Vinculacion" : "Analisis"}</span>
-          <strong>Solo lectura</strong>
+          <strong>{view === "edicion" ? "Activo" : "Solo lectura"}</strong>
         </div>
       </header>
 
@@ -74,7 +74,14 @@ export default function PresupuestosV2Shell() {
           <button type="button" onClick={() => setView("analisis")} className={`budget-v2-tab ${view === "analisis" ? "budget-v2-tab-active" : ""}`}>Analisis</button>
         </div>
 
-        {view === "edicion" && <EdicionView rows={rows} onSelectionCountChange={setFooterCount} />}
+        {view === "edicion" && (
+          <EdicionView
+            rows={rows}
+            selectedProjectId={selectedProjectId}
+            onDataChange={reload}
+            onSelectionCountChange={setFooterCount}
+          />
+        )}
         {view === "vinculacion" && (
           <VinculacionView
             rows={rows}

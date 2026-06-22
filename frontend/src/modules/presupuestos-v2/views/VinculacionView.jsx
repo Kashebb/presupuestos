@@ -27,6 +27,40 @@ function normalizarUnidad(unidad) {
   return aliases[value] || value;
 }
 
+function normalizarTexto(texto) {
+  return String(texto || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function tokenizar(texto) {
+  return normalizarTexto(texto)
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length >= 3);
+}
+
+function apuSearchText(apu) {
+  return normalizarTexto(`${apu?.codigo || ""} ${apu?.nombre || ""} ${apu?.categoria || ""} ${apu?.subcategoria || ""} ${apu?.unidad || ""}`);
+}
+
+function apuSuggestionScore(row, apu, query) {
+  const text = apuSearchText(apu);
+  const rubroTokens = tokenizar(row?.descripcion);
+  const queryTokens = tokenizar(query);
+  const tokens = queryTokens.length ? queryTokens : rubroTokens;
+  let score = 0;
+
+  tokens.forEach((token) => {
+    if (text.includes(token)) score += queryTokens.length ? 6 : 4;
+    if (normalizarTexto(apu?.nombre).includes(token)) score += queryTokens.length ? 4 : 3;
+  });
+
+  if (normalizarUnidad(row?.unidad) && normalizarUnidad(row?.unidad) === normalizarUnidad(apu?.unidad)) score += 10;
+  if (normalizarTexto(apu?.nombre) === normalizarTexto(row?.descripcion)) score += 20;
+  return score;
+}
+
 function fmtMoney(value) {
   if (!Number.isFinite(value)) return "-";
   return `$${value.toLocaleString("es-EC", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -57,6 +91,7 @@ export default function VinculacionView({
   const [vincFilter, setVincFilter] = useState("pendiente");
   const [collapsedTreeIds, setCollapsedTreeIds] = useState(new Set());
   const [modalVincularOpen, setModalVincularOpen] = useState(false);
+  const [modalCrearOpen, setModalCrearOpen] = useState(false);
   const [apuSearch, setApuSearch] = useState("");
   const [apuSeleccionado, setApuSeleccionado] = useState(null);
   const [actionStatus, setActionStatus] = useState("");
@@ -74,28 +109,38 @@ export default function VinculacionView({
   const canUseSelectedLine = selectedRow?.kind === "line";
   const canCreateApu = canUseSelectedLine && !selectedRow.apu && Boolean(selectedRow.unidad);
 
-  const apusFiltrados = useMemo(() => {
-    const query = apuSearch.trim().toLowerCase();
-    if (!query) return [];
+  const apusSugeridos = useMemo(() => {
+    const query = apuSearch.trim();
+    const queryTokens = tokenizar(query);
     return apus
       .filter((apu) => apu.estado !== "inactivo")
       .filter((apu) => {
-        const text = `${apu.codigo || ""} ${apu.nombre || ""} ${apu.unidad || ""}`.toLowerCase();
-        return text.includes(query);
+        if (!queryTokens.length) return true;
+        const text = apuSearchText(apu);
+        return queryTokens.every((token) => text.includes(token));
       })
+      .map((apu) => ({ apu, score: apuSuggestionScore(selectedRow, apu, query) }))
+      .filter(({ score }) => queryTokens.length || score > 0)
+      .sort((a, b) => b.score - a.score || String(a.apu.nombre || "").localeCompare(String(b.apu.nombre || "")))
       .slice(0, 80);
-  }, [apuSearch, apus]);
+  }, [apuSearch, apus, selectedRow]);
 
   const apusClasificados = useMemo(() => {
     const resultado = { compatibles: [], incompatibles: [] };
-    apusFiltrados.forEach((apu) => {
+    apusSugeridos.forEach(({ apu, score }) => {
       const validacion = validarVinculacion(selectedRow, apu);
-      const item = { apu, mensaje: validacion.mensaje || "" };
+      const item = { apu, score, mensaje: validacion.mensaje || "" };
       if (validacion.ok) resultado.compatibles.push(item);
       else resultado.incompatibles.push(item);
     });
+    resultado.compatibles.sort((a, b) => b.score - a.score || String(a.apu.nombre || "").localeCompare(String(b.apu.nombre || "")));
+    resultado.incompatibles.sort((a, b) => b.score - a.score || String(a.apu.nombre || "").localeCompare(String(b.apu.nombre || "")));
     return resultado;
-  }, [apusFiltrados, selectedRow]);
+  }, [apusSugeridos, selectedRow]);
+
+  const apusParecidosCrear = useMemo(() => {
+    return [...apusClasificados.compatibles, ...apusClasificados.incompatibles].slice(0, 8);
+  }, [apusClasificados]);
 
   useEffect(() => {
     onVisibleCountChange(visibleRows.length);
@@ -103,6 +148,7 @@ export default function VinculacionView({
 
   useEffect(() => {
     setModalVincularOpen(false);
+    setModalCrearOpen(false);
     setApuSearch("");
     setApuSeleccionado(null);
     setActionError("");
@@ -117,6 +163,7 @@ export default function VinculacionView({
       await action();
       setActionStatus("Cambios aplicados.");
       setModalVincularOpen(false);
+      setModalCrearOpen(false);
       setApuSearch("");
       setApuSeleccionado(null);
       onDataChange?.();
@@ -130,12 +177,16 @@ export default function VinculacionView({
     const response = await fetch(`${API}/presupuestos/nodos/${selectedRow.sourceId}/marcar-sin-apu`, { method: "PATCH" });
     if (!response.ok) {
       const detail = await response.json().catch(() => null);
-      throw new Error(detail?.detail || "No se pudo marcar como No aplica.");
+      throw new Error(detail?.detail || "No se pudo marcar como subcontratado.");
     }
   });
 
-  const crearApu = () => runAction(async () => {
-    const response = await fetch(`${API}/presupuestos/nodos/${selectedRow.sourceId}/crear-apu`, { method: "POST" });
+  const crearApu = (baseApu = null) => runAction(async () => {
+    const response = await fetch(`${API}/presupuestos/nodos/${selectedRow.sourceId}/crear-apu`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(baseApu ? { base_apu_id: baseApu.id } : {}),
+    });
     if (!response.ok) {
       const detail = await response.json().catch(() => null);
       throw new Error(detail?.detail || "No se pudo crear el APU.");
@@ -187,8 +238,8 @@ export default function VinculacionView({
           </div>
           <div className="budget-v2-toolbar-spacer" />
           <button type="button" disabled={!canUseSelectedLine} onClick={() => setModalVincularOpen(true)}>Vincular APU</button>
-          <button type="button" disabled={!canUseSelectedLine || selectedRow.estado === "sin_apu"} onClick={marcarNoAplica}>No aplica</button>
-          <button type="button" disabled={!canCreateApu} onClick={crearApu}>Crear APU</button>
+          <button type="button" disabled={!canUseSelectedLine || selectedRow.estado === "sin_apu"} onClick={marcarNoAplica}>Subcontratado</button>
+          <button type="button" disabled={!canCreateApu} onClick={() => setModalCrearOpen(true)}>Crear APU</button>
         </div>
         {(actionStatus || actionError) && (
           <div className="budget-v2-action-panel">
@@ -287,7 +338,7 @@ export default function VinculacionView({
                   </small>
                 </div>
               )}
-              <ActionButton variant="ghost" onClick={crearApu} disabled={!canCreateApu}>
+              <ActionButton variant="ghost" onClick={() => setModalCrearOpen(true)} disabled={!canCreateApu}>
                 Crear APU desde rubro
               </ActionButton>
             </aside>
@@ -305,13 +356,13 @@ export default function VinculacionView({
                 className="budget-v2-link-modal-search"
               />
               <div className="budget-v2-link-modal-summary">
-                <span>{apuSearch.trim() ? `${apusFiltrados.length} coincidencia(s) no inactivas` : "Escribe para buscar APUs"}</span>
+                <span>{apuSearch.trim() ? `${apusSugeridos.length} coincidencia(s) no inactivas` : "Sugerencias por nombre del rubro"}</span>
                 {apuSearch.trim() && <span className="budget-v2-compatible-count">{apusClasificados.compatibles.length} compatibles</span>}
                 {apuSearch.trim() && <span className="budget-v2-incompatible-count">{apusClasificados.incompatibles.length} incompatibles</span>}
               </div>
 
               <div className="budget-v2-link-modal-results">
-                {apuSearch.trim() && apusFiltrados.length === 0 && (
+                {apuSearch.trim() && apusSugeridos.length === 0 && (
                   <div className="budget-v2-link-modal-empty">No hay APUs coincidentes no inactivos.</div>
                 )}
 
@@ -384,6 +435,51 @@ export default function VinculacionView({
               </div>
               <ErrorBanner>{actionError}</ErrorBanner>
             </section>
+          </div>
+        </ModalShell>
+      )}
+
+      {modalCrearOpen && (
+        <ModalShell
+          title="Crear APU desde rubro"
+          size="md"
+          onClose={() => {
+            setModalCrearOpen(false);
+            setActionError("");
+          }}
+          footer={
+            <>
+              <ActionButton onClick={() => setModalCrearOpen(false)}>Cancelar</ActionButton>
+              <ActionButton variant="primary" onClick={() => crearApu()} disabled={!canCreateApu}>
+                Crear desde cero
+              </ActionButton>
+            </>
+          }
+        >
+          <div className="budget-v2-create-apu-modal">
+            <div className="budget-v2-create-apu-intro">
+              <strong>{selectedRow?.descripcion}</strong>
+              <span>Se creara un APU en revision y quedara vinculado a este rubro.</span>
+            </div>
+            <div className="budget-v2-create-apu-list">
+              <div className="budget-v2-apu-result-title">APUs parecidos para duplicar</div>
+              {apusParecidosCrear.length === 0 && (
+                <div className="budget-v2-link-modal-empty">No hay APUs parecidos. Puedes crear uno desde cero.</div>
+              )}
+              {apusParecidosCrear.map(({ apu, mensaje }) => (
+                <div className="budget-v2-create-apu-option" key={apu.id}>
+                  <div>
+                    <strong>{apu.nombre}</strong>
+                    <small>{apu.codigo || "-"} | Und {apu.unidad || "-"} | {fmtMoney(costsByApu[apu.id]?.precio_unitario)}</small>
+                    {mensaje && <small>{mensaje}</small>}
+                  </div>
+                  <button type="button" onClick={() => crearApu(apu)}>
+                    Duplicar y vincular
+                  </button>
+                </div>
+              ))}
+            </div>
+            <ErrorBanner>{actionError}</ErrorBanner>
           </div>
         </ModalShell>
       )}

@@ -1,10 +1,10 @@
 export const editColumns = [
-  { key: "descripcion", label: "Descripcion", width: "minmax(420px, 1.8fr)", align: "left", editable: false },
-  { key: "unidad", label: "Unidad", width: "90px", align: "center", editable: false },
-  { key: "metrado", label: "Metrado", width: "120px", align: "right", editable: false },
-  { key: "puRef", label: "P.U. Ref", width: "120px", align: "right", editable: false },
+  { key: "descripcion", label: "Descripcion", width: "minmax(420px, 1.8fr)", align: "left", editable: true },
+  { key: "unidad", label: "Unidad", width: "90px", align: "center", editable: true },
+  { key: "metrado", label: "Metrado", width: "120px", align: "right", editable: true },
+  { key: "puRef", label: "P.U. Ref", width: "120px", align: "right", editable: true },
   { key: "ptRef", label: "Total Ref", width: "130px", align: "right", editable: false },
-  { key: "observacion", label: "Observacion", width: "minmax(240px, 1fr)", align: "left", editable: false },
+  { key: "observacion", label: "Observacion", width: "minmax(240px, 1fr)", align: "left", editable: true },
 ];
 
 export const emptyEditRows = Array.from({ length: 18 }, (_, index) => ({
@@ -34,7 +34,7 @@ export const vincFilters = [
   ["todos", "Todos"],
   ["pendiente", "Pendientes"],
   ["vinculado", "Vinculados"],
-  ["sin_apu", "No aplica"],
+  ["sin_apu", "Subcontratados"],
   ["revisar", "Revisar"],
 ];
 
@@ -43,13 +43,13 @@ export const analysisFilters = [
   ["impacto", "Mayor impacto"],
   ["positivos", "Dif +"],
   ["sin_meta", "Sin meta"],
-  ["sin_apu", "No aplica"],
+  ["sin_apu", "Subcontratados"],
   ["revisar", "Revisar"],
 ];
 
 export const statusMeta = {
   vinculado: { label: "Vinculado", className: "budget-v2-status-linked" },
   pendiente: { label: "Pendiente", className: "budget-v2-status-pending" },
-  sin_apu: { label: "No aplica", className: "budget-v2-status-noapu" },
+  sin_apu: { label: "Subcontratado", className: "budget-v2-status-noapu" },
   revisar: { label: "Revisar", className: "budget-v2-status-review" },
 };

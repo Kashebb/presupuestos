@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models.presupuesto import Proyecto, NodoPresupuesto, ActualizacionPresupuestoLote
-from app.models.apu import APU
+from app.models.apu import APU, APUItem
 from app.api.apus import siguiente_codigo_apu
 
 router = APIRouter(prefix="/presupuestos", tags=["Presupuestos"])
@@ -645,6 +645,7 @@ class NodoUpdate(BaseModel):
     unidad: Optional[str] = None
     metrado: Optional[float] = None
     precio_unitario_ref: Optional[float] = None
+    observaciones: Optional[str] = None
     orden: Optional[int] = None
     estado_actualizacion: Optional[str] = None
 
@@ -676,6 +677,10 @@ class EstructuraRestoreRequest(BaseModel):
 
 class VincularAPURequest(BaseModel):
     apu_id: int
+
+
+class CrearAPUDesdeRubroRequest(BaseModel):
+    base_apu_id: Optional[int] = None
 
 
 class CrearAPUDesdeRubroOut(BaseModel):
@@ -830,6 +835,8 @@ def editar_nodo(nodo_id: int, data: NodoUpdate, db: Session = Depends(get_db)):
         nodo.metrado = float(data.metrado) if data.metrado is not None else None
     if "precio_unitario_ref" in campos:
         nodo.precio_unitario_ref = float(data.precio_unitario_ref) if data.precio_unitario_ref is not None else None
+    if "observaciones" in campos:
+        nodo.observaciones = _texto(data.observaciones)
     if "orden" in campos:
         nodo.orden = int(data.orden) if data.orden is not None else nodo.orden
     if "estado_actualizacion" in campos:
@@ -933,7 +940,7 @@ def marcar_obsoleto(nodo_id: int, db: Session = Depends(get_db)):
 @router.patch("/nodos/{nodo_id}/mover-estructura", response_model=list[NodoOut])
 def mover_estructura(nodo_id: int, data: NodoMoverRequest, db: Session = Depends(get_db)):
     accion = (data.accion or "").strip().lower()
-    if accion not in ("subir", "bajar", "sangrar", "quitar_sangria"):
+    if accion not in ("subir", "bajar", "sangrar", "agrupar_abajo", "quitar_sangria", "quitar_sangria_con_bloque"):
         raise HTTPException(status_code=400, detail="Accion invalida")
 
     nodo_base = db.query(NodoPresupuesto).filter(NodoPresupuesto.id == nodo_id).first()
@@ -998,14 +1005,24 @@ def mover_estructura(nodo_id: int, data: NodoMoverRequest, db: Session = Depends
         inicio = indices[0]
         fin = indices[-1]
         if (accion == "subir" and inicio == 0) or (accion == "bajar" and fin >= len(hermanos) - 1):
-            raise HTTPException(status_code=400, detail="No hay nodo hermano para mover")
+            raise HTTPException(status_code=400, detail="La fila no tiene hermano disponible en esa direccion dentro de su grupo")
         bloque = extraer_bloque_de_hermanos()
-        restantes = [n for n in hermanos if n.id not in seleccion_ids]
-        destino = inicio - 1 if accion == "subir" else inicio + 1
-        if accion == "bajar":
-            destino = min(destino, len(restantes))
-        restantes[destino:destino] = bloque
-        hijos_por_padre[padre_anterior_id] = restantes
+        if accion == "subir":
+            hermano = hermanos[inicio - 1]
+            hijos_por_padre[padre_anterior_id] = [
+                *hermanos[:inicio - 1],
+                *bloque,
+                hermano,
+                *hermanos[fin + 1:],
+            ]
+        else:
+            hermano = hermanos[fin + 1]
+            hijos_por_padre[padre_anterior_id] = [
+                *hermanos[:inicio],
+                hermano,
+                *bloque,
+                *hermanos[fin + 2:],
+            ]
 
     elif accion == "sangrar":
         inicio = indices[0]
@@ -1025,19 +1042,59 @@ def mover_estructura(nodo_id: int, data: NodoMoverRequest, db: Session = Depends
         padres_para_actualizar.add(nuevo_padre.id)
         nuevo_padre.activo_como_rubro = False
 
-    elif accion == "quitar_sangria":
+    elif accion == "agrupar_abajo":
+        if len(seleccion_ordenada) < 2:
+            raise HTTPException(status_code=400, detail="Selecciona la fila y al menos una fila de abajo para agrupar")
+        nuevo_padre = seleccion_ordenada[0]
+        hijos_a_mover = seleccion_ordenada[1:]
+        hijos_ids = {n.id for n in hijos_a_mover}
+        delta = (nuevo_padre.nivel or 0) + 1 - (hijos_a_mover[0].nivel or 0)
+        hijos_bloque_ids = set(hijos_ids)
+        for n in hijos_a_mover:
+            hijos_bloque_ids.update(descendientes_por_nodo[n.id])
+        if any(((por_id[i].nivel or 0) + delta) > 7 for i in hijos_bloque_ids):
+            raise HTTPException(status_code=400, detail="Nivel maximo de jerarquia alcanzado (8 niveles)")
+        hijos_por_padre[padre_anterior_id] = [n for n in hermanos if n.id not in hijos_ids]
+        hijos_destino = hijos_por_padre.setdefault(nuevo_padre.id, [])
+        for n in hijos_a_mover:
+            n.padre_id = nuevo_padre.id
+            hijos_destino.append(n)
+        padres_para_actualizar.add(nuevo_padre.id)
+        nuevo_padre.activo_como_rubro = False
+
+    elif accion in ("quitar_sangria", "quitar_sangria_con_bloque"):
         padre = por_id.get(padre_anterior_id)
         if not padre:
             raise HTTPException(status_code=400, detail="La seleccion ya esta en el nivel superior")
-        if padre.padre_id is None:
-            raise HTTPException(status_code=400, detail="No se puede quitar mas sangria: la fila ya esta en el primer nivel")
-        hijos_por_padre[padre_anterior_id] = [n for n in hermanos if n.id not in seleccion_ids]
+        if accion == "quitar_sangria_con_bloque" and len(seleccion_ordenada) < 2:
+            raise HTTPException(status_code=400, detail="Selecciona la fila y al menos una fila de abajo para agrupar")
         hermanos_destino = hijos_por_padre.setdefault(padre.padre_id, [])
         idx_padre = next((i for i, h in enumerate(hermanos_destino) if h.id == padre.id), len(hermanos_destino) - 1)
-        for offset, n in enumerate(seleccion_ordenada, start=1):
-            n.padre_id = padre.padre_id
-            hermanos_destino.insert(idx_padre + offset, n)
-        padres_para_actualizar.update({padre.id, padre.padre_id})
+        if accion == "quitar_sangria":
+            hijos_por_padre[padre_anterior_id] = [n for n in hermanos if n.id not in seleccion_ids]
+            for offset, n in enumerate(seleccion_ordenada, start=1):
+                n.padre_id = padre.padre_id
+                hermanos_destino.insert(idx_padre + offset, n)
+            padres_para_actualizar.update({padre.id, padre.padre_id})
+        else:
+            nuevo_padre = seleccion_ordenada[0]
+            hijos_a_mover = seleccion_ordenada[1:]
+            hijos_ids = {n.id for n in hijos_a_mover}
+            delta = (nuevo_padre.nivel or 0) + 1 - (hijos_a_mover[0].nivel or 0)
+            hijos_bloque_ids = set(hijos_ids)
+            for n in hijos_a_mover:
+                hijos_bloque_ids.update(descendientes_por_nodo[n.id])
+            if any(((por_id[i].nivel or 0) + delta) > 7 for i in hijos_bloque_ids):
+                raise HTTPException(status_code=400, detail="Nivel maximo de jerarquia alcanzado (8 niveles)")
+            hijos_por_padre[padre_anterior_id] = [n for n in hermanos if n.id not in seleccion_ids]
+            nuevo_padre.padre_id = padre.padre_id
+            hermanos_destino.insert(idx_padre + 1, nuevo_padre)
+            hijos_destino = hijos_por_padre.setdefault(nuevo_padre.id, [])
+            for n in hijos_a_mover:
+                n.padre_id = nuevo_padre.id
+                hijos_destino.append(n)
+            padres_para_actualizar.update({padre.id, padre.padre_id, nuevo_padre.id})
+            nuevo_padre.activo_como_rubro = False
 
     _recalcular_niveles_desde_arbol(hijos_por_padre)
     nodos = _aplanar_hijos(hijos_por_padre)
@@ -1527,6 +1584,7 @@ def vincular_apu(
 
     nodo.apu_id = data.apu_id
     nodo.tipo_rubro = "VINCULADO"
+    nodo.observaciones = None
     db.commit()
     db.refresh(nodo)
     return _nodo_out(nodo)
@@ -1550,7 +1608,11 @@ def desvincular_apu(nodo_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/nodos/{nodo_id}/crear-apu", response_model=CrearAPUDesdeRubroOut, status_code=201)
-def crear_apu_desde_rubro(nodo_id: int, db: Session = Depends(get_db)):
+def crear_apu_desde_rubro(
+    nodo_id: int,
+    data: Optional[CrearAPUDesdeRubroRequest] = None,
+    db: Session = Depends(get_db),
+):
     """
     Crea un APU en revision desde un RUBRO y lo vincula en la misma transaccion.
     """
@@ -1562,16 +1624,43 @@ def crear_apu_desde_rubro(nodo_id: int, db: Session = Depends(get_db)):
     if not nodo.unidad:
         raise HTTPException(status_code=400, detail="El rubro no tiene unidad para crear el APU")
 
+    base_apu = None
+    if data and data.base_apu_id:
+        base_apu = (
+            db.query(APU)
+            .filter(APU.id == data.base_apu_id)
+            .first()
+        )
+        if not base_apu:
+            raise HTTPException(status_code=404, detail="APU base no encontrado")
+
     apu = APU(
         codigo=siguiente_codigo_apu(db),
         nombre=nodo.descripcion,
         descripcion=nodo.descripcion,
         unidad=nodo.unidad,
-        rendimiento=1.0,
+        categoria=base_apu.categoria if base_apu else None,
+        subcategoria=base_apu.subcategoria if base_apu else None,
+        rendimiento=base_apu.rendimiento if base_apu else 1.0,
         estado="en_revision",
+        observacion=f"Duplicado desde {base_apu.codigo or base_apu.nombre}" if base_apu else None,
     )
     db.add(apu)
     db.flush()
+
+    if base_apu:
+        base_items = db.query(APUItem).filter(APUItem.apu_id == base_apu.id).all()
+        for item in base_items:
+            db.add(
+                APUItem(
+                    apu_id=apu.id,
+                    recurso_id=item.recurso_id,
+                    categoria=item.categoria,
+                    cantidad=item.cantidad,
+                    orden=item.orden,
+                    es_herramienta_menor=item.es_herramienta_menor,
+                )
+            )
 
     nodo.apu_id = apu.id
     nodo.tipo_rubro = "VINCULADO"

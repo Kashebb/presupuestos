@@ -70,7 +70,7 @@ export default function DetalleAnalisis({ selectedRow }) {
               <div><span>Dif %</span><strong>{selectedRow.difPct}</strong></div>
               <div><span>Lineas</span><strong>{selectedRow.lines}</strong></div>
               <div><span>Pendientes</span><strong>{selectedRow.pending}</strong></div>
-              <div><span>No aplica</span><strong>{selectedRow.sinApu}</strong></div>
+              <div><span>Subcontratados</span><strong>{selectedRow.sinApu}</strong></div>
             </div>
           </div>
           <div className="budget-v2-apu-card">
@@ -78,7 +78,7 @@ export default function DetalleAnalisis({ selectedRow }) {
             {[
               ["Vinculadas", selectedRow.linked],
               ["Pendientes", selectedRow.pending],
-              ["No aplica", selectedRow.sinApu],
+              ["Subcontratados", selectedRow.sinApu],
               ["Revisar", selectedRow.revisar],
             ].map(([label, value]) => (
               <div className="budget-v2-breakdown-row" key={label}>
@@ -111,7 +111,7 @@ export default function DetalleAnalisis({ selectedRow }) {
           <div className="budget-v2-apu-card">
             <div className="budget-v2-apu-card-head">
               <small>Estado analisis</small>
-              {selectedRow?.estado && <em>{selectedRow.estado === "sin_apu" ? "Meta sin APU" : statusMeta[selectedRow.estado]?.label}</em>}
+              {selectedRow?.estado && <em>{selectedRow.estado === "sin_apu" ? "Subcontratado" : statusMeta[selectedRow.estado]?.label}</em>}
             </div>
             {selectedRow?.apu ? (
               <div className="budget-v2-apu-tags">
@@ -119,7 +119,7 @@ export default function DetalleAnalisis({ selectedRow }) {
                 <span>{selectedRow.apuNombre}</span>
               </div>
             ) : (
-              <span>{selectedRow?.estado === "sin_apu" ? "Esta linea suma con meta igual a referencia." : "Esta linea aun no tiene meta calculada."}</span>
+              <span>{selectedRow?.estado === "sin_apu" ? "Esta linea esta marcada como subcontratada y no tendra APU vinculado." : "Esta linea aun no tiene meta calculada."}</span>
             )}
           </div>
           {selectedRow?.apu && (
