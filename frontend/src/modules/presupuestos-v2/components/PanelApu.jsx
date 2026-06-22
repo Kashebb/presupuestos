@@ -6,7 +6,7 @@ function fmtMoney(value) {
   return `$${value.toLocaleString("es-EC", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-export default function PanelApu({ selectedRow }) {
+export default function PanelApu({ selectedRow, onEditApu, onChangeApu, onUnlinkApu }) {
   const selectedHasApu = selectedRow?.kind === "line" && Boolean(selectedRow.apu);
   const selectedApuId = selectedRow?.raw?.node?.apu_id || null;
   const [detalleCosto, setDetalleCosto] = useState(null);
@@ -113,9 +113,9 @@ export default function PanelApu({ selectedRow }) {
                 ))}
               </div>
               <div className="budget-v2-apu-actions">
-                <button type="button" className="budget-v2-apu-primary" disabled>Editar APU completo</button>
-                <button type="button" disabled>Cambiar APU</button>
-                <button type="button" className="budget-v2-apu-danger" disabled>Desvincular</button>
+                <button type="button" className="budget-v2-apu-primary" onClick={onEditApu}>Editar APU completo</button>
+                <button type="button" onClick={onChangeApu}>Cambiar APU</button>
+                <button type="button" className="budget-v2-apu-danger" onClick={onUnlinkApu}>Desvincular</button>
               </div>
             </>
           ) : (

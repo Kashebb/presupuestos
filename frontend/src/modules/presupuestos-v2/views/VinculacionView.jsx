@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ActionButton, ErrorBanner, ModalShell } from "../../../components/ui";
+import ApuDetalle from "../../../pages/ApuDetalle";
 import { API, statusMeta, vincFilters } from "../data";
 import { descendantsOf, visibleContainers } from "../logic/tree";
 import PanelApu from "../components/PanelApu";
@@ -92,6 +93,7 @@ export default function VinculacionView({
   const [collapsedTreeIds, setCollapsedTreeIds] = useState(new Set());
   const [modalVincularOpen, setModalVincularOpen] = useState(false);
   const [modalCrearOpen, setModalCrearOpen] = useState(false);
+  const [modalEditarApuOpen, setModalEditarApuOpen] = useState(false);
   const [apuSearch, setApuSearch] = useState("");
   const [apuSeleccionado, setApuSeleccionado] = useState(null);
   const [actionStatus, setActionStatus] = useState("");
@@ -149,6 +151,7 @@ export default function VinculacionView({
   useEffect(() => {
     setModalVincularOpen(false);
     setModalCrearOpen(false);
+    setModalEditarApuOpen(false);
     setApuSearch("");
     setApuSeleccionado(null);
     setActionError("");
@@ -206,6 +209,36 @@ export default function VinculacionView({
       throw new Error(detail?.detail || "No se pudo vincular el APU.");
     }
   });
+
+  const desvincularApu = () => runAction(async () => {
+    const response = await fetch(`${API}/presupuestos/nodos/${selectedRow.sourceId}/desvincular-apu`, { method: "PATCH" });
+    if (!response.ok) {
+      const detail = await response.json().catch(() => null);
+      throw new Error(detail?.detail || "No se pudo desvincular el APU.");
+    }
+  });
+
+  const cambiarApu = () => {
+    if (!canUseSelectedLine) return;
+    setApuSearch("");
+    setApuSeleccionado(null);
+    setActionError("");
+    setModalVincularOpen(true);
+  };
+
+  const editarApu = () => {
+    if (!selectedRow?.raw?.node?.apu_id) return;
+    setActionError("");
+    setModalEditarApuOpen(true);
+  };
+
+  const cerrarEditorApu = async ({ refresh = true } = {}) => {
+    setModalEditarApuOpen(false);
+    if (refresh) {
+      setActionStatus("APU actualizado.");
+      onDataChange?.();
+    }
+  };
 
   const toggleTreeCollapse = (rowId) => {
     setCollapsedTreeIds((current) => {
@@ -281,7 +314,12 @@ export default function VinculacionView({
         </div>
       </section>
 
-      <PanelApu selectedRow={selectedRow} />
+      <PanelApu
+        selectedRow={selectedRow}
+        onEditApu={editarApu}
+        onChangeApu={cambiarApu}
+        onUnlinkApu={desvincularApu}
+      />
 
       {modalVincularOpen && (
         <ModalShell
@@ -480,6 +518,29 @@ export default function VinculacionView({
               ))}
             </div>
             <ErrorBanner>{actionError}</ErrorBanner>
+          </div>
+        </ModalShell>
+      )}
+
+      {modalEditarApuOpen && selectedRow?.raw?.node?.apu_id && (
+        <ModalShell
+          title="Editar APU"
+          size="lg"
+          onClose={() => cerrarEditorApu({ refresh: false })}
+        >
+          <div className="budget-v2-apu-editor-modal">
+            <ApuDetalle
+              apu={{
+                id: selectedRow.raw.node.apu_id,
+                codigo: selectedRow.apu,
+                nombre: selectedRow.apuNombre || selectedRow.descripcion,
+                unidad: selectedRow.unidad || "",
+                rendimiento: selectedRow.rendimiento || 1,
+                estado: selectedRow.raw.apu?.estado || "en_revision",
+              }}
+              onVolver={() => cerrarEditorApu({ refresh: true })}
+              volverLabel="Guardar y cerrar"
+            />
           </div>
         </ModalShell>
       )}

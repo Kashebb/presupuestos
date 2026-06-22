@@ -13,6 +13,7 @@ Rutas:
 """
 import io
 import json
+import sqlite3
 import unicodedata
 from typing import Optional, Any
 from datetime import datetime
@@ -22,7 +23,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.db import get_db
+from app.db import BASE_DIR, get_db
 from app.models.presupuesto import Proyecto, NodoPresupuesto, ActualizacionPresupuestoLote
 from app.models.apu import APU, APUItem
 from app.api.apus import siguiente_codigo_apu
@@ -41,6 +42,27 @@ ORDEN_JERARQUIA = [
 ]
 
 PU_TOLERANCIA = 0.01
+
+
+def _crear_respaldo_db(motivo: str) -> str:
+    origen = BASE_DIR / "presupuestos.db"
+    if not origen.exists():
+        raise HTTPException(status_code=500, detail="No se encontro la base para crear respaldo.")
+    carpeta = BASE_DIR / "backups"
+    carpeta.mkdir(exist_ok=True)
+    sello = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    destino = carpeta / f"presupuestos_auto_{motivo}_{sello}.db"
+    try:
+        src = sqlite3.connect(f"file:{origen.as_posix()}?mode=ro", uri=True)
+        dst = sqlite3.connect(destino)
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+            src.close()
+    except sqlite3.Error as exc:
+        raise HTTPException(status_code=500, detail=f"No se pudo crear respaldo automatico: {exc}") from exc
+    return str(destino)
 
 
 def _texto(valor: Any) -> Optional[str]:
@@ -1000,6 +1022,8 @@ def mover_estructura(nodo_id: int, data: NodoMoverRequest, db: Session = Depends
 
     def extraer_bloque_de_hermanos() -> list[NodoPresupuesto]:
         return [n for n in hermanos if n.id in seleccion_ids]
+
+    _crear_respaldo_db(f"estructura_proyecto_{nodo_base.proyecto_id}_{accion}")
 
     if accion in ("subir", "bajar"):
         inicio = indices[0]

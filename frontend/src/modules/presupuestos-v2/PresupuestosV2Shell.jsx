@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ActionButton, PageHeader, Panel } from "../../components/ui";
 import { usePresupuestosV2Data } from "./data";
 import AnalisisView from "./views/AnalisisView";
 import EdicionView from "./views/EdicionView";
@@ -6,6 +7,7 @@ import VinculacionView from "./views/VinculacionView";
 
 export default function PresupuestosV2Shell() {
   const [view, setView] = useState("edicion");
+  const [workspaceMode, setWorkspaceMode] = useState("lista");
   const [selectedTreeId, setSelectedTreeId] = useState("all");
   const [selectedRowId, setSelectedRowId] = useState("");
   const [footerCount, setFooterCount] = useState(1);
@@ -24,7 +26,7 @@ export default function PresupuestosV2Shell() {
 
   const footerText = {
     edicion: "Edicion activa: cambios manuales controlados sobre filas operativas.",
-    vinculacion: "Modo lectura: contenedores y rubros reales, acciones APU deshabilitadas.",
+    vinculacion: "Vinculacion activa: rubros reales con acciones APU controladas.",
     analisis: "Modo lectura: comparacion con costos APU existentes.",
   };
 
@@ -34,34 +36,93 @@ export default function PresupuestosV2Shell() {
     analisis: `${footerCount} fila(s) analizadas`,
   };
 
+  const openProject = (projectId) => {
+    setSelectedProjectId(String(projectId));
+    setSelectedTreeId("all");
+    setSelectedRowId("");
+    setFooterCount(1);
+    setWorkspaceMode("detalle");
+  };
+
+  const backToProjects = () => {
+    setSelectedTreeId("all");
+    setSelectedRowId("");
+    setWorkspaceMode("lista");
+  };
+
+  if (workspaceMode === "lista") {
+    return (
+      <div className="budget-v2-shell">
+        <section className="budget-v2-project-list">
+          <PageHeader
+            title="Presupuestos"
+            subtitle="Selecciona un proyecto para editar presupuesto, vincular APUs y revisar costos."
+            meta={loading ? "Cargando proyectos..." : `${projects.length} proyecto(s) disponible(s)`}
+          />
+          {error && <div className="budget-v2-state budget-v2-state-error">{error}</div>}
+          {!error && !loading && !projects.length && (
+            <div className="budget-v2-state">No hay proyectos registrados.</div>
+          )}
+          <div className="budget-v2-project-grid">
+            {projects.map((project) => {
+              const isLoadedProject = String(project.id) === String(selectedProjectId);
+              return (
+                <Panel key={project.id} className="budget-v2-project-card">
+                  <div className="budget-v2-project-card-main">
+                    <div className="budget-v2-project-card-kicker">Proyecto</div>
+                    <strong>{project.nombre}</strong>
+                    <span>{project.codigo || "sin codigo"}</span>
+                    {project.descripcion && <p>{project.descripcion}</p>}
+                  </div>
+                  <div className="budget-v2-project-card-metrics">
+                    <div>
+                      <small>Estado</small>
+                      <b>{project.estado || "activo"}</b>
+                    </div>
+                    <div>
+                      <small>Filas</small>
+                      <b>{isLoadedProject && !loading ? rows.length : "-"}</b>
+                    </div>
+                    <div>
+                      <small>Flujo</small>
+                      <b>Edicion / Vinculacion</b>
+                    </div>
+                  </div>
+                  <div className="budget-v2-project-card-actions">
+                    <ActionButton variant="primary" onClick={() => openProject(project.id)}>
+                      Abrir presupuesto
+                    </ActionButton>
+                  </div>
+                </Panel>
+              );
+            })}
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="budget-v2-shell">
       <header className="budget-v2-header">
         <div>
-          <div className="budget-v2-kicker">Modulo nuevo</div>
-          <h1>Presupuestos V2</h1>
+          <div className="budget-v2-kicker">Presupuesto operativo</div>
+          <h1>Presupuestos</h1>
           <p>{selectedProject ? `${selectedProject.nombre} · ${selectedProject.codigo || "sin codigo"}` : "Lectura de datos reales del backend existente."}</p>
         </div>
         <div className="budget-v2-status">
           <span>{view === "edicion" ? "Edicion" : view === "vinculacion" ? "Vinculacion" : "Analisis"}</span>
-          <strong>{view === "edicion" ? "Activo" : "Solo lectura"}</strong>
+          <strong>{view === "analisis" ? "Solo lectura" : "Activo"}</strong>
         </div>
       </header>
 
       <section className="budget-v2-workspace">
         <div className="budget-v2-projectbar">
-          <label>
-            Proyecto
-            <select value={selectedProjectId} onChange={(event) => {
-              setSelectedProjectId(event.target.value);
-              setSelectedTreeId("all");
-              setSelectedRowId("");
-            }}>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>{project.nombre}</option>
-              ))}
-            </select>
-          </label>
+          <button type="button" className="budget-v2-back-button" onClick={backToProjects}>Volver a proyectos</button>
+          <div className="budget-v2-project-locked">
+            <small>Proyecto</small>
+            <strong>{selectedProject ? `${selectedProject.nombre} · ${selectedProject.codigo || "sin codigo"}` : "Proyecto seleccionado"}</strong>
+          </div>
           <span>{loading ? "Cargando..." : `${rows.length} fila(s) cargadas`}</span>
         </div>
         {error && <div className="budget-v2-state budget-v2-state-error">{error}</div>}

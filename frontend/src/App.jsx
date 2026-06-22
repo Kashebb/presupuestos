@@ -2,7 +2,6 @@ import { useState } from "react";
 import Recursos from "./pages/Recursos";
 import Apus from "./pages/Apus";
 import ApuDetalle from "./pages/ApuDetalle";
-import Presupuestos from "./pages/Presupuestos";
 import PresupuestosV2 from "./pages/PresupuestosV2";
 import Dashboard from "./pages/Dashboard";
 
@@ -41,7 +40,6 @@ function App() {
     ["recursos", "Recursos"],
     ["apus", "APUs"],
     ["presupuestos", "Presupuestos"],
-    ["presupuestos_v2", "Presupuestos V2"],
   ];
 
   return (
@@ -71,7 +69,7 @@ function App() {
         {pagina === "apu_detalle" && apuSeleccionado && (
           <ApuDetalle apu={apuSeleccionado} onVolver={volverAApus} />
         )}
-        {pagina === "presupuestos" && <Presupuestos initialFilter={filtroPresupuestoInicial} onVerDetalle={irADetalle} />}
+        {pagina === "presupuestos" && <PresupuestosV2 initialFilter={filtroPresupuestoInicial} />}
         {pagina === "presupuestos_v2" && <PresupuestosV2 />}
       </main>
     </div>

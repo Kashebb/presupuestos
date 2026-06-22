@@ -341,6 +341,8 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
   const fmt  = (n) => (n || 0).toFixed(4);
   const rendimientoModoValor = fmt(rendimientoValores[rendimientoModo]);
   const rendimientoValue = rendimientoCampoValor || rendimientoModoValor;
+  const rendimientoNumero = Math.abs(parseFloat(String(rendimientoValue).replace(",", ".")) || 0);
+  const rendimientoStep = rendimientoNumero >= 10 ? 1 : rendimientoNumero >= 1 ? 0.1 : 0.0001;
   const fmt2 = (n) => (n || 0).toFixed(2);
   const recursosDe = (key) => recursos.filter(r => r.categoria === key);
   const recursoSeleccionado = formItem.recurso_id
@@ -439,13 +441,18 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
                   {rendimientoCampos.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
                 </select>
                 <input
-                  type="text"
+                  type="number"
                   inputMode="decimal"
+                  step={rendimientoStep}
+                  min="0.0001"
                   value={rendimientoValue}
                   onChange={e => setRendimientoCampoValor(e.target.value)}
                   onBlur={confirmarRendimientoCampo}
-                  onKeyDown={e => { if (e.key === "Enter") confirmarRendimientoCampo(); }}
-                  style={{ border: "1px solid #86efac", borderRadius: "6px", padding: "4px 8px", width: "94px", fontSize: "0.9rem", fontWeight: 700, color: "#1f2937", outline: "none" }}
+                  onKeyDown={e => {
+                    if (e.key === "Enter") confirmarRendimientoCampo();
+                    if (e.key === "Escape") setRendimientoCampoValor(rendimientoModoValor);
+                  }}
+                  style={{ border: "1px solid #86efac", borderRadius: "6px", padding: "4px 8px", width: "112px", fontSize: "0.9rem", fontWeight: 700, color: "#1f2937", outline: "none" }}
                 />
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(92px, 1fr))", gap: "6px", fontSize: "0.72rem", color: "#374151" }}>
