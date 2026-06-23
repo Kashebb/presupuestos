@@ -34,6 +34,12 @@ const modalBase = {
   observacion: "",
 };
 
+const parseNumero = (value) => Number.parseFloat(String(value ?? "").replace(",", "."));
+const round3 = (value) => {
+  const numero = parseNumero(value);
+  return Number.isFinite(numero) ? Number(numero.toFixed(3)) : 0;
+};
+
 function estadoTone(estado) {
   if (estado === "activo") return "green";
   if (estado === "referencial" || estado === "ok" || estado === "validado") return "green";
@@ -169,7 +175,7 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
     const res = await fetch(`${API}/apus/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, rendimiento: parseFloat(form.rendimiento) || 1.0, items: [] }),
+      body: JSON.stringify({ ...form, rendimiento: round3(form.rendimiento) || 1.0, items: [] }),
     });
     if (res.ok) {
       setModalAbierto(false);
@@ -339,7 +345,7 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
             </div>
             <div>
               <label className={labelClass}>Rendimiento (h/unidad)</label>
-              <input type="number" step="0.01" value={form.rendimiento} onChange={(e) => setForm({ ...form, rendimiento: e.target.value })} className={fieldClass} />
+              <input type="number" step="0.001" value={form.rendimiento} onChange={(e) => setForm({ ...form, rendimiento: e.target.value })} className={fieldClass} />
             </div>
             <div>
               <label className={labelClass}>Estado</label>

@@ -28,9 +28,31 @@ def siguiente_codigo_apu(db: Session):
     prefijo, ancho, numero = max(candidatos, key=lambda item: item[2])
     return f"{prefijo}{str(numero + 1).zfill(ancho)}"
 
+
+def _r3(value):
+    return round(float(value or 0.0), 3)
+
+
+def _r2(value):
+    return round(float(value or 0.0), 2)
+
+
+def _normalizar_apu_data(data: dict) -> dict:
+    if "rendimiento" in data and data["rendimiento"] is not None:
+        data["rendimiento"] = _r3(data["rendimiento"])
+    return data
+
+
+def _normalizar_item_data(data: dict) -> dict:
+    if "cantidad" in data and data["cantidad"] is not None:
+        data["cantidad"] = _r3(data["cantidad"])
+    return data
+
+
 def calcular_costo_apu(apu: APU):
     subtotales = {"equipo": 0.0, "mano_de_obra": 0.0, "material": 0.0, "transporte": 0.0}
     subtotal_mo = 0.0
+    rendimiento = _r3(apu.rendimiento)
 
     for item in apu.items:
         if item.es_herramienta_menor:
@@ -38,25 +60,26 @@ def calcular_costo_apu(apu: APU):
         if not item.recurso:
             continue
 
-        precio = item.recurso.precio_unitario or 0.0
+        precio = _r3(item.recurso.precio_unitario)
+        cantidad = _r3(item.cantidad)
         cat = item.categoria
-        costo = item.cantidad * precio
+        costo = _r3(cantidad * precio)
 
         if cat in ("equipo", "mano_de_obra"):
-            costo *= apu.rendimiento
+            costo = _r3(costo * rendimiento)
 
-        subtotales[cat] = subtotales.get(cat, 0.0) + costo
+        subtotales[cat] = _r3(subtotales.get(cat, 0.0) + costo)
         if cat == "mano_de_obra":
-            subtotal_mo += costo
+            subtotal_mo = _r3(subtotal_mo + costo)
 
-    hm = subtotal_mo * 0.05
-    subtotales["equipo"] += hm
-    precio_unitario = round(sum(subtotales.values()), 6)
+    hm = _r3(subtotal_mo * 0.05)
+    subtotales["equipo"] = _r3(subtotales["equipo"] + hm)
+    precio_unitario = _r2(sum(subtotales.values()))
 
     return {
         "precio_unitario": precio_unitario,
-        "subtotales": {k: round(v, 6) for k, v in subtotales.items()},
-        "herramienta_menor": round(hm, 6),
+        "subtotales": {k: _r2(v) for k, v in subtotales.items()},
+        "herramienta_menor": _r2(hm),
     }
 
 @router.get("/", response_model=List[APUOut])
@@ -120,14 +143,14 @@ def obtener_apu(apu_id: int, db: Session = Depends(get_db)):
 
 @router.post("/", response_model=APUOut)
 def crear_apu(apu: APUCreate, db: Session = Depends(get_db)):
-    data = apu.model_dump(exclude={"items"})
+    data = _normalizar_apu_data(apu.model_dump(exclude={"items"}))
     if not data.get("codigo"):
         data["codigo"] = siguiente_codigo_apu(db)
     db_apu = APU(**data)
     db.add(db_apu)
     db.flush()
     for item in apu.items:
-        db_item = APUItem(apu_id=db_apu.id, **item.model_dump())
+        db_item = APUItem(apu_id=db_apu.id, **_normalizar_item_data(item.model_dump()))
         db.add(db_item)
     db.commit()
     db.refresh(db_apu)
@@ -138,12 +161,12 @@ def actualizar_apu(apu_id: int, apu: APUUpdate, db: Session = Depends(get_db)):
     db_apu = db.query(APU).filter(APU.id == apu_id).first()
     if not db_apu:
         raise HTTPException(status_code=404, detail="APU no encontrado")
-    for key, value in apu.model_dump(exclude={"items"}, exclude_unset=True).items():
+    for key, value in _normalizar_apu_data(apu.model_dump(exclude={"items"}, exclude_unset=True)).items():
         setattr(db_apu, key, value)
     if apu.items is not None:
         db.query(APUItem).filter(APUItem.apu_id == apu_id).delete()
         for item in apu.items:
-            db_item = APUItem(apu_id=apu_id, **item.model_dump())
+            db_item = APUItem(apu_id=apu_id, **_normalizar_item_data(item.model_dump()))
             db.add(db_item)
     db.commit()
     db.refresh(db_apu)
@@ -183,6 +206,6 @@ def obtener_costo_apu(apu_id: int, db: Session = Depends(get_db)):
         "apu_id": apu_id,
         "nombre": apu.nombre,
         "unidad": apu.unidad,
-        "rendimiento": apu.rendimiento,
+        "rendimiento": _r3(apu.rendimiento),
         **costo,
     }
