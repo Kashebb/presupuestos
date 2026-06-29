@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-06-29
+
+- Eliminada la columna redundante `tipo_origen` de `nodos_presupuesto`.
+- Retirado `tipo_origen` del modelo SQLAlchemy, del schema Pydantic `NodoOut` y de las escrituras al crear nodos.
+- Agregada migracion Alembic `0009_elimina_tipo_origen_nodos_presupuesto` con downgrade que recrea la columna y rellena `tipo_origen = tipo`.
+- La API de nodos ya no expone `tipo_origen`.
+
 ## 2026-06-20
 
 - Agregada base progresiva para jerarquia dinamica por sangria en presupuestos.

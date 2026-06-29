@@ -34,16 +34,13 @@ id, proyecto_id, padre_id, tipo, item, descripcion, orden, unidad, metrado,
 precio_unitario_ref, apu_id, tipo_rubro, observaciones, individualizado, 
 estado_actualizacion, actualizacion_lote_id, excel_fila, excel_hoja, 
 excel_archivo, fecha_actualizacion_fuente, origen_edicion, 
-requiere_revision_apu, fecha_edicion_manual, tipo_origen, nivel, 
+requiere_revision_apu, fecha_edicion_manual, nivel, 
 activo_como_rubro
 
 ⚠️ REGLAS CRÍTICAS sobre nodos_presupuesto (no asumir lo obvio):
 - `tipo` (valores: RUBRO, CAPITULO, SUBCATEGORIA, CATEGORIA, SUBCAPITULO, 
   FASE, GRUPO) ya NO determina si un nodo es "rubro operativo". 
   Usar `activo_como_rubro == 1` AND sin hijos para eso.
-- `tipo_origen` es redundante con `tipo` (0 filas distintas detectadas). 
-  No usar en lógica nueva. Candidato a eliminar en migración futura — 
-  no eliminar sin confirmación explícita.
 - Estado real de vinculación APU requiere mirar 3 campos juntos: 
   `apu_id`, `tipo_rubro`, `observaciones`. 
   CONOCIDO: existen 12 filas con `tipo_rubro=VINCULADO` + `apu_id` 
@@ -73,7 +70,6 @@ total_excepciones, resumen_json, fecha_creacion
   operativa por sí solo.
 
 ## Pendientes conocidos (no resolver sin pedirlo explícitamente)
-- tipo_origen candidato a eliminación (campo muerto).
 - El proceso de importación desde Excel puede dejar observaciones 
   desactualizado al vincular un apu_id existente. Si reaparece este patrón, 
   revisar el flujo de importación en presupuestos.py, no solo corregir los datos.
