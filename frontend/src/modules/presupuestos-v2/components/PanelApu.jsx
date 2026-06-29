@@ -3,12 +3,14 @@ import { API, statusMeta } from "../data";
 
 function fmtMoney(value) {
   if (!Number.isFinite(value)) return "-";
-  return `$${value.toLocaleString("es-EC", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${value.toLocaleString("es-EC", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
 }
 
 export default function PanelApu({ selectedRow, onEditApu, onChangeApu, onUnlinkApu }) {
   const selectedHasApu = selectedRow?.kind === "line" && Boolean(selectedRow.apu);
   const selectedApuId = selectedRow?.raw?.node?.apu_id || null;
+  const selectedApuRendimiento = selectedRow?.raw?.apu?.rendimiento ?? null;
+  const selectedApuPuMeta = selectedRow?.raw?.cost?.precio_unitario ?? null;
   const [detalleCosto, setDetalleCosto] = useState(null);
   const [cargandoDetalle, setCargandoDetalle] = useState(false);
   const [errorDetalle, setErrorDetalle] = useState("");
@@ -44,7 +46,7 @@ export default function PanelApu({ selectedRow, onEditApu, onChangeApu, onUnlink
     return () => {
       cancelled = true;
     };
-  }, [selectedApuId]);
+  }, [selectedApuId, selectedApuPuMeta, selectedApuRendimiento]);
 
   const subtotales = detalleCosto?.subtotales || {};
 
@@ -79,17 +81,17 @@ export default function PanelApu({ selectedRow, onEditApu, onChangeApu, onUnlink
                 <div className="budget-v2-apu-tags">
                   <span>{selectedRow.apu}</span>
                   <span>Und {selectedRow.unidad}</span>
-                  <span>Rend. {selectedRow.rendimiento ?? "-"}</span>
+                  <span>Rend. {Number.isFinite(selectedRow.rendimiento) ? selectedRow.rendimiento.toFixed(4) : "-"}</span>
                 </div>
               </div>
               <div className="budget-v2-apu-card">
                 <small>Comparacion economica</small>
                 <div className="budget-v2-apu-diff">
                   <span>Dif total</span>
-                  <strong className="budget-v2-diff-positive">{selectedRow.dif || "$0.00"}</strong>
+                  <strong className="budget-v2-diff-positive">{selectedRow.dif || "$0.0000"}</strong>
                 </div>
                 <div className="budget-v2-apu-metrics">
-                  <div><span>Dif unit.</span><strong>{selectedRow.raw?.puMeta != null && selectedRow.raw?.puRef != null ? `$${(selectedRow.raw.puMeta - selectedRow.raw.puRef).toLocaleString("es-EC", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "-"}</strong></div>
+                  <div><span>Dif unit.</span><strong>{selectedRow.raw?.puMeta != null && selectedRow.raw?.puRef != null ? `$${(selectedRow.raw.puMeta - selectedRow.raw.puRef).toLocaleString("es-EC", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}` : "-"}</strong></div>
                   <div><span>Dif %</span><strong>{selectedRow.difPct || "-"}</strong></div>
                   <div><span>Total ref</span><strong>{selectedRow.ptRef}</strong></div>
                   <div><span>Total meta</span><strong>{selectedRow.ptMeta}</strong></div>

@@ -63,9 +63,8 @@ const roundTo = (value, decimals) => {
   const numero = parseNumero(value);
   return Number.isFinite(numero) ? Number(numero.toFixed(decimals)) : 0;
 };
-const round3 = (value) => roundTo(value, 3);
-const fmt2 = (n) => roundTo(n, 2).toFixed(2);
-const fmt3 = (n) => round3(n).toFixed(3);
+const round4 = (value) => roundTo(value, 4);
+const fmt4 = (n) => round4(n).toFixed(4);
 
 const estadoBadge = (estado) => {
   const estilos = {
@@ -150,27 +149,27 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
   // â”€â”€ Cálculos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const rendimientoBaseActual = parseNumero(rendimientoEdit);
-  const baseRendimiento = Number.isFinite(rendimientoBaseActual) && rendimientoBaseActual > 0 ? round3(rendimientoBaseActual) : round3(apu.rendimiento);
+  const baseRendimiento = Number.isFinite(rendimientoBaseActual) && rendimientoBaseActual > 0 ? round4(rendimientoBaseActual) : round4(apu.rendimiento);
   const R = baseRendimiento;
 
   const costoBaseItem = (item) => {
     const recurso = recursos.find(rc => rc.id === item.recurso_id);
     if (!recurso) return 0;
-    return round3(round3(item.cantidad) * round3(recurso.precio_unitario));
+    return round4(round4(item.cantidad) * round4(recurso.precio_unitario));
   };
 
   const costoItem = (item, r) => {
     const C = costoBaseItem(item);
     const usaR = item.categoria === "equipo" || item.categoria === "mano_de_obra";
-    return usaR ? round3(C * round3(r)) : C;
+    return usaR ? round4(C * round4(r)) : C;
   };
 
   const itemsCosto          = items.filter(i => !i.es_herramienta_menor);
   const resumenCostoParaR = (rendimiento) => {
-    const sumarCosto = (lista) => lista.reduce((a, i) => round3(a + costoItem(i, rendimiento)), 0);
+    const sumarCosto = (lista) => lista.reduce((a, i) => round4(a + costoItem(i, rendimiento)), 0);
     const manoDeObra = sumarCosto(itemsCosto.filter(i => i.categoria === "mano_de_obra"));
-    const herramientaMenor = round3(manoDeObra * 0.05);
-    const equipo = round3(sumarCosto(itemsCosto.filter(i => i.categoria === "equipo")) + herramientaMenor);
+    const herramientaMenor = round4(manoDeObra * 0.05);
+    const equipo = round4(sumarCosto(itemsCosto.filter(i => i.categoria === "equipo")) + herramientaMenor);
     const material = sumarCosto(itemsCosto.filter(i => i.categoria === "material"));
     const transporte = sumarCosto(itemsCosto.filter(i => i.categoria === "transporte"));
     return {
@@ -179,7 +178,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
       material,
       transporte,
       herramienta_menor: herramientaMenor,
-      total: round3(equipo + manoDeObra + material + transporte),
+      total: round4(equipo + manoDeObra + material + transporte),
     };
   };
   const resumenCosto = resumenCostoParaR(R);
@@ -201,7 +200,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
   // â”€â”€ Persistencia â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const guardarItems = async (nuevosItems, rendimientoActual) => {
-    const r = round3(rendimientoActual ?? apu.rendimiento);
+    const r = round4(rendimientoActual ?? apu.rendimiento);
     await fetch(`${API}/apus/${apu.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -209,7 +208,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
         nombre: apu.nombre, unidad: apu.unidad, rendimiento: r, estado: apu.estado,
         items: nuevosItems.filter(i => !i.es_herramienta_menor).map((i, idx) => ({
           recurso_id: i.recurso_id, categoria: i.categoria,
-          cantidad: round3(i.cantidad), orden: idx, es_herramienta_menor: false,
+          cantidad: round4(i.cantidad), orden: idx, es_herramienta_menor: false,
         }))
       })
     });
@@ -220,7 +219,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
   const guardarRendimientoBase = async (valorBase) => {
     const nuevoR = Number(valorBase);
     const valido = !isNaN(nuevoR) && nuevoR > 0;
-    const valorFinal = valido ? round3(nuevoR) : round3(apu.rendimiento);
+    const valorFinal = valido ? round4(nuevoR) : round4(apu.rendimiento);
     const apuActualizado = { ...apu, rendimiento: valorFinal };
     setApu(apuActualizado);
     setRendimientoEdit(valorFinal);
@@ -236,7 +235,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
       body: JSON.stringify({
         nombre: apu.nombre,
         unidad: apu.unidad,
-        rendimiento: round3(apu.rendimiento),
+        rendimiento: round4(apu.rendimiento),
         estado: nuevoEstado,
         categoria: apu.categoria,
         subcategoria: apu.subcategoria,
@@ -245,7 +244,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
         items: items.filter(i => !i.es_herramienta_menor).map((i, idx) => ({
           recurso_id: i.recurso_id,
           categoria: i.categoria,
-          cantidad: round3(i.cantidad),
+          cantidad: round4(i.cantidad),
           orden: idx,
           es_herramienta_menor: false,
         })),
@@ -265,7 +264,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
     }
     const nuevo = {
       recurso_id: recursoId,
-      cantidad:   round3(formItem.cantidad) || 1.0,
+      cantidad:   round4(formItem.cantidad) || 1.0,
       categoria:  agregando,
       es_herramienta_menor: false,
     };
@@ -297,7 +296,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
   const confirmarEditCantidad = async (globalIdx) => {
     const nueva = parseFloat(cantidadEdit);
     if (!nueva || nueva <= 0) { setEditandoCantidad(null); return; }
-    const nuevaNormalizada = round3(nueva);
+    const nuevaNormalizada = round4(nueva);
     const nuevosItems = items.map((i, idx) =>
       idx === globalIdx ? { ...i, cantidad: nuevaNormalizada } : i
     );
@@ -335,46 +334,46 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
 
   const rendimientoValores = {
     h_unidad: baseRendimiento,
-    dia_unidad: horasDia ? round3(baseRendimiento / horasDia) : 0,
-    semana_unidad: horasSemana ? round3(baseRendimiento / horasSemana) : 0,
-    mes_unidad: horasMes ? round3(baseRendimiento / horasMes) : 0,
-    unidad_h: baseRendimiento ? round3(1 / baseRendimiento) : 0,
-    unidad_dia: baseRendimiento ? round3(horasDia / baseRendimiento) : 0,
-    unidad_semana: baseRendimiento ? round3(horasSemana / baseRendimiento) : 0,
-    unidad_mes: baseRendimiento ? round3(horasMes / baseRendimiento) : 0,
+    dia_unidad: horasDia ? round4(baseRendimiento / horasDia) : 0,
+    semana_unidad: horasSemana ? round4(baseRendimiento / horasSemana) : 0,
+    mes_unidad: horasMes ? round4(baseRendimiento / horasMes) : 0,
+    unidad_h: baseRendimiento ? round4(1 / baseRendimiento) : 0,
+    unidad_dia: baseRendimiento ? round4(horasDia / baseRendimiento) : 0,
+    unidad_semana: baseRendimiento ? round4(horasSemana / baseRendimiento) : 0,
+    unidad_mes: baseRendimiento ? round4(horasMes / baseRendimiento) : 0,
   };
 
   const baseDesdeRendimiento = (key, valor) => {
     const n = parseNumero(valor);
     if (!Number.isFinite(n) || n <= 0) return null;
-    if (key === "h_unidad") return round3(n);
-    if (key === "dia_unidad") return horasDia ? round3(n * horasDia) : null;
-    if (key === "semana_unidad") return horasSemana ? round3(n * horasSemana) : null;
-    if (key === "mes_unidad") return horasMes ? round3(n * horasMes) : null;
-    if (key === "unidad_h") return round3(1 / n);
-    if (key === "unidad_dia") return horasDia ? round3(horasDia / n) : null;
-    if (key === "unidad_semana") return horasSemana ? round3(horasSemana / n) : null;
-    if (key === "unidad_mes") return horasMes ? round3(horasMes / n) : null;
+    if (key === "h_unidad") return round4(n);
+    if (key === "dia_unidad") return horasDia ? round4(n * horasDia) : null;
+    if (key === "semana_unidad") return horasSemana ? round4(n * horasSemana) : null;
+    if (key === "mes_unidad") return horasMes ? round4(n * horasMes) : null;
+    if (key === "unidad_h") return round4(1 / n);
+    if (key === "unidad_dia") return horasDia ? round4(horasDia / n) : null;
+    if (key === "unidad_semana") return horasSemana ? round4(horasSemana / n) : null;
+    if (key === "unidad_mes") return horasMes ? round4(horasMes / n) : null;
     return null;
   };
 
   const valorModoDesdeBase = (key, base) => {
-    if (key === "h_unidad") return round3(base);
-    if (key === "dia_unidad") return horasDia ? round3(base / horasDia) : 0;
-    if (key === "semana_unidad") return horasSemana ? round3(base / horasSemana) : 0;
-    if (key === "mes_unidad") return horasMes ? round3(base / horasMes) : 0;
-    if (key === "unidad_h") return base ? round3(1 / base) : 0;
-    if (key === "unidad_dia") return base ? round3(horasDia / base) : 0;
-    if (key === "unidad_semana") return base ? round3(horasSemana / base) : 0;
-    if (key === "unidad_mes") return base ? round3(horasMes / base) : 0;
+    if (key === "h_unidad") return round4(base);
+    if (key === "dia_unidad") return horasDia ? round4(base / horasDia) : 0;
+    if (key === "semana_unidad") return horasSemana ? round4(base / horasSemana) : 0;
+    if (key === "mes_unidad") return horasMes ? round4(base / horasMes) : 0;
+    if (key === "unidad_h") return base ? round4(1 / base) : 0;
+    if (key === "unidad_dia") return base ? round4(horasDia / base) : 0;
+    if (key === "unidad_semana") return base ? round4(horasSemana / base) : 0;
+    if (key === "unidad_mes") return base ? round4(horasMes / base) : 0;
     return 0;
   };
 
   const actualizarRendimientoEnPantalla = (base) => {
-    const normalizado = round3(base);
+    const normalizado = round4(base);
     if (!normalizado || normalizado <= 0) return;
     setRendimientoEdit(normalizado);
-    setRendimientoCampoValor(fmt3(valorModoDesdeBase(rendimientoModo, normalizado)));
+    setRendimientoCampoValor(fmt4(valorModoDesdeBase(rendimientoModo, normalizado)));
   };
 
   const actualizarRendimientoCampo = (valor) => {
@@ -383,17 +382,17 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
     if (base) setRendimientoEdit(base);
   };
 
-  const resumenCostoRedondeado = (rendimiento) => Number(fmt2(resumenCostoParaR(rendimiento).total));
+  const resumenCostoRedondeado = (rendimiento) => Number(fmt4(resumenCostoParaR(rendimiento).total));
 
   const buscarRendimientoConCambioVisible = (direccion) => {
     const actual = baseDesdeRendimiento(rendimientoModo, rendimientoCampoValor) || baseRendimiento;
     const costoActual = resumenCostoRedondeado(actual);
-    for (let paso = 1; paso <= 1000; paso += 1) {
-      const candidato = round3(actual + direccion * paso * 0.001);
+    for (let paso = 1; paso <= 10000; paso += 1) {
+      const candidato = round4(actual + direccion * paso * 0.0001);
       if (candidato <= 0) break;
       if (resumenCostoRedondeado(candidato) !== costoActual) return candidato;
     }
-    return Math.max(0.001, round3(actual + direccion * 0.001));
+    return Math.max(0.0001, round4(actual + direccion * 0.0001));
   };
 
   const categoriaObjetivoOpciones = [
@@ -415,14 +414,14 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
 
   const coeficienteObjetivo = () => {
     return categoriasCostoObjetivo.reduce((total, categoria) => {
-      if (categoria === "equipo" || categoria === "mano_de_obra") return round3(total + resumenCostoUnitario[categoria]);
+      if (categoria === "equipo" || categoria === "mano_de_obra") return round4(total + resumenCostoUnitario[categoria]);
       return total;
     }, 0);
   };
 
   const fijoObjetivo = () => {
     return categoriasCostoObjetivo.reduce((total, categoria) => {
-      if (categoria === "material" || categoria === "transporte") return round3(total + resumenCosto[categoria]);
+      if (categoria === "material" || categoria === "transporte") return round4(total + resumenCosto[categoria]);
       return total;
     }, 0);
   };
@@ -434,7 +433,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
     if (!coeficiente || coeficiente <= 0) return null;
     const baseObjetivo = objetivo - fijoObjetivo();
     if (baseObjetivo <= 0) return null;
-    return round3(baseObjetivo / coeficiente);
+    return round4(baseObjetivo / coeficiente);
   };
 
   const aplicarCostoObjetivo = async () => {
@@ -449,8 +448,9 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
     setPanelCostoObjetivoOpen(false);
   };
 
-  const confirmarRendimientoCampo = async () => {
-    const base = baseDesdeRendimiento(rendimientoModo, rendimientoCampoValor);
+  const confirmarRendimientoCampo = async (valor = rendimientoCampoValor) => {
+    const valorVisible = valor || valorModoDesdeBase(rendimientoModo, rendimientoEdit);
+    const base = baseDesdeRendimiento(rendimientoModo, valorVisible);
     if (!base) return;
     await guardarRendimientoBase(base);
   };
@@ -458,15 +458,14 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
   const guardarYVolver = async () => {
     if (editandoCantidad !== null) {
       await confirmarEditCantidad(editandoCantidad);
-    } else if (rendimientoCampoValor) {
-      await confirmarRendimientoCampo();
     }
+    await confirmarRendimientoCampo(rendimientoValue);
     await onVolver?.();
   };
 
-  const rendimientoModoValor = fmt3(rendimientoValores[rendimientoModo]);
+  const rendimientoModoValor = fmt4(rendimientoValores[rendimientoModo]);
   const rendimientoValue = rendimientoCampoValor || rendimientoModoValor;
-  const rendimientoStep = 0.001;
+  const rendimientoStep = 0.0001;
   const recursosDe = (key) => recursos.filter(r => r.categoria === key);
   const recursoSeleccionado = formItem.recurso_id
     ? recursos.find(r => r.id === parseInt(formItem.recurso_id))
@@ -539,7 +538,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
         ].map(([label, value]) => (
           <div key={label} style={{ border: "1px solid #e5e7eb", borderRadius: "6px", background: label === "Total directo" ? "#f0fdf4" : "#f8fafc", padding: "8px 10px" }}>
             <div style={{ color: "#6b7280", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase" }}>{label}</div>
-            <strong style={{ color: label === "Total directo" ? "#166534" : "#111827", fontSize: "1rem", fontVariantNumeric: "tabular-nums" }}>${fmt2(value)}</strong>
+            <strong style={{ color: label === "Total directo" ? "#166534" : "#111827", fontSize: "1rem", fontVariantNumeric: "tabular-nums" }}>${fmt4(value)}</strong>
           </div>
         ))}
       </div>
@@ -601,7 +600,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
                 {rendimientoCampos.map(([key, label]) => (
                   <div key={key} style={{ background: "#fff", border: "1px solid #dcfce7", borderRadius: "6px", padding: "5px 7px" }}>
                     <div style={{ color: "#6b7280" }}>{label}</div>
-                    <strong>{fmt2(rendimientoValores[key])}</strong>
+                    <strong>{fmt4(rendimientoValores[key])}</strong>
                   </div>
                 ))}
               </div>
@@ -651,7 +650,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
                       type="number"
                       inputMode="decimal"
                       min="0"
-                      step="0.01"
+                      step="0.0001"
                       value={costoObjetivoValor}
                       onChange={e => setCostoObjetivoValor(e.target.value)}
                       onKeyDown={e => { if (e.key === "Enter") aplicarCostoObjetivo(); }}
@@ -692,7 +691,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
             <SectionHeader
               title={label}
               countLabel={`${itemsSeccion.length} item${itemsSeccion.length !== 1 ? "s" : ""}`}
-              status={<span>Subtotal: <strong>${fmt2(subtotalDe(key))}</strong></span>}
+              status={<span>Subtotal: <strong>${fmt4(subtotalDe(key))}</strong></span>}
               collapsible
               collapsed={contraida}
               onToggle={() => toggleSeccion(key)}
@@ -741,7 +740,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
                       <td style={{ ...tdR, color: "#d97706" }}>—</td>
                       <td style={{ ...tdR, color: "#d97706" }}>—</td>
                       <td style={{ ...tdR, color: "#d97706" }}>—</td>
-                      <td style={{ ...tdR, fontWeight: 600, color: "#92400e" }}>{fmt2(herramientasMenores)}</td>
+                      <td style={{ ...tdR, fontWeight: 600, color: "#92400e" }}>{fmt4(herramientasMenores)}</td>
                       <td></td>
                     </tr>
                   )}
@@ -759,8 +758,8 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
                   {itemsSeccion.map((item) => {
                     const recurso   = recursos.find(r => r.id === item.recurso_id);
                     const globalIdx = items.indexOf(item);
-                    const C = recurso ? round3(round3(item.cantidad) * round3(recurso.precio_unitario)) : 0;
-                    const D = usaRendimiento ? round3(C * round3(R)) : C;
+                    const C = recurso ? round4(round4(item.cantidad) * round4(recurso.precio_unitario)) : 0;
+                    const D = usaRendimiento ? round4(C * round4(R)) : C;
                     return (
                       <tr key={globalIdx}
                         onMouseEnter={e => e.currentTarget.style.background = "#f9fafb"}
@@ -776,7 +775,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
                         <td style={tdR}>
                           {editandoCantidad === globalIdx ? (
                             <input
-                              type="number" step="0.001" min="0"
+                              type="number" step="0.0001" min="0"
                               value={cantidadEdit}
                               autoFocus
                               onChange={e => setCantidadEdit(e.target.value)}
@@ -789,26 +788,26 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
                               onClick={() => iniciarEditCantidad(globalIdx, item.cantidad)}
                               style={{ cursor: "pointer", borderBottom: "1px dashed #bbf7d0", paddingBottom: "1px" }}
                               title="Clic para editar">
-                              {fmt2(item.cantidad)}
+                              {fmt4(item.cantidad)}
                             </span>
                           )}
                         </td>
 
                         {/* Tarifa / P.U. */}
-                        <td style={tdR}>{recurso ? fmt2(recurso.precio_unitario) : "—"}</td>
+                        <td style={tdR}>{recurso ? fmt4(recurso.precio_unitario) : "—"}</td>
 
                         {/* Costo, Rend., Total (Eq/MO) — o vacío + vacío + Total (Mat/Tr) */}
                         {usaRendimiento ? (
                           <>
-                            <td style={tdR}>{fmt2(C)}</td>
-                            <td style={tdR}>{fmt2(R)}</td>
-                            <td style={{ ...tdR, fontWeight: 600, color: "#111827" }}>{fmt2(D)}</td>
+                            <td style={tdR}>{fmt4(C)}</td>
+                            <td style={tdR}>{fmt4(R)}</td>
+                            <td style={{ ...tdR, fontWeight: 600, color: "#111827" }}>{fmt4(D)}</td>
                           </>
                         ) : (
                           <>
                             <td></td>
                             <td></td>
-                            <td style={{ ...tdR, fontWeight: 600, color: "#111827" }}>{fmt2(D)}</td>
+                            <td style={{ ...tdR, fontWeight: 600, color: "#111827" }}>{fmt4(D)}</td>
                           </>
                         )}
 
@@ -887,7 +886,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
                                   <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }}>{r.descripcion}</span>
                                   <span style={{ color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.codigo || "-"}</span>
                                   <span style={{ color: "#64748b" }}>{r.unidad || "-"}</span>
-                                  <span style={{ color: "#111827", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>${fmt2(r.precio_unitario)}</span>
+                                  <span style={{ color: "#111827", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>${fmt4(r.precio_unitario)}</span>
                                   {recursoDetalleBreve(r) && (
                                     <span style={{ gridColumn: "1 / -1", color: "#6b7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "0.72rem" }}>
                                       {recursoDetalleBreve(r)}
@@ -899,14 +898,14 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
                           </div>
                           {recursoSeleccionado && (
                             <div style={{ marginTop: "6px", padding: "6px 8px", border: "1px solid #bbf7d0", borderRadius: "6px", background: "#fff", color: "#14532d", fontSize: "0.76rem" }}>
-                              Seleccionado: <strong>{recursoSeleccionado.descripcion}</strong> ({recursoSeleccionado.unidad || "-"}) - ${fmt2(recursoSeleccionado.precio_unitario)}
+                              Seleccionado: <strong>{recursoSeleccionado.descripcion}</strong> ({recursoSeleccionado.unidad || "-"}) - ${fmt4(recursoSeleccionado.precio_unitario)}
                             </div>
                           )}
                           {error && <div style={{ color: "#ef4444", fontSize: "0.75rem", marginTop: "4px" }}>{error}</div>}
                         </div>
                       </td>
                       <td style={{ padding: "10px 14px", verticalAlign: "top" }}>
-                        <input type="number" step="0.001" min="0"
+                        <input type="number" step="0.0001" min="0"
                           value={formItem.cantidad}
                           onChange={e => setFormItem({ ...formItem, cantidad: e.target.value })}
                           placeholder="Cantidad"
@@ -952,12 +951,12 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
             ].map(([lbl, val]) => (
               <tr key={lbl}>
                 <td style={{ padding: "6px 0", color: "#6b7280", fontSize: "0.875rem" }}>{lbl}</td>
-                <td style={{ padding: "6px 0", textAlign: "right", fontWeight: 500, color: "#374151", width: "140px" }}>${fmt2(val)}</td>
+                <td style={{ padding: "6px 0", textAlign: "right", fontWeight: 500, color: "#374151", width: "140px" }}>${fmt4(val)}</td>
               </tr>
             ))}
             <tr style={{ borderTop: "2px solid #e5e7eb" }}>
               <td style={{ padding: "12px 0 0", fontWeight: 700, color: "#111827", fontSize: "1rem" }}>Total Costo Directo</td>
-              <td style={{ padding: "12px 0 0", textAlign: "right", fontWeight: 700, color: "#166534", fontSize: "1.2rem" }}>${fmt2(totalCostoDirecto)}</td>
+              <td style={{ padding: "12px 0 0", textAlign: "right", fontWeight: 700, color: "#166534", fontSize: "1.2rem" }}>${fmt4(totalCostoDirecto)}</td>
             </tr>
           </tbody>
         </table>

@@ -80,10 +80,10 @@ def obtener_resumen(db: Session = Depends(get_db)):
                 "rubros_vinculados": vinculados,
                 "rubros_pendientes": pendientes,
                 "rubros_sin_apu": sin_apu,
-                "avance_vinculacion": round((vinculados / total) * 100, 2)
+                "avance_vinculacion": round((vinculados / total) * 100, 4)
                 if total
                 else 0,
-                "total_referencial": round(total_ref, 2),
+                "total_referencial": round(total_ref, 4),
             }
         )
 

@@ -43,7 +43,7 @@ ORDEN_JERARQUIA = [
     "RUBRO",
 ]
 
-PU_TOLERANCIA = 0.01
+PU_TOLERANCIA = 0.0001
 
 EXCEL_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -385,11 +385,11 @@ def _crear_workbook_presupuesto_operativo(proyecto: Proyecto, nodos: list[NodoPr
     for row in ws.iter_rows(min_row=2, min_col=6, max_col=14):
         for idx, cell in enumerate(row, start=6):
             if idx == 6:
-                cell.number_format = '#,##0.000'
+                cell.number_format = '#,##0.0000'
             elif idx == 14:
-                cell.number_format = '0.00%'
+                cell.number_format = '0.0000%'
             else:
-                cell.number_format = '$#,##0.00'
+                cell.number_format = '$#,##0.0000'
 
     widths = [8, 15, 14, 55, 12, 12, 14, 14, 18, 36, 14, 14, 14, 12, 16, 28]
     for idx, width in enumerate(widths, start=1):
@@ -420,7 +420,7 @@ def _crear_workbook_presupuesto_operativo(proyecto: Proyecto, nodos: list[NodoPr
     resumen.column_dimensions["B"].width = 38
     for cell in resumen["B"]:
         if isinstance(cell.value, (int, float)):
-            cell.number_format = '$#,##0.00' if cell.row >= 11 else '#,##0'
+            cell.number_format = '$#,##0.0000' if cell.row >= 11 else '#,##0'
 
     output = io.BytesIO()
     wb.save(output)

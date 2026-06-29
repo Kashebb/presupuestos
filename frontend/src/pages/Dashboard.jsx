@@ -9,8 +9,8 @@ function fmtNumero(valor) {
 
 function fmtMoneda(valor) {
   return `$${Number(valor || 0).toLocaleString("es-EC", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
   })}`;
 }
 
@@ -22,7 +22,7 @@ function ProgressBar({ value }) {
         <div className="h-1.5 rounded bg-green-700" style={{ width: `${pct}%` }} />
       </div>
       <span className="w-10 text-right text-[11px] tabular-nums text-slate-600">
-        {pct.toFixed(0)}%
+        {pct.toFixed(4)}%
       </span>
     </div>
   );

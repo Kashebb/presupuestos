@@ -16,6 +16,7 @@ from app.models.base import Base
 from app.models.apu import APU, APUItem
 from app.models.presupuesto import NodoPresupuesto, Proyecto
 from app.models.recurso import Recurso
+from app.api.apus import calcular_costo_apu
 from app.api.presupuestos import exportar_presupuesto_operativo
 
 
@@ -35,6 +36,23 @@ class ExportPresupuestoOperativoTest(unittest.TestCase):
 
     def tearDown(self):
         self.db.close()
+
+    def test_calcular_costo_apu_redondea_a_cuatro_decimales(self):
+        recurso = Recurso(
+            codigo="MAT-4D",
+            descripcion="Material cuatro decimales",
+            categoria="material",
+            unidad="u",
+            precio_unitario=1.23456,
+        )
+        apu = APU(codigo="APU-4D", nombre="APU cuatro decimales", unidad="m2", rendimiento=1.0)
+        apu.items.append(APUItem(recurso=recurso, categoria="material", cantidad=2.0, orden=1))
+
+        costo = calcular_costo_apu(apu)
+
+        self.assertEqual(costo["precio_unitario"], 2.4692)
+        self.assertEqual(costo["subtotales"]["material"], 2.4692)
+        self.assertEqual(costo["herramienta_menor"], 0.0)
 
     def test_exporta_excel_operativo_lectura(self):
         proyecto = Proyecto(nombre="Proyecto Prueba", codigo="PR-01")
@@ -115,6 +133,8 @@ class ExportPresupuestoOperativoTest(unittest.TestCase):
         self.assertEqual(rubro_row[8], "APU-001")
         self.assertAlmostEqual(rubro_row[7], 30.0)
         self.assertAlmostEqual(rubro_row[10], 24.69)
+        self.assertEqual(ws["F2"].number_format, "#,##0.0000")
+        self.assertEqual(ws["G2"].number_format, "$#,##0.0000")
 
     def test_exportar_proyecto_inexistente_devuelve_404(self):
         with self.assertRaises(HTTPException) as ctx:

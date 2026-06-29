@@ -269,7 +269,7 @@ export default function Recursos() {
       [recurso.id]: {
         descripcion: recurso.descripcion || "",
         unidad: recurso.unidad || "",
-        precio_unitario: Number(recurso.precio_unitario || 0).toFixed(2),
+        precio_unitario: Number(recurso.precio_unitario || 0).toFixed(4),
         estado_validacion: recurso.estado_validacion || "pendiente",
       },
     });
@@ -421,7 +421,7 @@ export default function Recursos() {
       width: "14%",
       render: (recurso) => {
         if (!edicionFila[recurso.id]) {
-          return <span className="resource-price-display">{Number(recurso.precio_unitario || 0).toFixed(2)}</span>;
+          return <span className="resource-price-display">{Number(recurso.precio_unitario || 0).toFixed(4)}</span>;
         }
 
         return (
@@ -614,7 +614,7 @@ export default function Recursos() {
 
             <div>
               <label className={labelClass}>Precio unitario *</label>
-              <input className={fieldClass} type="text" inputMode="decimal" value={form.precio_unitario} onChange={(e) => setForm({ ...form, precio_unitario: e.target.value })} placeholder="0.00" />
+              <input className={fieldClass} type="text" inputMode="decimal" value={form.precio_unitario} onChange={(e) => setForm({ ...form, precio_unitario: e.target.value })} placeholder="0.0000" />
             </div>
           </ModalFormGrid>
 

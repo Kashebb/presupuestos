@@ -3,7 +3,7 @@ import { API, statusMeta } from "../data";
 
 function fmtMoney(value) {
   if (!Number.isFinite(value)) return "-";
-  return `$${value.toLocaleString("es-EC", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${value.toLocaleString("es-EC", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
 }
 
 export default function DetalleAnalisis({ selectedRow }) {

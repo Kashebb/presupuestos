@@ -28,7 +28,7 @@ export default function AnalisisView({ rows = [], selectedTreeId, setSelectedTre
     const metaLines = lines.filter((row) => Number.isFinite(row.raw?.totalMeta));
     const totalMeta = metaLines.reduce((sum, row) => sum + (row.raw?.totalMeta || 0), 0);
     const diff = metaLines.reduce((sum, row) => sum + (Number.isFinite(row.raw?.diff) ? row.raw.diff : 0), 0);
-    const money = (value) => `$${Number(value || 0).toLocaleString("es-EC", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const money = (value) => `$${Number(value || 0).toLocaleString("es-EC", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
     return {
       totalRef: money(totalRef),
       totalMeta: metaLines.length ? money(totalMeta) : "-",

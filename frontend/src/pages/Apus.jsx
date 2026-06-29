@@ -35,9 +35,9 @@ const modalBase = {
 };
 
 const parseNumero = (value) => Number.parseFloat(String(value ?? "").replace(",", "."));
-const round3 = (value) => {
+const round4 = (value) => {
   const numero = parseNumero(value);
-  return Number.isFinite(numero) ? Number(numero.toFixed(3)) : 0;
+  return Number.isFinite(numero) ? Number(numero.toFixed(4)) : 0;
 };
 
 function estadoTone(estado) {
@@ -50,7 +50,7 @@ function estadoTone(estado) {
 
 function fmtPrecio(valor) {
   if (valor === undefined || valor === null) return "-";
-  return `$${Number(valor).toFixed(2)}`;
+  return `$${Number(valor).toFixed(4)}`;
 }
 
 export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
@@ -225,7 +225,7 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
     const res = await fetch(`${API}/apus/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, rendimiento: round3(form.rendimiento) || 1.0, items: [] }),
+      body: JSON.stringify({ ...form, rendimiento: round4(form.rendimiento) || 1.0, items: [] }),
     });
     if (res.ok) {
       setModalAbierto(false);
@@ -404,7 +404,7 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
             </div>
             <div>
               <label className={labelClass}>Rendimiento (h/unidad)</label>
-              <input type="number" step="0.001" value={form.rendimiento} onChange={(e) => setForm({ ...form, rendimiento: e.target.value })} className={fieldClass} />
+              <input type="number" step="0.0001" value={form.rendimiento} onChange={(e) => setForm({ ...form, rendimiento: e.target.value })} className={fieldClass} />
             </div>
             <div>
               <label className={labelClass}>Estado</label>

@@ -65,7 +65,7 @@ function apuSuggestionScore(row, apu, query) {
 
 function fmtMoney(value) {
   if (!Number.isFinite(value)) return "-";
-  return `$${value.toLocaleString("es-EC", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${value.toLocaleString("es-EC", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
 }
 
 function validarVinculacion(row, apu) {

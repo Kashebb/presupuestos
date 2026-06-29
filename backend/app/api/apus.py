@@ -29,30 +29,26 @@ def siguiente_codigo_apu(db: Session):
     return f"{prefijo}{str(numero + 1).zfill(ancho)}"
 
 
-def _r3(value):
-    return round(float(value or 0.0), 3)
-
-
-def _r2(value):
-    return round(float(value or 0.0), 2)
+def _r4(value):
+    return round(float(value or 0.0), 4)
 
 
 def _normalizar_apu_data(data: dict) -> dict:
     if "rendimiento" in data and data["rendimiento"] is not None:
-        data["rendimiento"] = _r3(data["rendimiento"])
+        data["rendimiento"] = _r4(data["rendimiento"])
     return data
 
 
 def _normalizar_item_data(data: dict) -> dict:
     if "cantidad" in data and data["cantidad"] is not None:
-        data["cantidad"] = _r3(data["cantidad"])
+        data["cantidad"] = _r4(data["cantidad"])
     return data
 
 
 def calcular_costo_apu(apu: APU):
     subtotales = {"equipo": 0.0, "mano_de_obra": 0.0, "material": 0.0, "transporte": 0.0}
     subtotal_mo = 0.0
-    rendimiento = _r3(apu.rendimiento)
+    rendimiento = _r4(apu.rendimiento)
 
     for item in apu.items:
         if item.es_herramienta_menor:
@@ -60,26 +56,26 @@ def calcular_costo_apu(apu: APU):
         if not item.recurso:
             continue
 
-        precio = _r3(item.recurso.precio_unitario)
-        cantidad = _r3(item.cantidad)
+        precio = _r4(item.recurso.precio_unitario)
+        cantidad = _r4(item.cantidad)
         cat = item.categoria
-        costo = _r3(cantidad * precio)
+        costo = _r4(cantidad * precio)
 
         if cat in ("equipo", "mano_de_obra"):
-            costo = _r3(costo * rendimiento)
+            costo = _r4(costo * rendimiento)
 
-        subtotales[cat] = _r3(subtotales.get(cat, 0.0) + costo)
+        subtotales[cat] = _r4(subtotales.get(cat, 0.0) + costo)
         if cat == "mano_de_obra":
-            subtotal_mo = _r3(subtotal_mo + costo)
+            subtotal_mo = _r4(subtotal_mo + costo)
 
-    hm = _r3(subtotal_mo * 0.05)
-    subtotales["equipo"] = _r3(subtotales["equipo"] + hm)
-    precio_unitario = _r2(sum(subtotales.values()))
+    hm = _r4(subtotal_mo * 0.05)
+    subtotales["equipo"] = _r4(subtotales["equipo"] + hm)
+    precio_unitario = _r4(sum(subtotales.values()))
 
     return {
         "precio_unitario": precio_unitario,
-        "subtotales": {k: _r2(v) for k, v in subtotales.items()},
-        "herramienta_menor": _r2(hm),
+        "subtotales": {k: _r4(v) for k, v in subtotales.items()},
+        "herramienta_menor": _r4(hm),
     }
 
 @router.get("/", response_model=List[APUOut])
@@ -206,6 +202,6 @@ def obtener_costo_apu(apu_id: int, db: Session = Depends(get_db)):
         "apu_id": apu_id,
         "nombre": apu.nombre,
         "unidad": apu.unidad,
-        "rendimiento": _r3(apu.rendimiento),
+        "rendimiento": _r4(apu.rendimiento),
         **costo,
     }

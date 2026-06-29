@@ -28,17 +28,17 @@ export const analysisFilters = [
 
 function fmtMoney(value) {
   if (!Number.isFinite(value)) return "";
-  return `$${value.toLocaleString("es-EC", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${value.toLocaleString("es-EC", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
 }
 
 function fmtNumber(value) {
   if (!Number.isFinite(value)) return "";
-  return value.toLocaleString("es-EC", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  return value.toLocaleString("es-EC", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
 }
 
 function fmtPct(value) {
   if (!Number.isFinite(value)) return "";
-  return `${(value * 100).toLocaleString("es-EC", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+  return `${(value * 100).toLocaleString("es-EC", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}%`;
 }
 
 function isLine(node) {
