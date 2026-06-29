@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ActionButton, PageHeader, Panel } from "../../components/ui";
-import { usePresupuestosV2Data } from "./data";
+import { API, usePresupuestosV2Data } from "./data";
 import AnalisisView from "./views/AnalisisView";
 import EdicionView from "./views/EdicionView";
 import VinculacionView from "./views/VinculacionView";
@@ -48,6 +48,11 @@ export default function PresupuestosV2Shell() {
     setSelectedTreeId("all");
     setSelectedRowId("");
     setWorkspaceMode("lista");
+  };
+
+  const exportProject = () => {
+    if (!selectedProjectId) return;
+    window.open(`${API}/presupuestos/proyectos/${selectedProjectId}/exportar-operativo.xlsx`, "_blank", "noopener,noreferrer");
   };
 
   if (workspaceMode === "lista") {
@@ -124,6 +129,9 @@ export default function PresupuestosV2Shell() {
             <strong>{selectedProject ? `${selectedProject.nombre} · ${selectedProject.codigo || "sin codigo"}` : "Proyecto seleccionado"}</strong>
           </div>
           <span>{loading ? "Cargando..." : `${rows.length} fila(s) cargadas`}</span>
+          <ActionButton variant="secondary" compact onClick={exportProject} disabled={!selectedProjectId || loading || Boolean(error)}>
+            Exportar Excel
+          </ActionButton>
         </div>
         {error && <div className="budget-v2-state budget-v2-state-error">{error}</div>}
         {!error && !loading && !projects.length && <div className="budget-v2-state">No hay proyectos registrados.</div>}

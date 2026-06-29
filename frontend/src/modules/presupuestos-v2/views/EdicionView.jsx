@@ -244,7 +244,7 @@ export default function EdicionView({
     : "";
   const structureDisabledReason = !canStructureActiveRow
     ? "Selecciona una fila real del presupuesto para modificar su estructura."
-    : Boolean(dirtyCount)
+    : dirtyCount
       ? pendingChangesReason
       : "";
   const upDisabledReason = structureDisabledReason || moveAvailability.upReason;

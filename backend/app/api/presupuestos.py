@@ -13,20 +13,22 @@ Rutas:
 """
 import io
 import json
+import re
 import unicodedata
 from typing import Optional, Any
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app import backup
 from app.db import get_db
 from app.models.presupuesto import Proyecto, NodoPresupuesto, ActualizacionPresupuestoLote
 from app.models.apu import APU, APUItem
-from app.api.apus import siguiente_codigo_apu
+from app.api.apus import calcular_costo_apu, siguiente_codigo_apu
 
 router = APIRouter(prefix="/presupuestos", tags=["Presupuestos"])
 
@@ -42,6 +44,8 @@ ORDEN_JERARQUIA = [
 ]
 
 PU_TOLERANCIA = 0.01
+
+EXCEL_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def _texto(valor: Any) -> Optional[str]:
@@ -192,6 +196,236 @@ def _total_ref_rubro(nodo: NodoPresupuesto) -> float:
     if nodo.metrado is None or nodo.precio_unitario_ref is None:
         return 0.0
     return float(nodo.metrado) * float(nodo.precio_unitario_ref)
+
+
+def _total_linea(metrado: Optional[float], precio_unitario: Optional[float]) -> Optional[float]:
+    if metrado is None or precio_unitario is None:
+        return None
+    return float(metrado) * float(precio_unitario)
+
+
+def _nombre_archivo_excel(proyecto: Proyecto) -> str:
+    base = proyecto.codigo or proyecto.nombre or f"proyecto-{proyecto.id}"
+    base = unicodedata.normalize("NFD", base)
+    base = "".join(c for c in base if unicodedata.category(c) != "Mn")
+    base = re.sub(r"[^A-Za-z0-9_-]+", "_", base).strip("_").lower()
+    return f"presupuesto_operativo_{base or proyecto.id}.xlsx"
+
+
+def _ordenar_arbol_presupuesto(nodos: list[NodoPresupuesto]) -> list[NodoPresupuesto]:
+    hijos_por_padre: dict[Optional[int], list[NodoPresupuesto]] = {}
+    ids = {n.id for n in nodos}
+    for nodo in nodos:
+        padre_id = nodo.padre_id if nodo.padre_id in ids else None
+        hijos_por_padre.setdefault(padre_id, []).append(nodo)
+    for hijos in hijos_por_padre.values():
+        hijos.sort(key=lambda n: (n.orden or 0, n.id))
+
+    ordenados: list[NodoPresupuesto] = []
+
+    def visitar(padre_id: Optional[int]) -> None:
+        for hijo in hijos_por_padre.get(padre_id, []):
+            ordenados.append(hijo)
+            visitar(hijo.id)
+
+    visitar(None)
+    return ordenados
+
+
+def _nivel_exportacion(nodo: NodoPresupuesto, por_id: dict[int, NodoPresupuesto]) -> int:
+    if nodo.nivel is not None:
+        return max(0, int(nodo.nivel))
+    nivel = 0
+    actual = nodo
+    visitados = set()
+    while actual.padre_id and actual.padre_id in por_id and actual.padre_id not in visitados:
+        visitados.add(actual.padre_id)
+        nivel += 1
+        actual = por_id[actual.padre_id]
+    return nivel
+
+
+def _es_rubro_operativo_desde_hijos(nodo: NodoPresupuesto, hijos_por_padre: dict[Optional[int], list[NodoPresupuesto]]) -> bool:
+    activo = bool(nodo.activo_como_rubro) if nodo.activo_como_rubro is not None else nodo.tipo == "RUBRO"
+    return activo and not hijos_por_padre.get(nodo.id)
+
+
+def _estado_exportacion(nodo: NodoPresupuesto, costo_apu: Optional[dict]) -> str:
+    if nodo.observaciones == "SIN_APU":
+        return "Subcontratado"
+    if not nodo.apu_id:
+        return "Pendiente"
+    if nodo.requiere_revision_apu or costo_apu and costo_apu.get("control_costo") == "revisar_costo":
+        return "Revisar"
+    return "Vinculado"
+
+
+def _crear_workbook_presupuesto_operativo(proyecto: Proyecto, nodos: list[NodoPresupuesto]):
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Presupuesto operativo"
+    resumen = wb.create_sheet("Resumen")
+
+    nodos_activos = [n for n in nodos if (n.estado_actualizacion or "activo") != "obsoleto"]
+    por_id = {n.id: n for n in nodos_activos}
+    hijos_por_padre: dict[Optional[int], list[NodoPresupuesto]] = {}
+    for nodo in nodos_activos:
+        padre_id = nodo.padre_id if nodo.padre_id in por_id else None
+        hijos_por_padre.setdefault(padre_id, []).append(nodo)
+
+    ordenados = _ordenar_arbol_presupuesto(nodos_activos)
+    costos_por_apu: dict[int, dict] = {}
+    acumulados: dict[int, dict[str, float]] = {n.id: {"ref": 0.0, "apu": 0.0} for n in nodos_activos}
+    rows_data = []
+    conteos = {"estructura": 0, "rubros": 0, "Vinculado": 0, "Pendiente": 0, "Subcontratado": 0, "Revisar": 0}
+
+    for nodo in ordenados:
+        es_rubro = _es_rubro_operativo_desde_hijos(nodo, hijos_por_padre)
+        nivel = _nivel_exportacion(nodo, por_id)
+        costo_apu = None
+        pu_apu = None
+        total_apu = None
+        total_ref = _total_linea(nodo.metrado, nodo.precio_unitario_ref) if es_rubro else None
+
+        if es_rubro and nodo.apu:
+            if nodo.apu.id not in costos_por_apu:
+                costo = calcular_costo_apu(nodo.apu)
+                costo["control_costo"] = (
+                    "revisar_costo"
+                    if "COSTO_NO_COINCIDE_CON_MAESTRO" in (nodo.apu.observacion or "")
+                    else "ok"
+                )
+                costos_por_apu[nodo.apu.id] = costo
+            costo_apu = costos_por_apu[nodo.apu.id]
+            pu_apu = costo_apu["precio_unitario"]
+            total_apu = _total_linea(nodo.metrado, pu_apu)
+
+        estado = _estado_exportacion(nodo, costo_apu) if es_rubro else ""
+        if es_rubro:
+            conteos["rubros"] += 1
+            conteos[estado] += 1
+            ref_value = float(total_ref or 0.0)
+            apu_value = float(total_apu or 0.0)
+            actual = nodo
+            while actual is not None:
+                if actual.id in acumulados:
+                    acumulados[actual.id]["ref"] += ref_value
+                    acumulados[actual.id]["apu"] += apu_value
+                actual = por_id.get(actual.padre_id)
+        else:
+            conteos["estructura"] += 1
+
+        rows_data.append({
+            "nodo": nodo,
+            "nivel": nivel,
+            "es_rubro": es_rubro,
+            "pu_apu": pu_apu,
+            "total_ref": total_ref,
+            "total_apu": total_apu,
+            "estado": estado,
+        })
+
+    headers = [
+        "Nivel", "Tipo", "Item", "Descripcion", "Unidad", "Metrado", "PU ref", "Total ref",
+        "APU", "Nombre APU", "PU APU", "Total APU", "Dif $", "Dif %", "Estado", "Observaciones",
+    ]
+    ws.append(headers)
+
+    header_fill = PatternFill("solid", fgColor="1F2937")
+    header_font = Font(color="FFFFFF", bold=True)
+    group_fill = PatternFill("solid", fgColor="E5E7EB")
+    line_fill = PatternFill("solid", fgColor="FFFFFF")
+    thin = Side(style="thin", color="D1D5DB")
+    border = Border(bottom=thin)
+
+    for cell in ws[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+
+    for data in rows_data:
+        nodo = data["nodo"]
+        es_rubro = data["es_rubro"]
+        ref = data["total_ref"] if es_rubro else acumulados[nodo.id]["ref"]
+        apu_total = data["total_apu"] if es_rubro else (acumulados[nodo.id]["apu"] or None)
+        diff = apu_total - ref if ref and apu_total is not None else None
+        diff_pct = diff / ref if ref and diff is not None else None
+        ws.append([
+            data["nivel"],
+            nodo.tipo,
+            nodo.item,
+            nodo.descripcion,
+            nodo.unidad if es_rubro else None,
+            nodo.metrado if es_rubro else None,
+            nodo.precio_unitario_ref if es_rubro else None,
+            ref,
+            nodo.apu.codigo if es_rubro and nodo.apu else None,
+            nodo.apu.nombre if es_rubro and nodo.apu else None,
+            data["pu_apu"],
+            apu_total,
+            diff,
+            diff_pct,
+            data["estado"],
+            nodo.observaciones,
+        ])
+        row = ws[ws.max_row]
+        fill = line_fill if es_rubro else group_fill
+        for cell in row:
+            cell.fill = fill
+            cell.border = border
+        row[3].alignment = Alignment(indent=min(data["nivel"], 15), wrap_text=True)
+        if not es_rubro:
+            for cell in row:
+                cell.font = Font(bold=True)
+
+    for row in ws.iter_rows(min_row=2, min_col=6, max_col=14):
+        for idx, cell in enumerate(row, start=6):
+            if idx == 6:
+                cell.number_format = '#,##0.000'
+            elif idx == 14:
+                cell.number_format = '0.00%'
+            else:
+                cell.number_format = '$#,##0.00'
+
+    widths = [8, 15, 14, 55, 12, 12, 14, 14, 18, 36, 14, 14, 14, 12, 16, 28]
+    for idx, width in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(idx)].width = width
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
+
+    resumen.append(["Campo", "Valor"])
+    resumen.append(["Proyecto", proyecto.nombre])
+    resumen.append(["Codigo", proyecto.codigo or ""])
+    resumen.append(["Fecha generacion", datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")])
+    resumen.append(["Filas estructura", conteos["estructura"]])
+    resumen.append(["Rubros operativos", conteos["rubros"]])
+    resumen.append(["Vinculados", conteos["Vinculado"]])
+    resumen.append(["Pendientes", conteos["Pendiente"]])
+    resumen.append(["Subcontratados", conteos["Subcontratado"]])
+    resumen.append(["Revisar", conteos["Revisar"]])
+    total_ref = sum(acum["ref"] for nodo_id, acum in acumulados.items() if por_id[nodo_id].padre_id is None)
+    total_apu = sum(acum["apu"] for nodo_id, acum in acumulados.items() if por_id[nodo_id].padre_id is None)
+    resumen.append(["Total ref", total_ref])
+    resumen.append(["Total APU", total_apu])
+    resumen.append(["Diferencia", total_apu - total_ref])
+
+    for cell in resumen[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+    resumen.column_dimensions["A"].width = 24
+    resumen.column_dimensions["B"].width = 38
+    for cell in resumen["B"]:
+        if isinstance(cell.value, (int, float)):
+            cell.number_format = '$#,##0.00' if cell.row >= 11 else '#,##0'
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
 
 
 def _total_ref_excel(registro: dict) -> float:
@@ -812,6 +1046,30 @@ def listar_nodos(proyecto_id: int, db: Session = Depends(get_db)):
         .all()
     )
     return [_nodo_out(n, hijos_por_padre) for n in nodos]
+
+
+@router.get("/proyectos/{proyecto_id}/exportar-operativo.xlsx")
+def exportar_presupuesto_operativo(proyecto_id: int, db: Session = Depends(get_db)):
+    proyecto = db.query(Proyecto).filter(Proyecto.id == proyecto_id).first()
+    if not proyecto:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+
+    _sincronizar_niveles(db, proyecto_id)
+
+    nodos = (
+        db.query(NodoPresupuesto)
+        .options(joinedload(NodoPresupuesto.apu).joinedload(APU.items).joinedload(APUItem.recurso))
+        .filter(NodoPresupuesto.proyecto_id == proyecto_id)
+        .order_by(NodoPresupuesto.orden, NodoPresupuesto.id)
+        .all()
+    )
+    archivo = _crear_workbook_presupuesto_operativo(proyecto, nodos)
+    filename = _nombre_archivo_excel(proyecto)
+    return StreamingResponse(
+        archivo,
+        media_type=EXCEL_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.patch("/nodos/{nodo_id}", response_model=NodoOut)
