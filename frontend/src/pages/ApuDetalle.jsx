@@ -107,7 +107,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
   const [rendimientoEdit, setRendimientoEdit] = useState(apuInicial.rendimiento);
   const [items, setItems]                   = useState([]);
   const [recursos, setRecursos]             = useState([]);
-  const [costoOficial, setCostoOficial]     = useState(null);
+  const [, setCostoOficial]                 = useState(null);
   const [agregando, setAgregando]           = useState(null);
   const [formItem, setFormItem]             = useState({ recurso_id: "", cantidad: 1.0 });
   const [busquedaRecurso, setBusquedaRecurso] = useState("");
@@ -120,6 +120,9 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
   const [laboral] = useState({ horasDia: 8, diasSemana: 5, semanasMes: 4 });
   const [rendimientoModo, setRendimientoModo] = useState("h_unidad");
   const [rendimientoCampoValor, setRendimientoCampoValor] = useState("");
+  const [categoriasCostoObjetivo, setCategoriasCostoObjetivo] = useState(["equipo", "mano_de_obra"]);
+  const [costoObjetivoValor, setCostoObjetivoValor] = useState("");
+  const [panelCostoObjetivoOpen, setPanelCostoObjetivoOpen] = useState(false);
 
   useEffect(() => {
     const cargar = async () => {
@@ -146,23 +149,47 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
 
   // â”€â”€ Cálculos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  const costoItem = (item, r) => {
+  const rendimientoBaseActual = parseNumero(rendimientoEdit);
+  const baseRendimiento = Number.isFinite(rendimientoBaseActual) && rendimientoBaseActual > 0 ? round3(rendimientoBaseActual) : round3(apu.rendimiento);
+  const R = baseRendimiento;
+
+  const costoBaseItem = (item) => {
     const recurso = recursos.find(rc => rc.id === item.recurso_id);
     if (!recurso) return 0;
-    const C = round3(round3(item.cantidad) * round3(recurso.precio_unitario));
+    return round3(round3(item.cantidad) * round3(recurso.precio_unitario));
+  };
+
+  const costoItem = (item, r) => {
+    const C = costoBaseItem(item);
     const usaR = item.categoria === "equipo" || item.categoria === "mano_de_obra";
     return usaR ? round3(C * round3(r)) : C;
   };
 
   const itemsCosto          = items.filter(i => !i.es_herramienta_menor);
-  const R                   = round3(apu.rendimiento);
-  const sumarCosto          = (lista) => lista.reduce((a, i) => round3(a + costoItem(i, R)), 0);
-  const subtotalMO          = sumarCosto(itemsCosto.filter(i => i.categoria === "mano_de_obra"));
-  const herramientasMenores = round3(subtotalMO * 0.05);
-  const subtotalEquipos     = round3(sumarCosto(itemsCosto.filter(i => i.categoria === "equipo")) + herramientasMenores);
-  const subtotalMateriales  = sumarCosto(itemsCosto.filter(i => i.categoria === "material"));
-  const subtotalTransporte  = sumarCosto(itemsCosto.filter(i => i.categoria === "transporte"));
-  const totalCostoDirecto   = round3(subtotalEquipos + subtotalMO + subtotalMateriales + subtotalTransporte);
+  const resumenCostoParaR = (rendimiento) => {
+    const sumarCosto = (lista) => lista.reduce((a, i) => round3(a + costoItem(i, rendimiento)), 0);
+    const manoDeObra = sumarCosto(itemsCosto.filter(i => i.categoria === "mano_de_obra"));
+    const herramientaMenor = round3(manoDeObra * 0.05);
+    const equipo = round3(sumarCosto(itemsCosto.filter(i => i.categoria === "equipo")) + herramientaMenor);
+    const material = sumarCosto(itemsCosto.filter(i => i.categoria === "material"));
+    const transporte = sumarCosto(itemsCosto.filter(i => i.categoria === "transporte"));
+    return {
+      equipo,
+      mano_de_obra: manoDeObra,
+      material,
+      transporte,
+      herramienta_menor: herramientaMenor,
+      total: round3(equipo + manoDeObra + material + transporte),
+    };
+  };
+  const resumenCosto = resumenCostoParaR(R);
+  const resumenCostoUnitario = resumenCostoParaR(1);
+  const subtotalMO          = resumenCosto.mano_de_obra;
+  const herramientasMenores = resumenCosto.herramienta_menor;
+  const subtotalEquipos     = resumenCosto.equipo;
+  const subtotalMateriales  = resumenCosto.material;
+  const subtotalTransporte  = resumenCosto.transporte;
+  const totalCostoDirecto   = resumenCosto.total;
 
   const subtotalDe = (key) => ({
     equipo: subtotalEquipos,
@@ -306,9 +333,6 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
   const horasSemana = horasDia * diasSemana;
   const horasMes = horasSemana * semanasMes;
 
-  const rendimientoBaseActual = parseNumero(rendimientoEdit);
-  const baseRendimiento = Number.isFinite(rendimientoBaseActual) && rendimientoBaseActual > 0 ? round3(rendimientoBaseActual) : round3(apu.rendimiento);
-
   const rendimientoValores = {
     h_unidad: baseRendimiento,
     dia_unidad: horasDia ? round3(baseRendimiento / horasDia) : 0,
@@ -332,6 +356,97 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
     if (key === "unidad_semana") return horasSemana ? round3(horasSemana / n) : null;
     if (key === "unidad_mes") return horasMes ? round3(horasMes / n) : null;
     return null;
+  };
+
+  const valorModoDesdeBase = (key, base) => {
+    if (key === "h_unidad") return round3(base);
+    if (key === "dia_unidad") return horasDia ? round3(base / horasDia) : 0;
+    if (key === "semana_unidad") return horasSemana ? round3(base / horasSemana) : 0;
+    if (key === "mes_unidad") return horasMes ? round3(base / horasMes) : 0;
+    if (key === "unidad_h") return base ? round3(1 / base) : 0;
+    if (key === "unidad_dia") return base ? round3(horasDia / base) : 0;
+    if (key === "unidad_semana") return base ? round3(horasSemana / base) : 0;
+    if (key === "unidad_mes") return base ? round3(horasMes / base) : 0;
+    return 0;
+  };
+
+  const actualizarRendimientoEnPantalla = (base) => {
+    const normalizado = round3(base);
+    if (!normalizado || normalizado <= 0) return;
+    setRendimientoEdit(normalizado);
+    setRendimientoCampoValor(fmt3(valorModoDesdeBase(rendimientoModo, normalizado)));
+  };
+
+  const actualizarRendimientoCampo = (valor) => {
+    setRendimientoCampoValor(valor);
+    const base = baseDesdeRendimiento(rendimientoModo, valor);
+    if (base) setRendimientoEdit(base);
+  };
+
+  const resumenCostoRedondeado = (rendimiento) => Number(fmt2(resumenCostoParaR(rendimiento).total));
+
+  const buscarRendimientoConCambioVisible = (direccion) => {
+    const actual = baseDesdeRendimiento(rendimientoModo, rendimientoCampoValor) || baseRendimiento;
+    const costoActual = resumenCostoRedondeado(actual);
+    for (let paso = 1; paso <= 1000; paso += 1) {
+      const candidato = round3(actual + direccion * paso * 0.001);
+      if (candidato <= 0) break;
+      if (resumenCostoRedondeado(candidato) !== costoActual) return candidato;
+    }
+    return Math.max(0.001, round3(actual + direccion * 0.001));
+  };
+
+  const categoriaObjetivoOpciones = [
+    ["equipo", "Equipos"],
+    ["mano_de_obra", "Mano de obra"],
+    ["material", "Materiales"],
+    ["transporte", "Transporte"],
+  ];
+
+  const toggleCategoriaCostoObjetivo = (categoria) => {
+    setCategoriasCostoObjetivo((actuales) => {
+      if (actuales.includes(categoria)) {
+        const siguientes = actuales.filter((item) => item !== categoria);
+        return siguientes.length ? siguientes : actuales;
+      }
+      return [...actuales, categoria];
+    });
+  };
+
+  const coeficienteObjetivo = () => {
+    return categoriasCostoObjetivo.reduce((total, categoria) => {
+      if (categoria === "equipo" || categoria === "mano_de_obra") return round3(total + resumenCostoUnitario[categoria]);
+      return total;
+    }, 0);
+  };
+
+  const fijoObjetivo = () => {
+    return categoriasCostoObjetivo.reduce((total, categoria) => {
+      if (categoria === "material" || categoria === "transporte") return round3(total + resumenCosto[categoria]);
+      return total;
+    }, 0);
+  };
+
+  const rendimientoParaCostoObjetivo = () => {
+    const objetivo = parseNumero(costoObjetivoValor);
+    if (!Number.isFinite(objetivo) || objetivo <= 0) return null;
+    const coeficiente = coeficienteObjetivo();
+    if (!coeficiente || coeficiente <= 0) return null;
+    const baseObjetivo = objetivo - fijoObjetivo();
+    if (baseObjetivo <= 0) return null;
+    return round3(baseObjetivo / coeficiente);
+  };
+
+  const aplicarCostoObjetivo = async () => {
+    const rendimientoObjetivo = rendimientoParaCostoObjetivo();
+    if (!rendimientoObjetivo) {
+      setError("No se puede calcular ese costo objetivo con el rendimiento actual.");
+      return;
+    }
+    setError("");
+    actualizarRendimientoEnPantalla(rendimientoObjetivo);
+    await guardarRendimientoBase(rendimientoObjetivo);
+    setPanelCostoObjetivoOpen(false);
   };
 
   const confirmarRendimientoCampo = async () => {
@@ -414,6 +529,21 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
         actions={<ActionButton onClick={guardarYVolver}>{volverLabel}</ActionButton>}
       />
 
+      <div style={{ ...card, display: "grid", gridTemplateColumns: "repeat(5, minmax(120px, 1fr))", gap: "8px", padding: "10px 12px", marginBottom: "12px" }}>
+        {[
+          ["Equipos", subtotalEquipos],
+          ["Mano de obra", subtotalMO],
+          ["Materiales", subtotalMateriales],
+          ["Transporte", subtotalTransporte],
+          ["Total directo", totalCostoDirecto],
+        ].map(([label, value]) => (
+          <div key={label} style={{ border: "1px solid #e5e7eb", borderRadius: "6px", background: label === "Total directo" ? "#f0fdf4" : "#f8fafc", padding: "8px 10px" }}>
+            <div style={{ color: "#6b7280", fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase" }}>{label}</div>
+            <strong style={{ color: label === "Total directo" ? "#166534" : "#111827", fontSize: "1rem", fontVariantNumeric: "tabular-nums" }}>${fmt2(value)}</strong>
+          </div>
+        ))}
+      </div>
+
       {/* Cabecera del APU */}
       <div style={{ ...card, padding: "14px 18px", marginBottom: "16px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
@@ -454,9 +584,13 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
                   step={rendimientoStep}
                   min="0.0001"
                   value={rendimientoValue}
-                  onChange={e => setRendimientoCampoValor(e.target.value)}
+                  onChange={e => actualizarRendimientoCampo(e.target.value)}
                   onBlur={confirmarRendimientoCampo}
                   onKeyDown={e => {
+                    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                      e.preventDefault();
+                      actualizarRendimientoEnPantalla(buscarRendimientoConCambioVisible(e.key === "ArrowUp" ? 1 : -1));
+                    }
                     if (e.key === "Enter") confirmarRendimientoCampo();
                     if (e.key === "Escape") setRendimientoCampoValor(rendimientoModoValor);
                   }}
@@ -471,6 +605,72 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
                   </div>
                 ))}
               </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", marginTop: "9px", borderTop: "1px solid #dcfce7", paddingTop: "9px" }}>
+                <span style={{ color: "#166534", fontSize: "0.72rem", fontWeight: 700 }}>
+                  Costo objetivo por categorias
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPanelCostoObjetivoOpen(value => !value)}
+                  style={{ border: "1px solid #166534", borderRadius: "6px", background: "#fff", color: "#166534", padding: "5px 9px", fontSize: "0.78rem", fontWeight: 700, cursor: "pointer" }}
+                >
+                  {panelCostoObjetivoOpen ? "Ocultar" : "Establecer"}
+                </button>
+              </div>
+              {panelCostoObjetivoOpen && (
+                <div style={{ display: "grid", gap: "8px", marginTop: "8px", border: "1px solid #bbf7d0", borderRadius: "8px", background: "#fff", padding: "9px" }}>
+                  <div style={{ color: "#14532d", fontSize: "0.72rem", fontWeight: 700 }}>
+                    Selecciona las categorias que quieres cuadrar con el costo objetivo.
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+                    {categoriaObjetivoOpciones.map(([key, label]) => {
+                      const activo = categoriasCostoObjetivo.includes(key);
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => toggleCategoriaCostoObjetivo(key)}
+                          style={{
+                            border: `1px solid ${activo ? "#166534" : "#bbf7d0"}`,
+                            borderRadius: "999px",
+                            background: activo ? "#166534" : "#fff",
+                            color: activo ? "#fff" : "#14532d",
+                            padding: "4px 8px",
+                            fontSize: "0.72rem",
+                            fontWeight: 700,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "6px", alignItems: "center" }}>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      step="0.01"
+                      value={costoObjetivoValor}
+                      onChange={e => setCostoObjetivoValor(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") aplicarCostoObjetivo(); }}
+                      placeholder="Costo objetivo"
+                      style={{ border: "1px solid #86efac", borderRadius: "6px", padding: "5px 8px", fontSize: "0.82rem", color: "#1f2937", outline: "none" }}
+                    />
+                    <button
+                      type="button"
+                      onClick={aplicarCostoObjetivo}
+                      style={{ border: "1px solid #166534", borderRadius: "6px", background: "#166534", color: "#fff", padding: "6px 10px", fontSize: "0.78rem", fontWeight: 700, cursor: "pointer" }}
+                    >
+                      Establecer
+                    </button>
+                  </div>
+                  <div style={{ color: "#64748b", fontSize: "0.68rem" }}>
+                    Materiales y transporte se tratan como costo fijo; equipos y mano de obra se ajustan mediante rendimiento.
+                  </div>
+                </div>
+              )}
               <div style={{ marginTop: "7px", fontSize: "0.68rem", color: "#6b7280" }}>
                 Configuracion: {laboral.horasDia} h/dia · {laboral.diasSemana} dias/semana · {laboral.semanasMes} semanas/mes
               </div>
@@ -560,7 +760,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
                     const recurso   = recursos.find(r => r.id === item.recurso_id);
                     const globalIdx = items.indexOf(item);
                     const C = recurso ? round3(round3(item.cantidad) * round3(recurso.precio_unitario)) : 0;
-                    const D = usaRendimiento ? round3(C * round3(apu.rendimiento)) : C;
+                    const D = usaRendimiento ? round3(C * round3(R)) : C;
                     return (
                       <tr key={globalIdx}
                         onMouseEnter={e => e.currentTarget.style.background = "#f9fafb"}
@@ -601,7 +801,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
                         {usaRendimiento ? (
                           <>
                             <td style={tdR}>{fmt2(C)}</td>
-                            <td style={tdR}>{fmt2(apu.rendimiento)}</td>
+                            <td style={tdR}>{fmt2(R)}</td>
                             <td style={{ ...tdR, fontWeight: 600, color: "#111827" }}>{fmt2(D)}</td>
                           </>
                         ) : (
@@ -745,10 +945,10 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <tbody>
             {[
-              ["Subtotal Equipos",      costoOficial?.subtotales?.equipo ?? subtotalEquipos],
-              ["Subtotal Mano de Obra", costoOficial?.subtotales?.mano_de_obra ?? subtotalMO],
-              ["Subtotal Materiales",   costoOficial?.subtotales?.material ?? subtotalMateriales],
-              ["Subtotal Transporte",   costoOficial?.subtotales?.transporte ?? subtotalTransporte],
+              ["Subtotal Equipos",      subtotalEquipos],
+              ["Subtotal Mano de Obra", subtotalMO],
+              ["Subtotal Materiales",   subtotalMateriales],
+              ["Subtotal Transporte",   subtotalTransporte],
             ].map(([lbl, val]) => (
               <tr key={lbl}>
                 <td style={{ padding: "6px 0", color: "#6b7280", fontSize: "0.875rem" }}>{lbl}</td>
@@ -757,7 +957,7 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
             ))}
             <tr style={{ borderTop: "2px solid #e5e7eb" }}>
               <td style={{ padding: "12px 0 0", fontWeight: 700, color: "#111827", fontSize: "1rem" }}>Total Costo Directo</td>
-              <td style={{ padding: "12px 0 0", textAlign: "right", fontWeight: 700, color: "#166534", fontSize: "1.2rem" }}>${fmt2(costoOficial?.precio_unitario ?? totalCostoDirecto)}</td>
+              <td style={{ padding: "12px 0 0", textAlign: "right", fontWeight: 700, color: "#166534", fontSize: "1.2rem" }}>${fmt2(totalCostoDirecto)}</td>
             </tr>
           </tbody>
         </table>

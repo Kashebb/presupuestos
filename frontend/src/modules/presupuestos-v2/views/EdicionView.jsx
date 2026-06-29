@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ActionButton, ModalShell } from "../../../components/ui";
 import { API } from "../data";
 import PresupuestoTree from "../components/PresupuestoTree";
+import CollapsibleSidePanel from "../components/CollapsibleSidePanel";
 import { visibleContainers } from "../logic/tree";
 import { editColumns, emptyEditRows } from "../mockData";
 
@@ -83,6 +84,7 @@ export default function EdicionView({
   const [searchIndex, setSearchIndex] = useState(-1);
   const [confirmConfig, setConfirmConfig] = useState(null);
   const [collapsedTreeIds, setCollapsedTreeIds] = useState(new Set());
+  const [showTree, setShowTree] = useState(true);
 
   const activeRow = displayRows.find((row) => row.id === activeCell.rowId);
   const canEditActiveRow = activeRow?.kind === "line";
@@ -532,15 +534,17 @@ export default function EdicionView({
       </div>
       {error && <div className="budget-v2-edit-error">{error}</div>}
 
-      <div className="budget-v2-edit-layout">
-        <PresupuestoTree
-          rows={treeRows}
-          selectedTreeId={activeTreeId}
-          onSelect={selectTreeRow}
-          collapsedTreeIds={collapsedTreeIds}
-          onToggleCollapse={toggleTreeCollapse}
-          mode="edicion"
-        />
+      <div className={`budget-v2-edit-layout ${!showTree ? "budget-v2-left-collapsed" : ""}`}>
+        <CollapsibleSidePanel side="left" label="EDT" open={showTree} onToggle={() => setShowTree(value => !value)}>
+          <PresupuestoTree
+            rows={treeRows}
+            selectedTreeId={activeTreeId}
+            onSelect={selectTreeRow}
+            collapsedTreeIds={collapsedTreeIds}
+            onToggleCollapse={toggleTreeCollapse}
+            mode="edicion"
+          />
+        </CollapsibleSidePanel>
 
         <div className="budget-v2-grid-shell" onMouseUp={() => setDragging(false)} onMouseLeave={() => setDragging(false)}>
           <div className="budget-v2-grid-header" style={{ gridTemplateColumns: gridTemplate }}>

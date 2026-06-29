@@ -5,6 +5,7 @@ import { API, statusMeta, vincFilters } from "../data";
 import { descendantsOf, visibleContainers } from "../logic/tree";
 import PanelApu from "../components/PanelApu";
 import PresupuestoTree from "../components/PresupuestoTree";
+import CollapsibleSidePanel from "../components/CollapsibleSidePanel";
 
 function normalizarUnidad(unidad) {
   const value = String(unidad || "")
@@ -98,6 +99,8 @@ export default function VinculacionView({
   const [apuSeleccionado, setApuSeleccionado] = useState(null);
   const [actionStatus, setActionStatus] = useState("");
   const [actionError, setActionError] = useState("");
+  const [showTree, setShowTree] = useState(true);
+  const [showApuPanel, setShowApuPanel] = useState(true);
 
   const visibleRows = useMemo(() => {
     const scopedIds = descendantsOf(rows, selectedTreeId);
@@ -250,15 +253,17 @@ export default function VinculacionView({
   };
 
   return (
-    <div className="budget-v2-linking-layout">
-      <PresupuestoTree
-        rows={treeRows}
-        selectedTreeId={selectedTreeId}
-        onSelect={setSelectedTreeId}
-        collapsedTreeIds={collapsedTreeIds}
-        onToggleCollapse={toggleTreeCollapse}
-        mode="vinculacion"
-      />
+    <div className={`budget-v2-linking-layout ${!showTree ? "budget-v2-left-collapsed" : ""} ${!showApuPanel ? "budget-v2-right-collapsed" : ""}`}>
+      <CollapsibleSidePanel side="left" label="EDT" open={showTree} onToggle={() => setShowTree(value => !value)}>
+        <PresupuestoTree
+          rows={treeRows}
+          selectedTreeId={selectedTreeId}
+          onSelect={setSelectedTreeId}
+          collapsedTreeIds={collapsedTreeIds}
+          onToggleCollapse={toggleTreeCollapse}
+          mode="vinculacion"
+        />
+      </CollapsibleSidePanel>
 
       <section className="budget-v2-linking-main">
         <div className="budget-v2-linking-toolbar">
@@ -314,12 +319,14 @@ export default function VinculacionView({
         </div>
       </section>
 
-      <PanelApu
-        selectedRow={selectedRow}
-        onEditApu={editarApu}
-        onChangeApu={cambiarApu}
-        onUnlinkApu={desvincularApu}
-      />
+      <CollapsibleSidePanel side="right" label="Panel APU" open={showApuPanel} onToggle={() => setShowApuPanel(value => !value)}>
+        <PanelApu
+          selectedRow={selectedRow}
+          onEditApu={editarApu}
+          onChangeApu={cambiarApu}
+          onUnlinkApu={desvincularApu}
+        />
+      </CollapsibleSidePanel>
 
       {modalVincularOpen && (
         <ModalShell

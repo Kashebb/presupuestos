@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import DetalleAnalisis from "../components/DetalleAnalisis";
 import PresupuestoTree from "../components/PresupuestoTree";
+import CollapsibleSidePanel from "../components/CollapsibleSidePanel";
 import { analysisFilters, statusMeta } from "../data";
 import { descendantsOf } from "../logic/tree";
 
 export default function AnalisisView({ rows = [], selectedTreeId, setSelectedTreeId, selectedRowId, setSelectedRowId, onVisibleCountChange }) {
   const [analysisFilter, setAnalysisFilter] = useState("todos");
+  const [showTree, setShowTree] = useState(true);
+  const [showDetailPanel, setShowDetailPanel] = useState(true);
   const treeRows = rows.filter((row) => row.kind === "container");
 
   const visibleRows = useMemo(() => {
@@ -39,8 +42,10 @@ export default function AnalisisView({ rows = [], selectedTreeId, setSelectedTre
   }, [onVisibleCountChange, visibleRows.length]);
 
   return (
-    <div className="budget-v2-analysis-layout">
-      <PresupuestoTree rows={treeRows} selectedTreeId={selectedTreeId} onSelect={setSelectedTreeId} mode="analisis" />
+    <div className={`budget-v2-analysis-layout ${!showTree ? "budget-v2-left-collapsed" : ""} ${!showDetailPanel ? "budget-v2-right-collapsed" : ""}`}>
+      <CollapsibleSidePanel side="left" label="EDT" open={showTree} onToggle={() => setShowTree(value => !value)}>
+        <PresupuestoTree rows={treeRows} selectedTreeId={selectedTreeId} onSelect={setSelectedTreeId} mode="analisis" />
+      </CollapsibleSidePanel>
 
       <section className="budget-v2-analysis-main">
         <div className="budget-v2-analysis-summary">
@@ -96,7 +101,9 @@ export default function AnalisisView({ rows = [], selectedTreeId, setSelectedTre
         </div>
       </section>
 
-      <DetalleAnalisis selectedRow={selectedRow} />
+      <CollapsibleSidePanel side="right" label="Detalle" open={showDetailPanel} onToggle={() => setShowDetailPanel(value => !value)}>
+        <DetalleAnalisis selectedRow={selectedRow} />
+      </CollapsibleSidePanel>
     </div>
   );
 }
