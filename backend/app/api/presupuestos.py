@@ -13,17 +13,17 @@ Rutas:
 """
 import io
 import json
-import sqlite3
 import unicodedata
 from typing import Optional, Any
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.db import BASE_DIR, get_db
+from app import backup
+from app.db import get_db
 from app.models.presupuesto import Proyecto, NodoPresupuesto, ActualizacionPresupuestoLote
 from app.models.apu import APU, APUItem
 from app.api.apus import siguiente_codigo_apu
@@ -42,27 +42,6 @@ ORDEN_JERARQUIA = [
 ]
 
 PU_TOLERANCIA = 0.01
-
-
-def _crear_respaldo_db(motivo: str) -> str:
-    origen = BASE_DIR / "presupuestos.db"
-    if not origen.exists():
-        raise HTTPException(status_code=500, detail="No se encontro la base para crear respaldo.")
-    carpeta = BASE_DIR / "backups"
-    carpeta.mkdir(exist_ok=True)
-    sello = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    destino = carpeta / f"presupuestos_auto_{motivo}_{sello}.db"
-    try:
-        src = sqlite3.connect(f"file:{origen.as_posix()}?mode=ro", uri=True)
-        dst = sqlite3.connect(destino)
-        try:
-            src.backup(dst)
-        finally:
-            dst.close()
-            src.close()
-    except sqlite3.Error as exc:
-        raise HTTPException(status_code=500, detail=f"No se pudo crear respaldo automatico: {exc}") from exc
-    return str(destino)
 
 
 def _texto(valor: Any) -> Optional[str]:
@@ -724,7 +703,9 @@ class CrearAPUDesdeRubroOut(BaseModel):
 # ════════════════════════════════════════
 
 @router.get("/proyectos/", response_model=list[ProyectoOut])
-def listar_proyectos(db: Session = Depends(get_db)):
+def listar_proyectos(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    if not backup.existe_backup_diario_hoy():
+        background_tasks.add_task(backup.crear_backup, "auto_diario", "diario")
     return db.query(Proyecto).order_by(Proyecto.fecha_creacion.desc()).all()
 
 
@@ -983,7 +964,7 @@ def eliminar_bloque_nodo(nodo_id: int, db: Session = Depends(get_db)):
         hijos_por_padre.setdefault(item.padre_id, []).append(item)
 
     bloque_ids = {nodo_id, *_descendientes_ids(nodo_id, hijos_por_padre)}
-    _crear_respaldo_db(f"eliminar_bloque_proyecto_{proyecto_id}_{nodo_id}")
+    backup.crear_backup(f"eliminar_bloque_proyecto_{proyecto_id}_{nodo_id}", tipo="critico")
 
     for bloque_id in sorted(bloque_ids, key=lambda item_id: por_id[item_id].nivel or 0, reverse=True):
         db.delete(por_id[bloque_id])
@@ -1063,8 +1044,6 @@ def mover_estructura(nodo_id: int, data: NodoMoverRequest, db: Session = Depends
 
     def extraer_bloque_de_hermanos() -> list[NodoPresupuesto]:
         return [n for n in hermanos if n.id in seleccion_ids]
-
-    _crear_respaldo_db(f"estructura_proyecto_{nodo_base.proyecto_id}_{accion}")
 
     if accion in ("subir", "bajar"):
         inicio = indices[0]
@@ -1276,6 +1255,8 @@ def importar_excel(
                 "Elimínalos antes de reimportar."
             ),
         )
+
+    backup.crear_backup(f"importar_excel_proyecto_{proyecto_id}", tipo="critico")
 
     # 3. Leer el archivo Excel
     try:
