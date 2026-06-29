@@ -65,10 +65,16 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
   const [costos, setCostos] = useState({});
   const [filtro, setFiltro] = useState(initialFilter);
   const [categoriaFiltro, setCategoriaFiltro] = useState("todas");
+  const [tipoFiltro, setTipoFiltro] = useState("todos");
 
   useEffect(() => {
     setFiltro(initialFilter || "todos");
   }, [initialFilter]);
+
+  const cambiarCategoria = (categoria) => {
+    setCategoriaFiltro(categoria);
+    setTipoFiltro("todos");
+  };
 
   const cargarApus = useCallback(async () => {
     const params = new URLSearchParams({ limit: 500 });
@@ -89,10 +95,12 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
   }, [cargarApus]);
 
   const controlApu = useCallback((apu) => costos[apu.id]?.control_costo || "ok", [costos]);
+  const tipoApu = useCallback((apu) => apu.subcategoria || apu.categoria || "Sin tipo", []);
 
   const apusFiltrados = useMemo(() => {
     return apus.filter((apu) => {
       if (categoriaFiltro !== "todas" && (apu.categoria || "Sin categoria") !== categoriaFiltro) return false;
+      if (tipoFiltro !== "todos" && tipoApu(apu) !== tipoFiltro) return false;
       const control = controlApu(apu);
       if (filtro === "revisar_costo") return control === "revisar_costo";
       if (filtro === "ok") return control !== "revisar_costo";
@@ -100,7 +108,7 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
       if (["activo", "referencial", "en_revision", "inactivo"].includes(filtro)) return apu.estado === filtro;
       return true;
     });
-  }, [apus, categoriaFiltro, controlApu, filtro]);
+  }, [apus, categoriaFiltro, controlApu, filtro, tipoApu, tipoFiltro]);
 
   const categorias = useMemo(() => {
     const categoriasBase = [...new Set(apus.map((apu) => apu.categoria || "Sin categoria"))]
@@ -110,6 +118,48 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
       ...categoriasBase.map((categoria) => ({ label: categoria, value: categoria })),
     ];
   }, [apus]);
+
+  const tiposDisponibles = useMemo(() => {
+    const apusPorCategoria = apus.filter((apu) => {
+      if (categoriaFiltro === "todas") return true;
+      return (apu.categoria || "Sin categoria") === categoriaFiltro;
+    });
+    const conteos = apusPorCategoria.reduce((acc, apu) => {
+      const tipo = tipoApu(apu);
+      acc[tipo] = (acc[tipo] || 0) + 1;
+      return acc;
+    }, {});
+    const tipos = Object.entries(conteos)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "es"))
+      .slice(0, 11)
+      .map(([tipo, cantidad]) => ({
+        label: tipo,
+        value: cantidad,
+        detail: `${cantidad} APU${cantidad !== 1 ? "s" : ""}`,
+        tone: tipo === "Sin tipo" ? "slate" : "blue",
+        active: tipoFiltro === tipo,
+        onClick: () => setTipoFiltro(tipo),
+      }));
+
+    return [
+      {
+        label: "Todos los tipos",
+        value: apusPorCategoria.length,
+        detail: categoriaFiltro === "todas" ? "Biblioteca completa" : categoriaFiltro,
+        tone: "green",
+        active: tipoFiltro === "todos",
+        onClick: () => setTipoFiltro("todos"),
+      },
+      ...tipos,
+    ];
+  }, [apus, categoriaFiltro, tipoApu, tipoFiltro]);
+
+  const categoriasFormulario = useMemo(() => {
+    const categoriasActuales = categorias
+      .filter((categoria) => categoria.value !== "todas" && categoria.value !== "Sin categoria")
+      .map((categoria) => categoria.value);
+    return [...new Set([...CATEGORIAS, ...categoriasActuales])].sort((a, b) => a.localeCompare(b, "es"));
+  }, [categorias]);
 
   const resumen = useMemo(() => {
     const revisar = apus.filter((apu) => controlApu(apu) === "revisar_costo").length;
@@ -236,6 +286,7 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
             <div className="font-medium text-slate-900">{apu.nombre}</div>
           )}
           {apu.categoria && <div className="text-[11px] text-slate-500">{apu.categoria}</div>}
+          {apu.subcategoria && <div className="text-[11px] text-slate-400">{apu.subcategoria}</div>}
         </div>
       ),
     },
@@ -297,7 +348,15 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
             { label: "Inactivos", value: resumen.inactivos, detail: "Fuera de uso", tone: "slate", active: filtro === "inactivo", onClick: () => setFiltro("inactivo") },
           ]}
         />
-        <CategoryStrip label="Categorias" items={categorias} value={categoriaFiltro} onChange={setCategoriaFiltro} />
+        <CategoryStrip label="Categorias" items={categorias} value={categoriaFiltro} onChange={cambiarCategoria} />
+      </ScreenBlock>
+
+      <ScreenBlock compact>
+        <SectionHeader
+          title="Tipos de APU"
+          countLabel={tipoFiltro === "todos" ? "Sin filtro por tipo" : tipoFiltro}
+        />
+        <MetricStrip items={tiposDisponibles} />
       </ScreenBlock>
 
       <SectionHeader
@@ -357,7 +416,7 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
               <label className={labelClass}>Categoria</label>
               <select value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value })} className={fieldClass}>
                 <option value="">Sin categoria</option>
-                {CATEGORIAS.map((categoria) => <option key={categoria} value={categoria}>{categoria}</option>)}
+                {categoriasFormulario.map((categoria) => <option key={categoria} value={categoria}>{categoria}</option>)}
               </select>
             </div>
             <div>
