@@ -36,7 +36,6 @@ class NodoPresupuesto(Base):
     padre_id = Column(Integer, ForeignKey("nodos_presupuesto.id", ondelete="CASCADE"), nullable=True)
 
     tipo = Column(String(20), nullable=False)
-    tipo_origen = Column(String(20), nullable=True)
     nivel = Column(Integer, nullable=True)
     item = Column(String(60), nullable=True)
     descripcion = Column(String(500), nullable=False)

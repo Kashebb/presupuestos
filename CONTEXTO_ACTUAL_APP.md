@@ -1,6 +1,6 @@
 # Contexto Actual - App Presupuestos
 
-Fecha: 2026-06-12
+Fecha: 2026-06-29
 
 Este archivo es el handoff operativo para continuar la app en otro chat sin depender solo de memoria interna.
 
@@ -20,10 +20,10 @@ Si la usuaria pregunta "cual es el objetivo", responder desde `CONTEXTO_PROYECTO
 
 ## Estado de Datos
 
-- Recursos en app: 442
+- Recursos en app: 445
 - Recursos piloto no validados: 9
-- APUs totales: 319
-- Items APU: 1192
+- APUs totales: 330
+- Items APU: 1210
 - APUs importados desde maestro BOSQUIRA: 318
 - Items importados desde maestro BOSQUIRA: 1187
 

@@ -138,6 +138,7 @@ export default function PresupuestosV2Shell() {
         {view === "edicion" && (
           <EdicionView
             rows={rows}
+            apus={apus}
             selectedProjectId={selectedProjectId}
             onDataChange={reload}
             onSelectionCountChange={setFooterCount}

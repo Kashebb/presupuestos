@@ -536,7 +536,6 @@ class NodoOut(BaseModel):
     proyecto_id: int
     padre_id: Optional[int]
     tipo: str
-    tipo_origen: Optional[str] = None
     nivel: Optional[int] = None
     item: Optional[str]
     descripcion: str
@@ -683,6 +682,12 @@ class NodoCreate(BaseModel):
 class NodoMoverRequest(BaseModel):
     accion: str
     nodo_ids: Optional[list[int]] = None
+
+
+class NodoDeleteOut(BaseModel):
+    eliminados: int
+    nodo_id: int
+    proyecto_id: int
 
 
 class NodoEstructuraSnapshot(BaseModel):
@@ -908,7 +913,6 @@ def crear_rubro_debajo(proyecto_id: int, data: NodoCreate, db: Session = Depends
         proyecto_id=proyecto_id,
         padre_id=referencia.padre_id,
         tipo="RUBRO",
-        tipo_origen="RUBRO",
         nivel=referencia.nivel if referencia.nivel is not None else 6,
         item=_siguiente_item_rubro(db, proyecto_id, referencia.padre_id, referencia.item),
         descripcion=_texto(data.descripcion) or "(nuevo rubro)",
@@ -958,6 +962,43 @@ def marcar_obsoleto(nodo_id: int, db: Session = Depends(get_db)):
 # ════════════════════════════════════════
 # Importación desde Excel
 # ════════════════════════════════════════
+
+@router.delete("/nodos/{nodo_id}/bloque", response_model=NodoDeleteOut)
+def eliminar_bloque_nodo(nodo_id: int, db: Session = Depends(get_db)):
+    nodo = db.query(NodoPresupuesto).filter(NodoPresupuesto.id == nodo_id).first()
+    if not nodo:
+        raise HTTPException(status_code=404, detail="Nodo no encontrado")
+
+    proyecto_id = nodo.proyecto_id
+    padre_id = nodo.padre_id
+    nodos = (
+        db.query(NodoPresupuesto)
+        .filter(NodoPresupuesto.proyecto_id == proyecto_id)
+        .order_by(NodoPresupuesto.orden, NodoPresupuesto.id)
+        .all()
+    )
+    hijos_por_padre: dict[Optional[int], list[NodoPresupuesto]] = {}
+    por_id = {n.id: n for n in nodos}
+    for item in nodos:
+        hijos_por_padre.setdefault(item.padre_id, []).append(item)
+
+    bloque_ids = {nodo_id, *_descendientes_ids(nodo_id, hijos_por_padre)}
+    _crear_respaldo_db(f"eliminar_bloque_proyecto_{proyecto_id}_{nodo_id}")
+
+    for bloque_id in sorted(bloque_ids, key=lambda item_id: por_id[item_id].nivel or 0, reverse=True):
+        db.delete(por_id[bloque_id])
+
+    db.flush()
+    _renumerar_rubros_activos_hermanos(db, proyecto_id, padre_id)
+    _actualizar_estado_rubro_por_hijos(db, por_id.get(padre_id) if padre_id else None)
+
+    proyecto = db.query(Proyecto).filter(Proyecto.id == proyecto_id).first()
+    if proyecto:
+        proyecto.fecha_actualizacion = datetime.utcnow()
+    db.commit()
+
+    return NodoDeleteOut(eliminados=len(bloque_ids), nodo_id=nodo_id, proyecto_id=proyecto_id)
+
 
 @router.patch("/nodos/{nodo_id}/mover-estructura", response_model=list[NodoOut])
 def mover_estructura(nodo_id: int, data: NodoMoverRequest, db: Session = Depends(get_db)):
@@ -1330,7 +1371,6 @@ def importar_excel(
             proyecto_id=proyecto_id,
             padre_id=padre_nodo.id if padre_nodo else None,
             tipo=tipo,
-            tipo_origen=tipo,
             nivel=nivel_actual,
             item=item,
             descripcion=descripcion,
@@ -1525,7 +1565,6 @@ def aplicar_actualizacion_excel(
                 proyecto_id=proyecto_id,
                 padre_id=padre.id if padre else None,
                 tipo=fila["tipo"],
-                tipo_origen=fila["tipo"],
                 nivel=nivel,
                 item=item,
                 descripcion=fila["descripcion"],

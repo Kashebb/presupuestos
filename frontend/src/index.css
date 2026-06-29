@@ -667,7 +667,8 @@ textarea {
 
 .budget-v2-cell-active {
   position: relative;
-  z-index: 1;
+  z-index: 4;
+  overflow: visible;
   outline: 2px solid var(--color-primary);
   outline-offset: -2px;
   background: #fff;
@@ -682,6 +683,56 @@ textarea {
   color: inherit;
   font: inherit;
   text-align: inherit;
+}
+
+.budget-v2-cell-suggestions {
+  position: absolute;
+  top: 28px;
+  left: 0;
+  z-index: 8;
+  display: grid;
+  min-width: min(360px, 80vw);
+  max-width: 520px;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.14);
+  text-align: left;
+}
+
+.budget-v2-cell-suggestions div {
+  display: grid;
+  gap: 2px;
+  padding: 7px 9px;
+  border-bottom: 1px solid #eef2f7;
+  cursor: pointer;
+}
+
+.budget-v2-cell-suggestions div:last-child {
+  border-bottom: 0;
+}
+
+.budget-v2-cell-suggestions div:hover {
+  background: #f0fdf4;
+}
+
+.budget-v2-cell-suggestions strong {
+  overflow: hidden;
+  color: #111827;
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.budget-v2-cell-suggestions small {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .budget-v2-footer {

@@ -65,6 +65,7 @@ function buildPayload(changes) {
 
 export default function EdicionView({
   rows = [],
+  apus = [],
   selectedProjectId,
   onDataChange,
   onSelectionCountChange,
@@ -88,10 +89,13 @@ export default function EdicionView({
 
   const activeRow = displayRows.find((row) => row.id === activeCell.rowId);
   const canEditActiveRow = activeRow?.kind === "line";
+  const canDeleteActiveRow = Boolean(activeRow?.sourceId);
   const canStructureActiveRow = Boolean(activeRow?.sourceId);
   const dirtyCount = Object.values(drafts).reduce((sum, rowDraft) => sum + Object.keys(rowDraft).length, 0);
   const activeTreeId = activeRow?.kind === "container" ? activeRow.id : activeRow?.parentId || "all";
   const treeRows = useMemo(() => visibleContainers(displayRows, collapsedTreeIds), [collapsedTreeIds, displayRows]);
+  const activeRowIndex = displayRows.findIndex((row) => row.id === activeCell.rowId);
+  const activeColIndex = editColumns.findIndex((column) => column.key === activeCell.colKey);
 
   const searchMatches = useMemo(() => {
     const query = normalizeText(searchQuery.trim());
@@ -105,6 +109,54 @@ export default function EdicionView({
         row.raw?.node?.observaciones,
       ].join(" ")).includes(query));
   }, [displayRows, searchQuery]);
+
+  const activeSuggestions = useMemo(() => {
+    if (!activeRow || activeRow.kind !== "line" || !["descripcion", "unidad"].includes(activeCell.colKey)) return [];
+    const draftValue = drafts[activeRow.id]?.[activeCell.colKey];
+    const query = normalizeText(displayCellValue(activeRow, activeCell.colKey, draftValue)).trim();
+    if (query.length < (activeCell.colKey === "unidad" ? 1 : 2)) return [];
+
+    if (activeCell.colKey === "descripcion") {
+      const rowMatches = displayRows
+        .filter((row) => row.kind === "line" && row.id !== activeRow.id && normalizeText(row.descripcion).includes(query))
+        .slice(0, 4)
+        .map((row) => ({
+          key: `row-${row.id}`,
+          label: row.descripcion,
+          detail: row.unidad ? `Fila existente | ${row.unidad}` : "Fila existente",
+          unidad: row.unidad || "",
+        }));
+      const apuMatches = apus
+        .filter((apu) => normalizeText(`${apu.codigo || ""} ${apu.nombre || ""}`).includes(query))
+        .slice(0, 4)
+        .map((apu) => ({
+          key: `apu-${apu.id}`,
+          label: apu.nombre || apu.codigo || "",
+          detail: `APU ${apu.codigo || "-"} | ${apu.unidad || "sin unidad"}`,
+          unidad: apu.unidad || "",
+        }));
+      return [...rowMatches, ...apuMatches].filter((item) => item.label).slice(0, 6);
+    }
+
+    const descriptionText = normalizeText(drafts[activeRow.id]?.descripcion ?? activeRow.descripcion);
+    const units = new Map();
+    displayRows
+      .filter((row) => row.kind === "line" && row.unidad && normalizeText(row.unidad).includes(query))
+      .forEach((row) => {
+        const score = descriptionText && normalizeText(row.descripcion).includes(descriptionText.slice(0, 8)) ? 2 : 1;
+        units.set(row.unidad, Math.max(units.get(row.unidad) || 0, score));
+      });
+    apus
+      .filter((apu) => apu.unidad && normalizeText(apu.unidad).includes(query))
+      .forEach((apu) => {
+        const score = descriptionText && normalizeText(apu.nombre).includes(descriptionText.slice(0, 8)) ? 2 : 1;
+        units.set(apu.unidad, Math.max(units.get(apu.unidad) || 0, score));
+      });
+    return [...units.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 6)
+      .map(([unidad]) => ({ key: `unit-${unidad}`, label: unidad, detail: "Unidad sugerida", unidad }));
+  }, [activeCell.colKey, activeRow, apus, displayRows, drafts]);
 
   const gridTemplate = useMemo(
     () => `42px ${editColumns.map((column) => column.width).join(" ")}`,
@@ -299,6 +351,45 @@ export default function EdicionView({
     setSaveState("Cambios pendientes");
   };
 
+  const handleGridPaste = (event) => {
+    const text = event.clipboardData?.getData("text/plain") || "";
+    if (!text.includes("\t") && !text.includes("\n")) return;
+    if (activeRowIndex < 0 || activeColIndex < 0) return;
+    event.preventDefault();
+    setError("");
+
+    const pastedRows = text
+      .replace(/\r/g, "")
+      .split("\n")
+      .filter((line, index, lines) => line.length || index < lines.length - 1)
+      .map((line) => line.split("\t"));
+
+    let changed = 0;
+    pastedRows.forEach((cells, rowOffset) => {
+      const targetRow = displayRows[activeRowIndex + rowOffset];
+      if (!targetRow || targetRow.kind !== "line") return;
+      cells.forEach((cellValue, colOffset) => {
+        const targetColumn = editColumns[activeColIndex + colOffset];
+        if (!targetColumn?.editable) return;
+        updateDraft(targetRow, targetColumn.key, cellValue);
+        changed += 1;
+      });
+    });
+
+    if (changed) setSaveState(`Pegado aplicado: ${changed} celda(s) pendientes`);
+  };
+
+  const applySuggestion = (row, columnKey, suggestion) => {
+    if (!row || !suggestion) return;
+    if (columnKey === "descripcion") {
+      updateDraft(row, "descripcion", suggestion.label);
+      const currentUnit = drafts[row.id]?.unidad ?? row.unidad;
+      if (!currentUnit && suggestion.unidad) updateDraft(row, "unidad", suggestion.unidad);
+    } else if (columnKey === "unidad") {
+      updateDraft(row, "unidad", suggestion.unidad || suggestion.label);
+    }
+  };
+
   const saveChanges = async () => {
     if (!dirtyCount) return;
     setSaveState("Guardando...");
@@ -355,16 +446,17 @@ export default function EdicionView({
   };
 
   const deleteActiveRow = async () => {
-    if (!canEditActiveRow) return;
-    setSaveState("Eliminando fila...");
+    if (!canDeleteActiveRow) return;
+    setSaveState("Eliminando bloque...");
     setError("");
     try {
-      const response = await fetch(`${API}/presupuestos/nodos/${activeRow.sourceId}/marcar-obsoleto`, { method: "PATCH" });
+      const response = await fetch(`${API}/presupuestos/nodos/${activeRow.sourceId}/bloque`, { method: "DELETE" });
       if (!response.ok) {
         const detail = await response.json().catch(() => null);
         throw new Error(detail?.detail || "No se pudo eliminar la fila.");
       }
-      setSaveState("Fila eliminada");
+      const detail = await response.json().catch(() => null);
+      setSaveState(`Eliminado: ${detail?.eliminados || 1} fila(s)`);
       onDataChange?.();
     } catch (err) {
       setSaveState(dirtyCount ? "Cambios pendientes" : "Sin cambios pendientes");
@@ -487,12 +579,22 @@ export default function EdicionView({
   };
 
   const confirmDeleteActiveRow = () => {
-    if (!canEditActiveRow) return;
+    if (!canDeleteActiveRow) return;
+    const startIndex = displayRows.findIndex((item) => item.id === activeRow.id);
+    let blockSize = 1;
+    if (startIndex >= 0) {
+      for (let index = startIndex + 1; index < displayRows.length; index += 1) {
+        if (displayRows[index].level <= activeRow.level) break;
+        blockSize += 1;
+      }
+    }
     askConfirm({
-      title: "Eliminar fila",
+      title: blockSize > 1 ? "Eliminar grupo" : "Eliminar fila",
       body: `"${activeRow.descripcion || "Fila sin descripcion"}" saldra de la grilla.`,
-      detail: "No se borra fisicamente; se marca como obsoleta para conservar trazabilidad.",
-      confirmLabel: "Eliminar fila",
+      detail: blockSize > 1
+        ? `Se borrara realmente este grupo y ${blockSize - 1} fila(s) hija(s). Se creara un respaldo automatico antes de eliminar.`
+        : "Se borrara realmente esta fila. Se creara un respaldo automatico antes de eliminar.",
+      confirmLabel: blockSize > 1 ? "Eliminar bloque" : "Eliminar fila",
       danger: true,
       onConfirm: deleteActiveRow,
     });
@@ -503,7 +605,7 @@ export default function EdicionView({
       <div className="budget-v2-toolbar">
         <div className="budget-v2-toolbar-group">
           <button type="button" disabled={!canEditActiveRow} onClick={addRowBelow}>Agregar fila</button>
-          <button type="button" disabled={!canEditActiveRow} onClick={confirmDeleteActiveRow}>Eliminar fila</button>
+          <button type="button" disabled={!canDeleteActiveRow} onClick={confirmDeleteActiveRow}>Eliminar fila</button>
         </div>
         <div className="budget-v2-toolbar-group">
           <button type="button" disabled={!canStructureActiveRow || Boolean(dirtyCount) || !moveAvailability.up} onClick={() => moveRows("subir")}>Subir</button>
@@ -546,7 +648,12 @@ export default function EdicionView({
           />
         </CollapsibleSidePanel>
 
-        <div className="budget-v2-grid-shell" onMouseUp={() => setDragging(false)} onMouseLeave={() => setDragging(false)}>
+        <div
+          className="budget-v2-grid-shell"
+          onPaste={handleGridPaste}
+          onMouseUp={() => setDragging(false)}
+          onMouseLeave={() => setDragging(false)}
+        >
           <div className="budget-v2-grid-header" style={{ gridTemplateColumns: gridTemplate }}>
             <div className="budget-v2-grid-corner" />
             {editColumns.map((column) => (
@@ -601,6 +708,7 @@ export default function EdicionView({
                           onChange={(event) => updateDraft(row, column.key, event.target.value)}
                           onClick={(event) => event.stopPropagation()}
                           onMouseDown={(event) => event.stopPropagation()}
+                          onPaste={handleGridPaste}
                           onKeyDown={(event) => {
                             if (event.key === "Enter") saveChanges();
                             if (event.key === "Escape") setActiveCell({ rowId: row.id, colKey: column.key });
@@ -608,6 +716,23 @@ export default function EdicionView({
                         />
                       ) : (
                         value
+                      )}
+                      {active && editable && activeSuggestions.length > 0 && (
+                        <div className="budget-v2-cell-suggestions">
+                          {activeSuggestions.map((suggestion) => (
+                            <div
+                              key={suggestion.key}
+                              onMouseDown={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                applySuggestion(row, column.key, suggestion);
+                              }}
+                            >
+                              <strong>{suggestion.label}</strong>
+                              <small>{suggestion.detail}</small>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </button>
                   );
