@@ -124,3 +124,15 @@
 - Retirado `tipo_origen` del modelo SQLAlchemy, del schema Pydantic `NodoOut` y de las escrituras al crear nodos.
 - Agregada migracion Alembic `0009_elimina_tipo_origen_nodos_presupuesto` con downgrade que recrea la columna y rellena `tipo_origen = tipo`.
 - La API de nodos ya no expone `tipo_origen`.
+- Centralizado el sistema de backups en `backend/app/backup.py`, usando `sqlite3.backup()` sobre la base activa `presupuestos.db` en la raiz.
+- Reubicados 141 backups historicos desde `backups/` hacia `backups/legacy_pre_cascada/` sin borrar archivos.
+- Los nuevos backups se separan en `backups/critico/`, `backups/diario/` y `backups/manual/`, con retencion por tipo.
+- `mover-estructura` ya no crea backups automaticos en acciones de UI como subir, bajar, sangrar o quitar sangria.
+- `eliminar bloque` e `importar Excel` crean backup critico antes de operar.
+- `listar proyectos` dispara un backup diario automatico si no existe uno del dia; los backups diarios tambien intentan copiarse a OneDrive sin bloquear la app si falla la copia.
+- La pantalla APUs agrega filtro de Tipos de APU por subcategoria, reiniciando el tipo al cambiar de categoria.
+- Dashboard actualizado para contar rubros con el criterio dinamico real: `activo_como_rubro=True` y sin hijos. Ya no usa `tipo == "RUBRO"` para los totales del tablero.
+- Edicion V2 ahora explica por que se bloquean los botones de agregar, eliminar, subir, bajar, aplicar sangria y quitar sangria. Los botones deshabilitados tienen tooltip y los cambios pendientes muestran un aviso permanente sobre la grilla.
+- Eliminado `frontend/src/pages/Presupuestos.jsx`, confirmado como pantalla V1 huerfana; la navegacion actual usa `frontend/src/pages/PresupuestosV2.jsx`.
+- `CONTEXTO_PROYECTO.md` actualizado para reflejar que la jerarquia dinamica esta activa desde la migracion `0008_nivel_dinamico_presupuesto` del 2026-06-20 y que `tipo` queda solo para compatibilidad de importacion.
+- Hallazgo pendiente de revision: algunas reglas complejas de estructura, como mezclar un grupo con sus propias filas hijas o superar el nivel maximo, siguen validandose al ejecutar la accion en backend. No se corrigio en esta sesion porque el alcance era explicar bloqueos existentes sin cambiar reglas de negocio.

@@ -88,15 +88,19 @@ El desarrollo debe avanzar asi:
 - **APU**: biblioteca global reutilizable. Define el costo de una unidad de trabajo.
 - **APUItem**: recursos dentro de un APU, directos o heredados de plantilla.
 - **Proyecto**: contenedor del presupuesto, cliente, estado y moneda.
-- **NodoPresupuesto**: arbol jerarquico flexible con `padre_id`. Soporta capitulos, subcapitulos, rubros y cualquier nivel adicional. Los nodos tipo `rubro` se vinculan a un APU.
+- **NodoPresupuesto**: arbol jerarquico flexible con `padre_id`, `nivel` y `activo_como_rubro`. Desde el 2026-06-20 esta activo el modelo dinamico: una fila con hijos se trata como grupo/resumen, y una fila marcada como rubro activo sin hijos se trata como rubro operativo vinculable a APU. El campo `tipo` se conserva para compatibilidad con la importacion desde Excel, pero no debe ser el criterio de negocio para decidir si una fila es rubro o grupo.
 
 ### Decisiones clave
 
-- Estructura jerarquica con arbol recursivo para soportar cualquier profundidad.
+- Estructura jerarquica con arbol recursivo para soportar niveles flexibles. La clasificacion operativa se calcula con `nivel`, `activo_como_rubro` y si el nodo tiene hijos.
 - APUs y Recursos son bibliotecas globales reutilizables entre proyectos.
 - APUItem tiene campo `origen` para trazabilidad.
 - Los datos locales sensibles, como `presupuestos.db`, no deben subirse a GitHub.
 - Recursos de fuentes externas o piloto no se consideran validados hasta revision humana.
+
+## En el horizonte
+
+- Evaluar una alternativa de agrupar/desagrupar mediante seleccion multiple de filas + boton `Agrupar`, en lugar de (o ademas de) la sangria tipo Tab/Shift+Tab actual. El backend ya tiene una funcion relacionada (`agrupar_abajo`) que podria reutilizarse parcialmente. Evaluar en una sesion futura dedicada a UX, sin mezclarlo con correcciones de bugs.
 
 ## Flujo de Trabajo por Sesion
 
@@ -122,3 +126,5 @@ El desarrollo debe avanzar asi:
 ## Respuesta Corta si se Pregunta el Objetivo
 
 El objetivo es seguir desarrollando una app local de presupuestos de construccion. La app debe transformar recursos, APUs, rubros y presupuestos en una herramienta trazable para armar, revisar y controlar costos. El foco inmediato es consolidar Recursos y APUs confiables; despues se avanza a Rubros, Presupuestos, Importaciones y Reportes.
+
+REGLA DE CIERRE DE SESIÓN: antes de terminar cualquier sesión, verificar con `git status` que no queden archivos sin commitear, y confirmar que CHANGELOG.md y CONTEXTO_PROYECTO.md reflejan los cambios reales hechos. No cerrar sesión con cambios pendientes sin avisar explícitamente al usuario.

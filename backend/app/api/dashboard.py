@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.db import get_db
 from app.models.apu import APU
@@ -12,6 +12,18 @@ router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
 def _count(query):
     return query.scalar() or 0
+
+
+def _rubros_operativos_query(db: Session):
+    hijo = aliased(NodoPresupuesto)
+    return (
+        db.query(NodoPresupuesto)
+        .outerjoin(hijo, hijo.padre_id == NodoPresupuesto.id)
+        .filter(
+            NodoPresupuesto.activo_como_rubro.is_(True),
+            hijo.id.is_(None),
+        )
+    )
 
 
 @router.get("/resumen")
@@ -33,44 +45,26 @@ def obtener_resumen(db: Session = Depends(get_db)):
     apus_ok = max(apus_total - apus_revision_costo, 0)
 
     proyectos_total = _count(db.query(func.count(Proyecto.id)))
-    rubros_total = _count(
-        db.query(func.count(NodoPresupuesto.id)).filter(NodoPresupuesto.tipo == "RUBRO")
-    )
-    rubros_vinculados = _count(
-        db.query(func.count(NodoPresupuesto.id)).filter(
-            NodoPresupuesto.tipo == "RUBRO",
-            NodoPresupuesto.tipo_rubro == "VINCULADO",
-        )
-    )
-    rubros_sin_apu = _count(
-        db.query(func.count(NodoPresupuesto.id)).filter(
-            NodoPresupuesto.tipo == "RUBRO",
-            NodoPresupuesto.observaciones == "SIN_APU",
-        )
-    )
+    rubros_q = _rubros_operativos_query(db)
+    rubros_total = rubros_q.count()
+    rubros_vinculados = rubros_q.filter(NodoPresupuesto.tipo_rubro == "VINCULADO").count()
+    rubros_sin_apu = rubros_q.filter(NodoPresupuesto.observaciones == "SIN_APU").count()
     rubros_pendientes = max(rubros_total - rubros_vinculados - rubros_sin_apu, 0)
 
     proyectos = db.query(Proyecto).order_by(Proyecto.fecha_creacion.desc()).all()
     proyectos_resumen = []
     for proyecto in proyectos:
-        rubros_q = db.query(NodoPresupuesto).filter(
-            NodoPresupuesto.proyecto_id == proyecto.id,
-            NodoPresupuesto.tipo == "RUBRO",
-        )
+        rubros_q = _rubros_operativos_query(db).filter(NodoPresupuesto.proyecto_id == proyecto.id)
         total = rubros_q.count()
         vinculados = rubros_q.filter(NodoPresupuesto.tipo_rubro == "VINCULADO").count()
         sin_apu = rubros_q.filter(NodoPresupuesto.observaciones == "SIN_APU").count()
         pendientes = max(total - vinculados - sin_apu, 0)
         total_ref = (
-            db.query(
+            rubros_q.with_entities(
                 func.sum(
                     (func.coalesce(NodoPresupuesto.metrado, 0))
                     * (func.coalesce(NodoPresupuesto.precio_unitario_ref, 0))
                 )
-            )
-            .filter(
-                NodoPresupuesto.proyecto_id == proyecto.id,
-                NodoPresupuesto.tipo == "RUBRO",
             )
             .scalar()
             or 0

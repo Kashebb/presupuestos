@@ -63,6 +63,14 @@ function buildPayload(changes) {
   return payload;
 }
 
+function DisabledButton({ reason, children, ...props }) {
+  return (
+    <span title={props.disabled ? reason : ""}>
+      <button {...props}>{children}</button>
+    </span>
+  );
+}
+
 export default function EdicionView({
   rows = [],
   apus = [],
@@ -188,24 +196,61 @@ export default function EdicionView({
   }, [activeRow, selectedRows]);
 
   const moveAvailability = useMemo(() => {
-    if (!structureRows.length) return { up: false, down: false };
+    const noRowsReason = "Selecciona una fila real del presupuesto para moverla.";
+    if (!structureRows.length) {
+      return { up: false, down: false, upReason: noRowsReason, downReason: noRowsReason };
+    }
+    if (structureRows.some((row) => !row.sourceId)) {
+      return { up: false, down: false, upReason: noRowsReason, downReason: noRowsReason };
+    }
     const parentIds = new Set(structureRows.map((row) => row.parentId || null));
-    if (parentIds.size !== 1) return { up: false, down: false };
+    if (parentIds.size !== 1) {
+      const reason = "No puedes mover: la seleccion mezcla filas de grupos distintos.";
+      return { up: false, down: false, upReason: reason, downReason: reason };
+    }
     const parentId = structureRows[0].parentId || null;
     const siblingRows = displayRows.filter((row) => (row.parentId || null) === parentId);
     const selectedIds = new Set(structureRows.map((row) => row.id));
     const indices = siblingRows
       .map((row, index) => selectedIds.has(row.id) ? index : -1)
       .filter((index) => index >= 0);
-    if (!indices.length) return { up: false, down: false };
+    if (!indices.length) {
+      return { up: false, down: false, upReason: noRowsReason, downReason: noRowsReason };
+    }
     const sorted = [...indices].sort((a, b) => a - b);
     const contiguous = sorted.every((index, position) => position === 0 || index === sorted[position - 1] + 1);
-    if (!contiguous) return { up: false, down: false };
+    if (!contiguous) {
+      const reason = "No puedes mover: selecciona filas contiguas del mismo grupo.";
+      return { up: false, down: false, upReason: reason, downReason: reason };
+    }
+    const up = sorted[0] > 0;
+    const down = sorted[sorted.length - 1] < siblingRows.length - 1;
     return {
-      up: sorted[0] > 0,
-      down: sorted[sorted.length - 1] < siblingRows.length - 1,
+      up,
+      down,
+      upReason: up ? "" : "No puedes subir esta fila: ya es la primera de su grupo.",
+      downReason: down ? "" : "No puedes bajar esta fila: ya es la ultima de su grupo.",
     };
   }, [displayRows, structureRows]);
+
+  const pendingChangesReason = "Primero guarda o espera a que se actualicen los cambios pendientes antes de mover filas.";
+  const addRowDisabledReason = !selectedProjectId
+    ? "Selecciona un proyecto antes de agregar filas."
+    : !canEditActiveRow
+      ? "Selecciona una linea operativa. Las filas de grupo no aceptan una fila nueva debajo desde este boton."
+      : "";
+  const deleteRowDisabledReason = !canDeleteActiveRow
+    ? "Selecciona una fila real del presupuesto para eliminarla."
+    : "";
+  const structureDisabledReason = !canStructureActiveRow
+    ? "Selecciona una fila real del presupuesto para modificar su estructura."
+    : Boolean(dirtyCount)
+      ? pendingChangesReason
+      : "";
+  const upDisabledReason = structureDisabledReason || moveAvailability.upReason;
+  const downDisabledReason = structureDisabledReason || moveAvailability.downReason;
+  const indentDisabledReason = structureDisabledReason;
+  const removeIndentDisabledReason = structureDisabledReason;
 
   useEffect(() => {
     onSelectionCountChange(selectedCellCount);
@@ -604,14 +649,14 @@ export default function EdicionView({
     <>
       <div className="budget-v2-toolbar">
         <div className="budget-v2-toolbar-group">
-          <button type="button" disabled={!canEditActiveRow} onClick={addRowBelow}>Agregar fila</button>
-          <button type="button" disabled={!canDeleteActiveRow} onClick={confirmDeleteActiveRow}>Eliminar fila</button>
+          <DisabledButton type="button" disabled={!canEditActiveRow} reason={addRowDisabledReason} onClick={addRowBelow}>Agregar fila</DisabledButton>
+          <DisabledButton type="button" disabled={!canDeleteActiveRow} reason={deleteRowDisabledReason} onClick={confirmDeleteActiveRow}>Eliminar fila</DisabledButton>
         </div>
         <div className="budget-v2-toolbar-group">
-          <button type="button" disabled={!canStructureActiveRow || Boolean(dirtyCount) || !moveAvailability.up} onClick={() => moveRows("subir")}>Subir</button>
-          <button type="button" disabled={!canStructureActiveRow || Boolean(dirtyCount) || !moveAvailability.down} onClick={() => moveRows("bajar")}>Bajar</button>
-          <button type="button" disabled={!canStructureActiveRow || Boolean(dirtyCount)} onClick={applyIndent}>Aplicar sangria</button>
-          <button type="button" disabled={!canStructureActiveRow || Boolean(dirtyCount)} onClick={removeIndent}>Quitar sangria</button>
+          <DisabledButton type="button" disabled={!canStructureActiveRow || Boolean(dirtyCount) || !moveAvailability.up} reason={upDisabledReason} onClick={() => moveRows("subir")}>Subir</DisabledButton>
+          <DisabledButton type="button" disabled={!canStructureActiveRow || Boolean(dirtyCount) || !moveAvailability.down} reason={downDisabledReason} onClick={() => moveRows("bajar")}>Bajar</DisabledButton>
+          <DisabledButton type="button" disabled={!canStructureActiveRow || Boolean(dirtyCount)} reason={indentDisabledReason} onClick={applyIndent}>Aplicar sangria</DisabledButton>
+          <DisabledButton type="button" disabled={!canStructureActiveRow || Boolean(dirtyCount)} reason={removeIndentDisabledReason} onClick={removeIndent}>Quitar sangria</DisabledButton>
         </div>
         <div className="budget-v2-toolbar-spacer" />
         <div className="budget-v2-search" role="search">
@@ -634,6 +679,11 @@ export default function EdicionView({
         <span className={`budget-v2-save-state ${dirtyCount ? "budget-v2-save-state-dirty" : ""}`}>{saveState}</span>
         <button type="button" className="budget-v2-save-button" disabled={!dirtyCount} onClick={saveChanges}>Guardar</button>
       </div>
+      {Boolean(dirtyCount) && (
+        <div className="budget-v2-state" style={{ margin: "0 0 10px", borderColor: "#fde68a", background: "#fffbeb", color: "#854d0e" }}>
+          Hay cambios pendientes sin guardar. Guarda los cambios antes de mover filas, aplicar sangria o quitar sangria.
+        </div>
+      )}
       {error && <div className="budget-v2-edit-error">{error}</div>}
 
       <div className={`budget-v2-edit-layout ${!showTree ? "budget-v2-left-collapsed" : ""}`}>
