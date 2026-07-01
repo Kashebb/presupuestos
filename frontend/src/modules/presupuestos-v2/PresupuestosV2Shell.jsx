@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { ActionButton, PageHeader, Panel } from "../../components/ui";
+import { ActionButton, ModalShell, PageHeader, Panel } from "../../components/ui";
 import { API, usePresupuestosV2Data } from "./data";
 import AnalisisView from "./views/AnalisisView";
+import DesgloseView from "./views/DesgloseView";
 import EdicionView from "./views/EdicionView";
 import VinculacionView from "./views/VinculacionView";
 
@@ -11,6 +12,7 @@ export default function PresupuestosV2Shell() {
   const [selectedTreeId, setSelectedTreeId] = useState("all");
   const [selectedRowId, setSelectedRowId] = useState("");
   const [footerCount, setFooterCount] = useState(1);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
   const {
     projects,
     selectedProject,
@@ -27,12 +29,14 @@ export default function PresupuestosV2Shell() {
   const footerText = {
     edicion: "Edicion activa: cambios manuales controlados sobre filas operativas.",
     vinculacion: "Vinculacion activa: rubros reales con acciones APU controladas.",
+    desglose: "Desglose activo: costos por rubro con materiales, mano de obra, equipos y transporte.",
     analisis: "Modo lectura: comparacion con costos APU existentes.",
   };
 
   const footerMetric = {
     edicion: `${footerCount} celda(s) seleccionada(s)`,
     vinculacion: `${footerCount} fila(s) visibles`,
+    desglose: `${footerCount} fila(s) visibles`,
     analisis: `${footerCount} fila(s) analizadas`,
   };
 
@@ -50,9 +54,17 @@ export default function PresupuestosV2Shell() {
     setWorkspaceMode("lista");
   };
 
-  const exportProject = () => {
+  const selectedTreeRow = selectedTreeId === "all" ? null : rows.find((row) => row.id === selectedTreeId);
+
+  const exportProject = (scope = "all") => {
     if (!selectedProjectId) return;
-    window.open(`${API}/presupuestos/proyectos/${selectedProjectId}/exportar-operativo.xlsx`, "_blank", "noopener,noreferrer");
+    const params = new URLSearchParams();
+    if (scope === "selected" && selectedTreeRow?.sourceId) {
+      params.set("root_nodo_id", String(selectedTreeRow.sourceId));
+    }
+    const query = params.toString();
+    window.open(`${API}/presupuestos/proyectos/${selectedProjectId}/exportar-operativo.xlsx${query ? `?${query}` : ""}`, "_blank", "noopener,noreferrer");
+    setExportModalOpen(false);
   };
 
   if (workspaceMode === "lista") {
@@ -116,8 +128,8 @@ export default function PresupuestosV2Shell() {
           <p>{selectedProject ? `${selectedProject.nombre} · ${selectedProject.codigo || "sin codigo"}` : "Lectura de datos reales del backend existente."}</p>
         </div>
         <div className="budget-v2-status">
-          <span>{view === "edicion" ? "Edicion" : view === "vinculacion" ? "Vinculacion" : "Analisis"}</span>
-          <strong>{view === "analisis" ? "Solo lectura" : "Activo"}</strong>
+          <span>{view === "edicion" ? "Edicion" : view === "vinculacion" ? "Vinculacion" : view === "desglose" ? "Desglose" : "Analisis"}</span>
+          <strong>{view === "analisis" || view === "desglose" ? "Solo lectura" : "Activo"}</strong>
         </div>
       </header>
 
@@ -129,7 +141,7 @@ export default function PresupuestosV2Shell() {
             <strong>{selectedProject ? `${selectedProject.nombre} · ${selectedProject.codigo || "sin codigo"}` : "Proyecto seleccionado"}</strong>
           </div>
           <span>{loading ? "Cargando..." : `${rows.length} fila(s) cargadas`}</span>
-          <ActionButton variant="secondary" compact onClick={exportProject} disabled={!selectedProjectId || loading || Boolean(error)}>
+          <ActionButton variant="secondary" compact onClick={() => setExportModalOpen(true)} disabled={!selectedProjectId || loading || Boolean(error)}>
             Exportar Excel
           </ActionButton>
         </div>
@@ -140,6 +152,7 @@ export default function PresupuestosV2Shell() {
         <div className="budget-v2-tabs" aria-label="Vistas de Presupuestos V2">
           <button type="button" onClick={() => setView("edicion")} className={`budget-v2-tab ${view === "edicion" ? "budget-v2-tab-active" : ""}`}>Edicion</button>
           <button type="button" onClick={() => setView("vinculacion")} className={`budget-v2-tab ${view === "vinculacion" ? "budget-v2-tab-active" : ""}`}>Vinculacion</button>
+          <button type="button" onClick={() => setView("desglose")} className={`budget-v2-tab ${view === "desglose" ? "budget-v2-tab-active" : ""}`}>Desglose</button>
           <button type="button" onClick={() => setView("analisis")} className={`budget-v2-tab ${view === "analisis" ? "budget-v2-tab-active" : ""}`}>Analisis</button>
         </div>
 
@@ -157,7 +170,18 @@ export default function PresupuestosV2Shell() {
             rows={rows}
             apus={apus}
             costsByApu={costsByApu}
+            selectedProjectId={selectedProjectId}
             onDataChange={reload}
+            selectedTreeId={selectedTreeId}
+            setSelectedTreeId={setSelectedTreeId}
+            selectedRowId={selectedRowId}
+            setSelectedRowId={setSelectedRowId}
+            onVisibleCountChange={setFooterCount}
+          />
+        )}
+        {view === "desglose" && (
+          <DesgloseView
+            rows={rows}
             selectedTreeId={selectedTreeId}
             setSelectedTreeId={setSelectedTreeId}
             selectedRowId={selectedRowId}
@@ -180,6 +204,40 @@ export default function PresupuestosV2Shell() {
           <span>{footerText[view]}</span>
           <span>{footerMetric[view]}</span>
         </footer>
+        {exportModalOpen && (
+          <ModalShell
+            title="Exportar Excel"
+            size="md"
+            onClose={() => setExportModalOpen(false)}
+            footer={
+              <>
+                <ActionButton onClick={() => setExportModalOpen(false)}>Cancelar</ActionButton>
+                <ActionButton onClick={() => exportProject("all")}>Exportar todo</ActionButton>
+                <ActionButton variant="primary" onClick={() => exportProject("selected")} disabled={!selectedTreeRow}>
+                  Exportar seleccionado
+                </ActionButton>
+              </>
+            }
+          >
+            <div className="budget-v2-create-apu-modal">
+              <div className="budget-v2-create-apu-intro">
+                <strong>{selectedProject ? selectedProject.nombre : "Proyecto seleccionado"}</strong>
+                <span>Elige si quieres exportar todo el presupuesto o solo la rama seleccionada en el arbol.</span>
+              </div>
+              <div className="budget-v2-export-choice">
+                <div>
+                  <small>Todo el presupuesto</small>
+                  <strong>Incluye todos los capitulos, grupos y rubros activos.</strong>
+                </div>
+                <div>
+                  <small>Seleccion actual del arbol</small>
+                  <strong>{selectedTreeRow ? selectedTreeRow.descripcion : "No hay rama seleccionada"}</strong>
+                  <span>{selectedTreeRow ? "Incluye esta rama con todos sus capitulos y rubros." : "Selecciona una rama en el arbol para habilitar esta opcion."}</span>
+                </div>
+              </div>
+            </div>
+          </ModalShell>
+        )}
       </section>
     </div>
   );

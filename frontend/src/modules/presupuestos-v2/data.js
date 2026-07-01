@@ -41,6 +41,20 @@ function fmtPct(value) {
   return `${(value * 100).toLocaleString("es-EC", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}%`;
 }
 
+function emptyBreakdown() {
+  return { material: 0, mano_de_obra: 0, equipo: 0, transporte: 0, herramienta_menor: 0 };
+}
+
+function fmtBreakdown(values) {
+  return {
+    material: fmtMoney(values?.material),
+    mano_de_obra: fmtMoney(values?.mano_de_obra),
+    equipo: fmtMoney(values?.equipo),
+    transporte: fmtMoney(values?.transporte),
+    herramienta_menor: fmtMoney(values?.herramienta_menor),
+  };
+}
+
 function isLine(node) {
   if (typeof node.es_rubro_operativo === "boolean") return node.es_rubro_operativo;
   if (typeof node.activo_como_rubro === "boolean" && typeof node.tiene_hijos === "boolean") {
@@ -69,6 +83,7 @@ function buildRows(nodes, costsByApu, apusById) {
     const line = isLine(node);
     const cost = node.apu_id ? costsByApu.get(node.apu_id) : null;
     const apu = node.apu_id ? apusById.get(node.apu_id) : null;
+    const baseApu = apu?.es_variante ? apusById.get(apu.apu_base_id) : apu;
     const puRef = Number(node.precio_unitario_ref);
     const metrado = Number(node.metrado);
     const puMeta = cost?.precio_unitario;
@@ -76,6 +91,16 @@ function buildRows(nodes, costsByApu, apusById) {
     const totalMeta = Number.isFinite(puMeta) && Number.isFinite(metrado) ? puMeta * metrado : null;
     const comparable = Number.isFinite(totalRef) && totalRef > 0 && Number.isFinite(totalMeta);
     const diff = comparable ? totalMeta - totalRef : null;
+    const subtotales = cost?.subtotales || {};
+    const breakdownRaw = line && Number.isFinite(metrado)
+      ? {
+          material: Number(subtotales.material || 0) * metrado,
+          mano_de_obra: Number(subtotales.mano_de_obra || 0) * metrado,
+          equipo: Number(subtotales.equipo || 0) * metrado,
+          transporte: Number(subtotales.transporte || 0) * metrado,
+          herramienta_menor: Number(cost?.herramienta_menor || 0) * metrado,
+        }
+      : emptyBreakdown();
 
     const row = {
       id: String(node.id),
@@ -94,10 +119,14 @@ function buildRows(nodes, costsByApu, apusById) {
       difPct: comparable ? fmtPct(diff / totalRef) : "",
       observacion: node.observaciones || "",
       estado: line ? lineStatus(node, cost) : undefined,
-      apu: apu?.codigo || cost?.codigo || "",
-      apuNombre: apu?.nombre || "",
+      apu: baseApu?.codigo || apu?.codigo || cost?.codigo || "",
+      apuNombre: baseApu?.nombre || apu?.nombre || "",
+      apuBaseId: baseApu?.id || null,
+      apuEfectivoId: apu?.id || null,
+      varianteApu: apu?.es_variante ? (apu.variante_nombre || "Variante") : (apu ? "Base" : ""),
       rendimiento: apu?.rendimiento,
-      raw: { node, cost, apu, puRef, puMeta, totalRef, totalMeta, diff },
+      desglose: fmtBreakdown(breakdownRaw),
+      raw: { node, cost, apu, baseApu, puRef, puMeta, totalRef, totalMeta, diff, breakdown: breakdownRaw },
     };
     rowsById.set(row.id, row);
     return row;
@@ -131,6 +160,14 @@ function buildRows(nodes, costsByApu, apusById) {
     row.ptMeta = fmtMoney(totalMeta);
     row.dif = fmtMoney(diff);
     row.difPct = Number.isFinite(diff) && refComparable > 0 ? fmtPct(diff / refComparable) : "";
+    const breakdown = rubros.reduce((acc, rubro) => {
+      Object.entries(rubro.raw.breakdown || {}).forEach(([key, value]) => {
+        acc[key] = (acc[key] || 0) + Number(value || 0);
+      });
+      return acc;
+    }, emptyBreakdown());
+    row.desglose = fmtBreakdown(breakdown);
+    row.raw.breakdown = breakdown;
   });
 
   return rows;
@@ -183,8 +220,8 @@ export function usePresupuestosV2Data() {
       try {
         const [nodesResponse, apusResponse, costsResponse] = await Promise.all([
           fetch(`${API}/presupuestos/proyectos/${selectedProjectId}/nodos`),
-          fetch(`${API}/apus/?limit=500`),
-          fetch(`${API}/apus/costos/resumen?limit=500`),
+          fetch(`${API}/apus/?limit=2000`),
+          fetch(`${API}/apus/costos/resumen?limit=2000`),
         ]);
         if (!nodesResponse.ok) throw new Error("No se pudieron cargar los rubros del proyecto.");
         if (!apusResponse.ok) throw new Error("No se pudieron cargar los APUs.");

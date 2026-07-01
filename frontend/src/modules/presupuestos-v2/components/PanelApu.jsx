@@ -8,6 +8,7 @@ function fmtMoney(value) {
 
 export default function PanelApu({ selectedRow, onEditApu, onChangeApu, onUnlinkApu }) {
   const selectedHasApu = selectedRow?.kind === "line" && Boolean(selectedRow.apu);
+  const hasActions = Boolean(onEditApu || onChangeApu || onUnlinkApu);
   const selectedApuId = selectedRow?.raw?.node?.apu_id || null;
   const selectedApuRendimiento = selectedRow?.raw?.apu?.rendimiento ?? null;
   const selectedApuPuMeta = selectedRow?.raw?.cost?.precio_unitario ?? null;
@@ -80,6 +81,7 @@ export default function PanelApu({ selectedRow, onEditApu, onChangeApu, onUnlink
                 <strong>{selectedRow.apuNombre}</strong>
                 <div className="budget-v2-apu-tags">
                   <span>{selectedRow.apu}</span>
+                  <span>Variante {selectedRow.varianteApu || "Base"}</span>
                   <span>Und {selectedRow.unidad}</span>
                   <span>Rend. {Number.isFinite(selectedRow.rendimiento) ? selectedRow.rendimiento.toFixed(4) : "-"}</span>
                 </div>
@@ -114,11 +116,13 @@ export default function PanelApu({ selectedRow, onEditApu, onChangeApu, onUnlink
                   </div>
                 ))}
               </div>
-              <div className="budget-v2-apu-actions">
-                <button type="button" className="budget-v2-apu-primary" onClick={onEditApu}>Editar APU completo</button>
-                <button type="button" onClick={onChangeApu}>Cambiar APU</button>
-                <button type="button" className="budget-v2-apu-danger" onClick={onUnlinkApu}>Desvincular</button>
-              </div>
+              {hasActions && (
+                <div className="budget-v2-apu-actions">
+                  {onEditApu && <button type="button" className="budget-v2-apu-primary" onClick={onEditApu}>Editar APU completo</button>}
+                  {onChangeApu && <button type="button" onClick={onChangeApu}>Cambiar APU</button>}
+                  {onUnlinkApu && <button type="button" className="budget-v2-apu-danger" onClick={onUnlinkApu}>Desvincular</button>}
+                </div>
+              )}
             </>
           ) : (
             <div className="budget-v2-panel-empty">Esta linea no tiene APU vinculado.</div>

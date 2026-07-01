@@ -269,6 +269,7 @@ def _crear_workbook_presupuesto_operativo(proyecto: Proyecto, nodos: list[NodoPr
     ws = wb.active
     ws.title = "Presupuesto operativo"
     resumen = wb.create_sheet("Resumen")
+    desglose = wb.create_sheet("Desglose Rubros")
 
     nodos_activos = [n for n in nodos if (n.estado_actualizacion or "activo") != "obsoleto"]
     por_id = {n.id: n for n in nodos_activos}
@@ -280,6 +281,10 @@ def _crear_workbook_presupuesto_operativo(proyecto: Proyecto, nodos: list[NodoPr
     ordenados = _ordenar_arbol_presupuesto(nodos_activos)
     costos_por_apu: dict[int, dict] = {}
     acumulados: dict[int, dict[str, float]] = {n.id: {"ref": 0.0, "apu": 0.0} for n in nodos_activos}
+    acumulados_desglose: dict[int, dict[str, float]] = {
+        n.id: {"material": 0.0, "mano_de_obra": 0.0, "equipo": 0.0, "transporte": 0.0, "herramienta_menor": 0.0}
+        for n in nodos_activos
+    }
     rows_data = []
     conteos = {"estructura": 0, "rubros": 0, "Vinculado": 0, "Pendiente": 0, "Subcontratado": 0, "Revisar": 0}
 
@@ -310,11 +315,21 @@ def _crear_workbook_presupuesto_operativo(proyecto: Proyecto, nodos: list[NodoPr
             conteos[estado] += 1
             ref_value = float(total_ref or 0.0)
             apu_value = float(total_apu or 0.0)
+            metrado_value = float(nodo.metrado or 0.0)
+            rubro_desglose = {"material": 0.0, "mano_de_obra": 0.0, "equipo": 0.0, "transporte": 0.0, "herramienta_menor": 0.0}
+            if costo_apu:
+                subtotales = costo_apu.get("subtotales") or {}
+                for categoria in ("material", "mano_de_obra", "equipo", "transporte"):
+                    rubro_desglose[categoria] = float(subtotales.get(categoria, 0.0) or 0.0) * metrado_value
+                rubro_desglose["herramienta_menor"] = float(costo_apu.get("herramienta_menor", 0.0) or 0.0) * metrado_value
             actual = nodo
             while actual is not None:
                 if actual.id in acumulados:
                     acumulados[actual.id]["ref"] += ref_value
                     acumulados[actual.id]["apu"] += apu_value
+                if actual.id in acumulados_desglose:
+                    for categoria, valor in rubro_desglose.items():
+                        acumulados_desglose[actual.id][categoria] += valor
                 actual = por_id.get(actual.padre_id)
         else:
             conteos["estructura"] += 1
@@ -327,6 +342,7 @@ def _crear_workbook_presupuesto_operativo(proyecto: Proyecto, nodos: list[NodoPr
             "total_ref": total_ref,
             "total_apu": total_apu,
             "estado": estado,
+            "costo_apu": costo_apu,
         })
 
     headers = [
@@ -421,6 +437,74 @@ def _crear_workbook_presupuesto_operativo(proyecto: Proyecto, nodos: list[NodoPr
     for cell in resumen["B"]:
         if isinstance(cell.value, (int, float)):
             cell.number_format = '$#,##0.0000' if cell.row >= 11 else '#,##0'
+
+    desglose_headers = [
+        "Nivel",
+        "Tipo",
+        "Item",
+        "Descripcion",
+        "Unidad",
+        "Metrado",
+        "APU",
+        "Variante",
+        "Materiales",
+        "Mano de obra",
+        "Equipos",
+        "Transporte",
+        "Herr. menor",
+        "Total APU",
+    ]
+    desglose.append(desglose_headers)
+    for cell in desglose[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+
+    for data in rows_data:
+        nodo = data["nodo"]
+        es_rubro = data["es_rubro"]
+        apu = nodo.apu if es_rubro else None
+        valores = acumulados_desglose[nodo.id]
+        total_apu_desglose = data["total_apu"] if es_rubro else (acumulados[nodo.id]["apu"] or None)
+        desglose.append([
+            data["nivel"],
+            nodo.tipo,
+            nodo.item,
+            nodo.descripcion,
+            nodo.unidad if es_rubro else None,
+            nodo.metrado if es_rubro else None,
+            apu.codigo if apu else None,
+            apu.variante_nombre if apu and getattr(apu, "es_variante", False) else ("Base" if apu else None),
+            valores["material"],
+            valores["mano_de_obra"],
+            valores["equipo"],
+            valores["transporte"],
+            valores["herramienta_menor"],
+            total_apu_desglose,
+        ])
+        row = desglose[desglose.max_row]
+        fill = line_fill if es_rubro else group_fill
+        for cell in row:
+            cell.fill = fill
+            cell.border = border
+        row[3].alignment = Alignment(indent=min(data["nivel"], 15), wrap_text=True)
+        if not es_rubro:
+            for cell in row:
+                cell.font = Font(bold=True)
+
+    for row in desglose.iter_rows(min_row=2, min_col=6, max_col=14):
+        for idx, cell in enumerate(row, start=6):
+            if idx == 6:
+                cell.number_format = '#,##0.0000'
+            elif idx in (7, 8):
+                continue
+            else:
+                cell.number_format = '$#,##0.0000'
+    desglose_widths = [8, 15, 14, 55, 12, 12, 18, 18, 14, 14, 14, 14, 14, 16]
+    for idx, width in enumerate(desglose_widths, start=1):
+        desglose.column_dimensions[get_column_letter(idx)].width = width
+    desglose.freeze_panes = "A2"
+    desglose.auto_filter.ref = desglose.dimensions
 
     output = io.BytesIO()
     wb.save(output)
@@ -804,6 +888,108 @@ def _es_rubro_operativo(db: Session, nodo: NodoPresupuesto) -> bool:
     return activo and not _tiene_hijos(db, nodo)
 
 
+def _normalizar_variante_nombre(nombre: Any) -> str:
+    texto = " ".join(str(nombre or "").strip().split())
+    if not texto:
+        raise HTTPException(status_code=400, detail="El nombre de la variante es obligatorio")
+    return texto
+
+
+def _apu_base_id(apu: APU) -> int:
+    return apu.apu_base_id if apu.es_variante and apu.apu_base_id else apu.id
+
+
+def _apu_base(db: Session, apu: APU) -> APU:
+    base_id = _apu_base_id(apu)
+    base = db.query(APU).filter(APU.id == base_id).first()
+    if not base:
+        raise HTTPException(status_code=404, detail="APU base no encontrado")
+    return base
+
+
+def _siguiente_codigo_variante(db: Session, base_apu: APU) -> str:
+    base_codigo = base_apu.codigo or f"APU-{base_apu.id}"
+    prefijo = f"{base_codigo}-V"
+    codigos = [
+        row[0] for row in db.query(APU.codigo)
+        .filter(APU.codigo.like(f"{prefijo}%"))
+        .all()
+    ]
+    maximo = 0
+    for codigo in codigos:
+        match = re.match(rf"^{re.escape(prefijo)}(\d+)$", codigo or "")
+        if match:
+            maximo = max(maximo, int(match.group(1)))
+    while True:
+        maximo += 1
+        candidato = f"{prefijo}{maximo:03d}"
+        existe = db.query(APU.id).filter(APU.codigo == candidato).first()
+        if not existe:
+            return candidato
+
+
+def _variante_out(db: Session, variante: APU) -> VarianteAPUOut:
+    usos = db.query(func.count(NodoPresupuesto.id)).filter(NodoPresupuesto.apu_id == variante.id).scalar() or 0
+    return VarianteAPUOut(
+        id=variante.id,
+        codigo=variante.codigo,
+        nombre=variante.nombre,
+        variante_nombre=variante.variante_nombre or "",
+        apu_base_id=variante.apu_base_id or 0,
+        proyecto_id=variante.proyecto_id or 0,
+        usos=int(usos),
+        precio_unitario=calcular_costo_apu(variante)["precio_unitario"],
+    )
+
+
+def _buscar_variante_existente(db: Session, proyecto_id: int, apu_base_id: int, variante_nombre: str) -> Optional[APU]:
+    nombre_normalizado = _normalizar_texto(variante_nombre)
+    variantes = (
+        db.query(APU)
+        .options(joinedload(APU.items).joinedload(APUItem.recurso))
+        .filter(
+            APU.es_variante.is_(True),
+            APU.proyecto_id == proyecto_id,
+            APU.apu_base_id == apu_base_id,
+        )
+        .all()
+    )
+    for variante in variantes:
+        if _normalizar_texto(variante.variante_nombre) == nombre_normalizado:
+            return variante
+    return None
+
+
+def _validar_fuente_variante(db: Session, source_id: int, proyecto_id: int, apu_base_id: int) -> APU:
+    source = (
+        db.query(APU)
+        .options(joinedload(APU.items))
+        .filter(APU.id == source_id)
+        .first()
+    )
+    if not source:
+        raise HTTPException(status_code=404, detail="APU fuente no encontrado")
+    if source.id == apu_base_id and not source.es_variante:
+        return source
+    if source.es_variante and source.apu_base_id == apu_base_id and source.proyecto_id == proyecto_id:
+        return source
+    raise HTTPException(status_code=400, detail="El APU fuente no corresponde al mismo APU base y proyecto")
+
+
+def _copiar_items_apu(db: Session, source: APU, destino: APU) -> None:
+    for item in db.query(APUItem).filter(APUItem.apu_id == source.id).all():
+        db.add(
+            APUItem(
+                apu_id=destino.id,
+                recurso_id=item.recurso_id,
+                categoria=item.categoria,
+                cantidad=item.cantidad,
+                orden=item.orden,
+                es_herramienta_menor=item.es_herramienta_menor,
+            )
+        )
+
+
 def _descendientes_ids(nodo_id: int, hijos_por_padre: dict[Optional[int], list[NodoPresupuesto]]) -> set[int]:
     ids = set()
     pendientes = list(hijos_por_padre.get(nodo_id, []))
@@ -932,6 +1118,33 @@ class CrearAPUDesdeRubroOut(BaseModel):
     estado: str
 
 
+class VarianteAPUOut(BaseModel):
+    id: int
+    codigo: Optional[str]
+    nombre: str
+    variante_nombre: str
+    apu_base_id: int
+    proyecto_id: int
+    usos: int
+    precio_unitario: Optional[float] = None
+
+
+class CrearVarianteAPURequest(BaseModel):
+    variante_nombre: str
+    copiar_desde_apu_id: Optional[int] = None
+
+
+class CambiarVarianteAPURequest(BaseModel):
+    variante_apu_id: Optional[int] = None
+
+
+class VarianteAPUAsignadaOut(BaseModel):
+    nodo: NodoOut
+    variante: Optional[VarianteAPUOut] = None
+    apu_id: int
+    created: bool = False
+
+
 # ════════════════════════════════════════
 # CRUD Proyectos
 # ════════════════════════════════════════
@@ -1049,7 +1262,11 @@ def listar_nodos(proyecto_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/proyectos/{proyecto_id}/exportar-operativo.xlsx")
-def exportar_presupuesto_operativo(proyecto_id: int, db: Session = Depends(get_db)):
+def exportar_presupuesto_operativo(
+    proyecto_id: int,
+    db: Session = Depends(get_db),
+    root_nodo_id: Optional[int] = None,
+):
     proyecto = db.query(Proyecto).filter(Proyecto.id == proyecto_id).first()
     if not proyecto:
         raise HTTPException(status_code=404, detail="Proyecto no encontrado")
@@ -1063,6 +1280,14 @@ def exportar_presupuesto_operativo(proyecto_id: int, db: Session = Depends(get_d
         .order_by(NodoPresupuesto.orden, NodoPresupuesto.id)
         .all()
     )
+    if root_nodo_id is not None:
+        if not any(n.id == root_nodo_id for n in nodos):
+            raise HTTPException(status_code=404, detail="Nodo seleccionado no encontrado en el proyecto")
+        hijos_por_padre: dict[Optional[int], list[NodoPresupuesto]] = {}
+        for nodo in nodos:
+            hijos_por_padre.setdefault(nodo.padre_id, []).append(nodo)
+        ids_exportar = {root_nodo_id, *_descendientes_ids(root_nodo_id, hijos_por_padre)}
+        nodos = [n for n in nodos if n.id in ids_exportar]
     archivo = _crear_workbook_presupuesto_operativo(proyecto, nodos)
     filename = _nombre_archivo_excel(proyecto)
     return StreamingResponse(
@@ -1978,6 +2203,160 @@ def crear_apu_desde_rubro(
         "nombre": apu.nombre,
         "unidad": apu.unidad,
         "estado": apu.estado,
+    }
+
+
+@router.get("/proyectos/{proyecto_id}/apus/{apu_base_id}/variantes", response_model=list[VarianteAPUOut])
+def listar_variantes_apu(proyecto_id: int, apu_base_id: int, db: Session = Depends(get_db)):
+    proyecto = db.query(Proyecto).filter(Proyecto.id == proyecto_id).first()
+    if not proyecto:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    base = db.query(APU).filter(APU.id == apu_base_id).first()
+    if not base:
+        raise HTTPException(status_code=404, detail="APU base no encontrado")
+    if base.es_variante:
+        apu_base_id = _apu_base_id(base)
+
+    variantes = (
+        db.query(APU)
+        .options(joinedload(APU.items).joinedload(APUItem.recurso))
+        .filter(
+            APU.es_variante.is_(True),
+            APU.proyecto_id == proyecto_id,
+            APU.apu_base_id == apu_base_id,
+        )
+        .order_by(APU.variante_nombre, APU.id)
+        .all()
+    )
+    return [_variante_out(db, variante) for variante in variantes]
+
+
+@router.post("/nodos/{nodo_id}/variantes-apu", response_model=VarianteAPUAsignadaOut, status_code=201)
+def crear_variante_apu(
+    nodo_id: int,
+    data: CrearVarianteAPURequest,
+    db: Session = Depends(get_db),
+):
+    nodo = db.query(NodoPresupuesto).filter(NodoPresupuesto.id == nodo_id).first()
+    if not nodo:
+        raise HTTPException(status_code=404, detail="Nodo no encontrado")
+    if not _es_rubro_operativo(db, nodo):
+        raise HTTPException(status_code=400, detail="Solo se puede crear variante en nodos operativos tipo rubro")
+    if not nodo.apu_id:
+        raise HTTPException(status_code=400, detail="El rubro no tiene APU vinculado")
+
+    apu_actual = db.query(APU).filter(APU.id == nodo.apu_id).first()
+    if not apu_actual:
+        raise HTTPException(status_code=404, detail="APU vinculado no encontrado")
+    base_apu = _apu_base(db, apu_actual)
+    variante_nombre = _normalizar_variante_nombre(data.variante_nombre)
+
+    existente = _buscar_variante_existente(db, nodo.proyecto_id, base_apu.id, variante_nombre)
+    if existente:
+        nodo.apu_id = existente.id
+        nodo.tipo_rubro = "VINCULADO"
+        nodo.observaciones = None
+        db.commit()
+        db.refresh(nodo)
+        return {
+            "nodo": _nodo_out(nodo),
+            "variante": _variante_out(db, existente),
+            "apu_id": existente.id,
+            "created": False,
+        }
+
+    source_id = data.copiar_desde_apu_id or apu_actual.id
+    source = _validar_fuente_variante(db, source_id, nodo.proyecto_id, base_apu.id)
+
+    variante = APU(
+        codigo=_siguiente_codigo_variante(db, base_apu),
+        nombre=f"{base_apu.nombre} - {variante_nombre}",
+        descripcion=source.descripcion or base_apu.descripcion,
+        categoria=source.categoria,
+        subcategoria=source.subcategoria,
+        unidad=source.unidad,
+        rendimiento=source.rendimiento,
+        estado="en_revision",
+        version=1,
+        observacion=f"Variante '{variante_nombre}' de {base_apu.codigo or base_apu.nombre}",
+        es_variante=True,
+        apu_base_id=base_apu.id,
+        proyecto_id=nodo.proyecto_id,
+        variante_nombre=variante_nombre,
+        copiado_desde_apu_id=source.id,
+    )
+    db.add(variante)
+    db.flush()
+    _copiar_items_apu(db, source, variante)
+
+    nodo.apu_id = variante.id
+    nodo.tipo_rubro = "VINCULADO"
+    nodo.observaciones = None
+
+    db.commit()
+    db.refresh(nodo)
+    db.refresh(variante)
+    return {
+        "nodo": _nodo_out(nodo),
+        "variante": _variante_out(db, variante),
+        "apu_id": variante.id,
+        "created": True,
+    }
+
+
+@router.patch("/nodos/{nodo_id}/variante-apu", response_model=VarianteAPUAsignadaOut)
+def cambiar_variante_apu(
+    nodo_id: int,
+    data: CambiarVarianteAPURequest,
+    db: Session = Depends(get_db),
+):
+    nodo = db.query(NodoPresupuesto).filter(NodoPresupuesto.id == nodo_id).first()
+    if not nodo:
+        raise HTTPException(status_code=404, detail="Nodo no encontrado")
+    if not _es_rubro_operativo(db, nodo):
+        raise HTTPException(status_code=400, detail="Solo se puede cambiar variante en nodos operativos tipo rubro")
+    if not nodo.apu_id:
+        raise HTTPException(status_code=400, detail="El rubro no tiene APU vinculado")
+
+    apu_actual = db.query(APU).filter(APU.id == nodo.apu_id).first()
+    if not apu_actual:
+        raise HTTPException(status_code=404, detail="APU vinculado no encontrado")
+    base_apu = _apu_base(db, apu_actual)
+
+    if data.variante_apu_id is None:
+        nodo.apu_id = base_apu.id
+        nodo.tipo_rubro = "VINCULADO"
+        nodo.observaciones = None
+        db.commit()
+        db.refresh(nodo)
+        return {
+            "nodo": _nodo_out(nodo),
+            "variante": None,
+            "apu_id": base_apu.id,
+            "created": False,
+        }
+
+    variante = (
+        db.query(APU)
+        .options(joinedload(APU.items).joinedload(APUItem.recurso))
+        .filter(APU.id == data.variante_apu_id)
+        .first()
+    )
+    if not variante:
+        raise HTTPException(status_code=404, detail="Variante no encontrada")
+    if not variante.es_variante or variante.proyecto_id != nodo.proyecto_id or variante.apu_base_id != base_apu.id:
+        raise HTTPException(status_code=400, detail="La variante no corresponde al APU base del rubro")
+
+    nodo.apu_id = variante.id
+    nodo.tipo_rubro = "VINCULADO"
+    nodo.observaciones = None
+    db.commit()
+    db.refresh(nodo)
+    return {
+        "nodo": _nodo_out(nodo),
+        "variante": _variante_out(db, variante),
+        "apu_id": variante.id,
+        "created": False,
     }
 
 @router.patch("/nodos/{nodo_id}/individualizar", response_model=NodoOut)

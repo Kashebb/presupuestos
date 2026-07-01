@@ -112,19 +112,24 @@ def listar_costos_apus(
         .limit(limit)
         .all()
     )
-    return [
-        {
-            "apu_id": apu.id,
-            "codigo": apu.codigo,
-            "precio_unitario": calcular_costo_apu(apu)["precio_unitario"],
-            "control_costo": (
-                "revisar_costo"
-                if "COSTO_NO_COINCIDE_CON_MAESTRO" in (apu.observacion or "")
-                else "ok"
-            ),
-        }
-        for apu in apus
-    ]
+    resumen = []
+    for apu in apus:
+        costo = calcular_costo_apu(apu)
+        resumen.append(
+            {
+                "apu_id": apu.id,
+                "codigo": apu.codigo,
+                "precio_unitario": costo["precio_unitario"],
+                "subtotales": costo["subtotales"],
+                "herramienta_menor": costo["herramienta_menor"],
+                "control_costo": (
+                    "revisar_costo"
+                    if "COSTO_NO_COINCIDE_CON_MAESTRO" in (apu.observacion or "")
+                    else "ok"
+                ),
+            }
+        )
+    return resumen
 
 @router.get("/siguiente-codigo")
 def obtener_siguiente_codigo_apu(db: Session = Depends(get_db)):

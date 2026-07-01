@@ -28,6 +28,11 @@ class APUBase(BaseModel):
     estado: str = "en_revision"
     version: int = 1
     observacion: Optional[str] = None
+    es_variante: bool = False
+    apu_base_id: Optional[int] = None
+    proyecto_id: Optional[int] = None
+    variante_nombre: Optional[str] = None
+    copiado_desde_apu_id: Optional[int] = None
 
 class APUCreate(APUBase):
     items: List[APUItemCreate] = []

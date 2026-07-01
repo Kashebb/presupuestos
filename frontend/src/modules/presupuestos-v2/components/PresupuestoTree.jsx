@@ -12,12 +12,12 @@ export default function PresupuestoTree({
     <aside className="budget-v2-tree-panel">
       <div className="budget-v2-panel-head">
         <strong>EDT</strong>
-        <span>{mode === "analisis" ? "Filtro" : "Contexto visual"}</span>
+        <span>{mode === "edicion" ? "Contexto visual" : "Filtro"}</span>
       </div>
       <div className="budget-v2-tree-scroll">
         <button type="button" className={`budget-v2-tree-item ${selectedTreeId === "all" ? "budget-v2-tree-active" : ""}`} onClick={() => onSelect("all")}>
           <span>Presupuesto completo</span>
-          <small>{mode === "analisis" ? "Analisis global" : mode === "edicion" ? "Ir al inicio" : "Lectura global"}</small>
+          <small>{mode === "edicion" ? "Ir al inicio" : "Ver todo"}</small>
         </button>
         {rows.map((row) => (
           <button
@@ -27,7 +27,7 @@ export default function PresupuestoTree({
             onClick={() => onSelect(row.id)}
             style={{ paddingLeft: `${12 + row.level * 14}px` }}
           >
-            {mode === "vinculacion" || mode === "edicion" ? (
+            {mode === "vinculacion" || mode === "edicion" || mode === "desglose" ? (
               <span className="budget-v2-tree-label">
                 <span
                   className="budget-v2-tree-toggle"
@@ -49,7 +49,9 @@ export default function PresupuestoTree({
                 ? row.ptMeta
                 : mode === "edicion"
                   ? `${row.lines} rubro(s)`
-                  : `${row.linked}/${row.lines} vinculadas`}
+                  : mode === "desglose"
+                    ? `${row.lines} rubro(s)`
+                    : `${row.linked}/${row.lines} vinculadas`}
             </small>
           </button>
         ))}

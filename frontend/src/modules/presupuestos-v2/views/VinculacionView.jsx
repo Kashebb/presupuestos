@@ -83,6 +83,7 @@ export default function VinculacionView({
   rows = [],
   apus = [],
   costsByApu = {},
+  selectedProjectId,
   onDataChange,
   selectedTreeId,
   setSelectedTreeId,
@@ -95,12 +96,18 @@ export default function VinculacionView({
   const [modalVincularOpen, setModalVincularOpen] = useState(false);
   const [modalCrearOpen, setModalCrearOpen] = useState(false);
   const [modalEditarApuOpen, setModalEditarApuOpen] = useState(false);
+  const [modalVarianteOpen, setModalVarianteOpen] = useState(false);
+  const [varianteRow, setVarianteRow] = useState(null);
+  const [varianteNombre, setVarianteNombre] = useState("");
+  const [varianteSourceId, setVarianteSourceId] = useState("");
   const [apuSearch, setApuSearch] = useState("");
   const [apuSeleccionado, setApuSeleccionado] = useState(null);
   const [actionStatus, setActionStatus] = useState("");
   const [actionError, setActionError] = useState("");
   const [showTree, setShowTree] = useState(true);
   const [showApuPanel, setShowApuPanel] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchIndex, setSearchIndex] = useState(-1);
 
   const visibleRows = useMemo(() => {
     const scopedIds = descendantsOf(rows, selectedTreeId);
@@ -109,16 +116,57 @@ export default function VinculacionView({
     return scopedRows.filter((row) => row.kind === "container" || row.estado === vincFilter);
   }, [rows, selectedTreeId, vincFilter]);
 
+  const searchMatches = useMemo(() => {
+    const query = normalizarTexto(searchQuery.trim());
+    if (!query) return [];
+    return visibleRows
+      .map((row, rowIndex) => ({ row, rowIndex }))
+      .filter(({ row }) => normalizarTexto([
+        row.descripcion,
+        row.unidad,
+        row.apu,
+        row.apuNombre,
+        row.varianteApu,
+        row.observacion,
+        row.raw?.node?.observaciones,
+      ].join(" ")).includes(query));
+  }, [searchQuery, visibleRows]);
+
   const treeRows = useMemo(() => visibleContainers(rows, collapsedTreeIds), [collapsedTreeIds, rows]);
   const selectedRow = rows.find((row) => row.id === selectedRowId);
   const canUseSelectedLine = selectedRow?.kind === "line";
   const canCreateApu = canUseSelectedLine && !selectedRow.apu && Boolean(selectedRow.unidad);
+
+  const variantUsageById = useMemo(() => {
+    const usage = new Map();
+    rows.forEach((row) => {
+      const apuId = row.raw?.node?.apu_id;
+      if (apuId) usage.set(apuId, (usage.get(apuId) || 0) + 1);
+    });
+    return usage;
+  }, [rows]);
+
+  const variantsByBaseId = useMemo(() => {
+    const grouped = new Map();
+    apus
+      .filter((apu) => apu.es_variante && String(apu.proyecto_id) === String(selectedProjectId))
+      .forEach((apu) => {
+        const baseId = apu.apu_base_id;
+        if (!grouped.has(baseId)) grouped.set(baseId, []);
+        grouped.get(baseId).push({ ...apu, usos: variantUsageById.get(apu.id) || 0 });
+      });
+    grouped.forEach((variants) => {
+      variants.sort((a, b) => String(a.variante_nombre || "").localeCompare(String(b.variante_nombre || "")));
+    });
+    return grouped;
+  }, [apus, selectedProjectId, variantUsageById]);
 
   const apusSugeridos = useMemo(() => {
     const query = apuSearch.trim();
     const queryTokens = tokenizar(query);
     return apus
       .filter((apu) => apu.estado !== "inactivo")
+      .filter((apu) => !apu.es_variante)
       .filter((apu) => {
         if (!queryTokens.length) return true;
         const text = apuSearchText(apu);
@@ -155,11 +203,19 @@ export default function VinculacionView({
     setModalVincularOpen(false);
     setModalCrearOpen(false);
     setModalEditarApuOpen(false);
+    setModalVarianteOpen(false);
     setApuSearch("");
     setApuSeleccionado(null);
+    setVarianteRow(null);
+    setVarianteNombre("");
+    setVarianteSourceId("");
     setActionError("");
     setActionStatus("");
   }, [selectedRowId]);
+
+  useEffect(() => {
+    setSearchIndex(-1);
+  }, [searchQuery, selectedTreeId, vincFilter]);
 
   const runAction = async (action) => {
     if (!canUseSelectedLine) return;
@@ -172,6 +228,19 @@ export default function VinculacionView({
       setModalCrearOpen(false);
       setApuSearch("");
       setApuSeleccionado(null);
+      onDataChange?.();
+    } catch (err) {
+      setActionStatus("");
+      setActionError(err.message || "No se pudo aplicar la accion.");
+    }
+  };
+
+  const runVariantAction = async (action) => {
+    setActionStatus("Guardando...");
+    setActionError("");
+    try {
+      await action();
+      setActionStatus("Cambios aplicados.");
       onDataChange?.();
     } catch (err) {
       setActionStatus("");
@@ -221,12 +290,79 @@ export default function VinculacionView({
     }
   });
 
+  const cambiarVarianteApu = (row, value) => {
+    if (!row?.raw?.node?.apu_id) return;
+    if (value === "__new__") {
+      setVarianteRow(row);
+      setVarianteNombre("");
+      setVarianteSourceId(String(row.apuEfectivoId || row.raw.node.apu_id));
+      setActionError("");
+      setModalVarianteOpen(true);
+      return;
+    }
+    runVariantAction(async () => {
+      const response = await fetch(`${API}/presupuestos/nodos/${row.sourceId}/variante-apu`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ variante_apu_id: value === "base" ? null : Number(value) }),
+      });
+      if (!response.ok) {
+        const detail = await response.json().catch(() => null);
+        throw new Error(detail?.detail || "No se pudo cambiar la variante.");
+      }
+    });
+  };
+
+  const crearVarianteApu = () => runVariantAction(async () => {
+    if (!varianteRow) return;
+    const response = await fetch(`${API}/presupuestos/nodos/${varianteRow.sourceId}/variantes-apu`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        variante_nombre: varianteNombre,
+        copiar_desde_apu_id: Number(varianteSourceId || varianteRow.apuEfectivoId || varianteRow.raw?.node?.apu_id),
+      }),
+    });
+    if (!response.ok) {
+      const detail = await response.json().catch(() => null);
+      throw new Error(detail?.detail || "No se pudo crear la variante.");
+    }
+    setModalVarianteOpen(false);
+    setVarianteRow(null);
+    setVarianteNombre("");
+    setVarianteSourceId("");
+  });
+
   const cambiarApu = () => {
     if (!canUseSelectedLine) return;
     setApuSearch("");
     setApuSeleccionado(null);
     setActionError("");
     setModalVincularOpen(true);
+  };
+
+  const goToSearchMatch = (direction = 1) => {
+    if (!searchMatches.length) return;
+    const nextIndex = (searchIndex + direction + searchMatches.length) % searchMatches.length;
+    const match = searchMatches[nextIndex];
+    setSearchIndex(nextIndex);
+    setSelectedRowId(match.row.id);
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-budget-link-row-id="${match.row.id}"]`)?.scrollIntoView({
+        block: "center",
+        inline: "nearest",
+      });
+    });
+  };
+
+  const selectTreeRow = (rowId) => {
+    setSelectedTreeId(rowId);
+    if (rowId === "all") {
+      setSelectedRowId("");
+      return;
+    }
+    const row = rows.find((item) => item.id === rowId);
+    if (row) setSelectedRowId(row.id);
   };
 
   const editarApu = () => {
@@ -258,7 +394,7 @@ export default function VinculacionView({
         <PresupuestoTree
           rows={treeRows}
           selectedTreeId={selectedTreeId}
-          onSelect={setSelectedTreeId}
+          onSelect={selectTreeRow}
           collapsedTreeIds={collapsedTreeIds}
           onToggleCollapse={toggleTreeCollapse}
           mode="vinculacion"
@@ -275,6 +411,23 @@ export default function VinculacionView({
             ))}
           </div>
           <div className="budget-v2-toolbar-spacer" />
+          <div className="budget-v2-search" role="search">
+            <input
+              type="search"
+              value={searchQuery}
+              placeholder="Buscar en vinculacion..."
+              aria-label="Buscar en vinculacion"
+              onChange={(event) => setSearchQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") return;
+                event.preventDefault();
+                goToSearchMatch(event.shiftKey ? -1 : 1);
+              }}
+            />
+            <span>{searchQuery.trim() ? `${searchMatches.length} resultado(s)` : "Buscar"}</span>
+            <button type="button" disabled={!searchMatches.length} onClick={() => goToSearchMatch(-1)}>Anterior</button>
+            <button type="button" disabled={!searchMatches.length} onClick={() => goToSearchMatch(1)}>Siguiente</button>
+          </div>
           <button type="button" disabled={!canUseSelectedLine} onClick={() => setModalVincularOpen(true)}>Vincular APU</button>
           <button type="button" disabled={!canUseSelectedLine || selectedRow.estado === "sin_apu"} onClick={marcarNoAplica}>Subcontratado</button>
           <button type="button" disabled={!canCreateApu} onClick={() => setModalCrearOpen(true)}>Crear APU</button>
@@ -289,6 +442,7 @@ export default function VinculacionView({
         <div className="budget-v2-link-table">
           <div className="budget-v2-link-head">
             <span>Descripcion / estructura</span>
+            <span>Variante APU</span>
             <span>P.U. Meta</span>
             <span>P.T. Meta</span>
             <span>Estado</span>
@@ -298,21 +452,48 @@ export default function VinculacionView({
               const isContainer = row.kind === "container";
               const selected = selectedRowId === row.id;
               const meta = statusMeta[row.estado] || {};
+              const variantes = row.apuBaseId ? (variantsByBaseId.get(row.apuBaseId) || []) : [];
               return (
-                <button
+                <div
                   key={row.id}
-                  type="button"
+                  data-budget-link-row-id={row.id}
+                  role="button"
+                  tabIndex={0}
                   className={`budget-v2-link-row ${isContainer ? "budget-v2-link-container" : ""} ${selected ? "budget-v2-link-selected" : ""}`}
                   onClick={() => setSelectedRowId(row.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") setSelectedRowId(row.id);
+                  }}
                 >
                   <span>
                     <strong>{row.descripcion}</strong>
                     <small>{isContainer ? "" : `${row.unidad} | ${row.metrado} | P.U. meta ${row.puMeta || "-"}`}</small>
                   </span>
+                  <span className="budget-v2-link-variant-cell">
+                    {!isContainer && row.raw?.node?.apu_id && (
+                      <select
+                        value={row.raw?.apu?.es_variante ? String(row.raw.apu.id) : "base"}
+                        onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => event.stopPropagation()}
+                        onChange={(event) => {
+                          event.stopPropagation();
+                          cambiarVarianteApu(row, event.target.value);
+                        }}
+                      >
+                        <option value="base">Base</option>
+                        {variantes.map((variante) => (
+                          <option key={variante.id} value={String(variante.id)}>
+                            {variante.variante_nombre || "Variante"} - {variante.usos} usos
+                          </option>
+                        ))}
+                        <option value="__new__">+ Generar nueva variante</option>
+                      </select>
+                    )}
+                  </span>
                   <span>{isContainer ? "" : (row.puMeta || "-")}</span>
                   <span>{row.ptMeta || "-"}</span>
                   <span>{!isContainer && <em className={meta.className}>{meta.label}</em>}</span>
-                </button>
+                </div>
               );
             })}
           </div>
@@ -529,6 +710,61 @@ export default function VinculacionView({
         </ModalShell>
       )}
 
+      {modalVarianteOpen && varianteRow && (
+        <ModalShell
+          title="Generar variante APU"
+          size="md"
+          onClose={() => {
+            setModalVarianteOpen(false);
+            setVarianteRow(null);
+            setVarianteNombre("");
+            setVarianteSourceId("");
+            setActionError("");
+          }}
+          footer={
+            <>
+              <ActionButton onClick={() => setModalVarianteOpen(false)}>Cancelar</ActionButton>
+              <ActionButton variant="primary" onClick={crearVarianteApu} disabled={!varianteNombre.trim()}>
+                Crear y asignar
+              </ActionButton>
+            </>
+          }
+        >
+          <div className="budget-v2-create-apu-modal">
+            <div className="budget-v2-create-apu-intro">
+              <strong>{varianteRow.apuNombre}</strong>
+              <span>La variante quedara disponible para rubros del mismo proyecto con este APU base.</span>
+            </div>
+            <label className="budget-v2-variant-field">
+              <span>Nombre de variante</span>
+              <input
+                type="text"
+                value={varianteNombre}
+                onChange={(event) => setVarianteNombre(event.target.value)}
+                placeholder="Ej. GARITA"
+                autoFocus
+              />
+            </label>
+            <label className="budget-v2-variant-field">
+              <span>Copiar desde</span>
+              <select value={varianteSourceId} onChange={(event) => setVarianteSourceId(event.target.value)}>
+                {varianteRow.raw?.baseApu && (
+                  <option value={String(varianteRow.raw.baseApu.id)}>
+                    Base - {varianteRow.raw.baseApu.nombre}
+                  </option>
+                )}
+                {(variantsByBaseId.get(varianteRow.apuBaseId) || []).map((variante) => (
+                  <option key={variante.id} value={String(variante.id)}>
+                    {variante.variante_nombre || "Variante"} - {variante.usos} usos
+                  </option>
+                ))}
+              </select>
+            </label>
+            <ErrorBanner>{actionError}</ErrorBanner>
+          </div>
+        </ModalShell>
+      )}
+
       {modalEditarApuOpen && selectedRow?.raw?.node?.apu_id && (
         <ModalShell
           title="Editar APU"
@@ -539,8 +775,8 @@ export default function VinculacionView({
             <ApuDetalle
               apu={{
                 id: selectedRow.raw.node.apu_id,
-                codigo: selectedRow.apu,
-                nombre: selectedRow.apuNombre || selectedRow.descripcion,
+                codigo: selectedRow.raw.apu?.codigo || selectedRow.apu,
+                nombre: selectedRow.raw.apu?.nombre || selectedRow.apuNombre || selectedRow.descripcion,
                 unidad: selectedRow.unidad || "",
                 rendimiento: selectedRow.rendimiento || 1,
                 estado: selectedRow.raw.apu?.estado || "en_revision",
