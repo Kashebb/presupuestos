@@ -250,6 +250,40 @@ def _es_rubro_operativo_desde_hijos(nodo: NodoPresupuesto, hijos_por_padre: dict
     return activo and not hijos_por_padre.get(nodo.id)
 
 
+def _items_exportacion_por_jerarquia(nodos: list[NodoPresupuesto]) -> dict[int, Optional[str]]:
+    por_id = {n.id for n in nodos}
+    hijos_por_padre: dict[Optional[int], list[NodoPresupuesto]] = {}
+    for nodo in nodos:
+        padre_id = nodo.padre_id if nodo.padre_id in por_id else None
+        hijos_por_padre.setdefault(padre_id, []).append(nodo)
+    for hijos in hijos_por_padre.values():
+        hijos.sort(key=lambda n: (n.orden or 0, n.id))
+
+    items: dict[int, Optional[str]] = {}
+
+    def ancho_hijos(hijos: list[NodoPresupuesto]) -> int:
+        anchos = []
+        for hijo in hijos:
+            ultimo = (hijo.item or "").split(".")[-1]
+            if ultimo.isdigit():
+                anchos.append(len(ultimo))
+        return max([2, *anchos])
+
+    def visitar(padre_id: Optional[int], prefijo: Optional[str]) -> None:
+        hijos = hijos_por_padre.get(padre_id, [])
+        ancho = ancho_hijos(hijos)
+        for idx, hijo in enumerate(hijos, start=1):
+            if prefijo:
+                item_exportacion = f"{prefijo}.{str(idx).zfill(ancho)}"
+            else:
+                item_exportacion = hijo.item or str(idx).zfill(ancho)
+            items[hijo.id] = item_exportacion
+            visitar(hijo.id, item_exportacion)
+
+    visitar(None, None)
+    return items
+
+
 def _estado_exportacion(nodo: NodoPresupuesto, costo_apu: Optional[dict]) -> str:
     if nodo.observaciones == "SIN_APU":
         return "Subcontratado"
@@ -279,6 +313,7 @@ def _crear_workbook_presupuesto_operativo(proyecto: Proyecto, nodos: list[NodoPr
         hijos_por_padre.setdefault(padre_id, []).append(nodo)
 
     ordenados = _ordenar_arbol_presupuesto(nodos_activos)
+    items_exportacion = _items_exportacion_por_jerarquia(nodos_activos)
     costos_por_apu: dict[int, dict] = {}
     acumulados: dict[int, dict[str, float]] = {n.id: {"ref": 0.0, "apu": 0.0} for n in nodos_activos}
     acumulados_desglose: dict[int, dict[str, float]] = {
@@ -337,6 +372,7 @@ def _crear_workbook_presupuesto_operativo(proyecto: Proyecto, nodos: list[NodoPr
         rows_data.append({
             "nodo": nodo,
             "nivel": nivel,
+            "item": items_exportacion.get(nodo.id, nodo.item),
             "es_rubro": es_rubro,
             "pu_apu": pu_apu,
             "total_ref": total_ref,
@@ -373,7 +409,7 @@ def _crear_workbook_presupuesto_operativo(proyecto: Proyecto, nodos: list[NodoPr
         ws.append([
             data["nivel"],
             nodo.tipo,
-            nodo.item,
+            data["item"],
             nodo.descripcion,
             nodo.unidad if es_rubro else None,
             nodo.metrado if es_rubro else None,
@@ -469,7 +505,7 @@ def _crear_workbook_presupuesto_operativo(proyecto: Proyecto, nodos: list[NodoPr
         desglose.append([
             data["nivel"],
             nodo.tipo,
-            nodo.item,
+            data["item"],
             nodo.descripcion,
             nodo.unidad if es_rubro else None,
             nodo.metrado if es_rubro else None,

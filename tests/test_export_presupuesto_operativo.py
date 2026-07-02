@@ -418,6 +418,100 @@ class ExportPresupuestoOperativoTest(unittest.TestCase):
         self.assertNotIn("Grupo B", descriptions)
         self.assertNotIn("Rubro B", descriptions)
 
+    def test_exporta_item_calculado_desde_jerarquia_real(self):
+        proyecto = Proyecto(nombre="Proyecto Jerarquia", codigo="PJ-01")
+        self.db.add(proyecto)
+        self.db.flush()
+
+        acabados = NodoPresupuesto(
+            proyecto_id=proyecto.id,
+            tipo="RUBRO",
+            nivel=0,
+            item="01.01.01.07.01.02.27.28.04",
+            descripcion="ACABADOS",
+            orden=1,
+            activo_como_rubro=False,
+            estado_actualizacion="activo",
+        )
+        self.db.add(acabados)
+        self.db.flush()
+
+        mamposteria = NodoPresupuesto(
+            proyecto_id=proyecto.id,
+            padre_id=acabados.id,
+            tipo="RUBRO",
+            nivel=1,
+            item="01.01.01.07.01.02.27.28.04.01",
+            descripcion="MAMPOSTERIA",
+            orden=2,
+            activo_como_rubro=False,
+            estado_actualizacion="activo",
+        )
+        gypsum = NodoPresupuesto(
+            proyecto_id=proyecto.id,
+            padre_id=acabados.id,
+            tipo="RUBRO",
+            nivel=1,
+            item="01.01.01.07.01.02.27.28.04.05",
+            descripcion="GYPSUM Y PINTURA",
+            orden=4,
+            activo_como_rubro=False,
+            estado_actualizacion="activo",
+        )
+        self.db.add_all([mamposteria, gypsum])
+        self.db.flush()
+
+        pared = NodoPresupuesto(
+            proyecto_id=proyecto.id,
+            padre_id=mamposteria.id,
+            tipo="RUBRO",
+            nivel=2,
+            item="01.01.01.07.01.02.27.28.04.02",
+            descripcion="PARED DE BLOQUE",
+            orden=3,
+            unidad="m2",
+            metrado=1.0,
+            precio_unitario_ref=1.0,
+            activo_como_rubro=True,
+            estado_actualizacion="activo",
+        )
+        cielo_raso = NodoPresupuesto(
+            proyecto_id=proyecto.id,
+            padre_id=gypsum.id,
+            tipo="RUBRO",
+            nivel=2,
+            item="01.01.01.07.01.02.27.28.04.06",
+            descripcion="CIELO RASO GYPSUM",
+            orden=5,
+            unidad="m2",
+            metrado=1.0,
+            precio_unitario_ref=1.0,
+            activo_como_rubro=True,
+            estado_actualizacion="activo",
+        )
+        self.db.add_all([pared, cielo_raso])
+        self.db.commit()
+
+        response = exportar_presupuesto_operativo(proyecto.id, self.db)
+        content = asyncio.run(_read_response(response))
+
+        import openpyxl
+
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+        ws = wb["Presupuesto operativo"]
+        items_by_description = {row[3]: row[2] for row in ws.iter_rows(min_row=2, values_only=True)}
+
+        self.assertEqual(items_by_description["ACABADOS"], "01.01.01.07.01.02.27.28.04")
+        self.assertEqual(items_by_description["MAMPOSTERIA"], "01.01.01.07.01.02.27.28.04.01")
+        self.assertEqual(items_by_description["PARED DE BLOQUE"], "01.01.01.07.01.02.27.28.04.01.01")
+        self.assertEqual(items_by_description["GYPSUM Y PINTURA"], "01.01.01.07.01.02.27.28.04.02")
+        self.assertEqual(items_by_description["CIELO RASO GYPSUM"], "01.01.01.07.01.02.27.28.04.02.01")
+
+        desglose = wb["Desglose Rubros"]
+        desglose_items = {row[3]: row[2] for row in desglose.iter_rows(min_row=2, values_only=True)}
+        self.assertEqual(desglose_items["GYPSUM Y PINTURA"], "01.01.01.07.01.02.27.28.04.02")
+        self.assertEqual(desglose_items["CIELO RASO GYPSUM"], "01.01.01.07.01.02.27.28.04.02.01")
+
 
 if __name__ == "__main__":
     unittest.main()
