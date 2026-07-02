@@ -31,6 +31,11 @@ function fmtMoney(value) {
   return `$${value.toLocaleString("es-EC", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
 }
 
+function fmtTotalMoney(value) {
+  if (!Number.isFinite(value)) return "";
+  return `$${value.toLocaleString("es-EC", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 function fmtNumber(value) {
   if (!Number.isFinite(value)) return "";
   return value.toLocaleString("es-EC", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
@@ -112,9 +117,9 @@ function buildRows(nodes, costsByApu, apusById) {
       unidad: node.unidad || "",
       metrado: fmtNumber(metrado),
       puRef: fmtMoney(puRef),
-      ptRef: fmtMoney(totalRef),
+      ptRef: fmtTotalMoney(totalRef),
       puMeta: fmtMoney(puMeta),
-      ptMeta: fmtMoney(totalMeta),
+      ptMeta: fmtTotalMoney(totalMeta),
       dif: fmtMoney(diff),
       difPct: comparable ? fmtPct(diff / totalRef) : "",
       observacion: node.observaciones || "",
@@ -156,8 +161,8 @@ function buildRows(nodes, costsByApu, apusById) {
     row.pending = rubros.filter((rubro) => rubro.estado === "pendiente").length;
     row.sinApu = rubros.filter((rubro) => rubro.estado === "sin_apu").length;
     row.revisar = rubros.filter((rubro) => rubro.estado === "revisar").length;
-    row.ptRef = fmtMoney(totalRef);
-    row.ptMeta = fmtMoney(totalMeta);
+    row.ptRef = fmtTotalMoney(totalRef);
+    row.ptMeta = fmtTotalMoney(totalMeta);
     row.dif = fmtMoney(diff);
     row.difPct = Number.isFinite(diff) && refComparable > 0 ? fmtPct(diff / refComparable) : "";
     const breakdown = rubros.reduce((acc, rubro) => {

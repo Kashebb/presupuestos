@@ -467,7 +467,7 @@ export default function VinculacionView({
                 >
                   <span>
                     <strong>{row.descripcion}</strong>
-                    <small>{isContainer ? "" : `${row.unidad} | ${row.metrado} | P.U. meta ${row.puMeta || "-"}`}</small>
+                    <small>{isContainer ? "" : `${row.unidad} | ${row.metrado} | P.U. ref ${row.puRef || "-"}`}</small>
                   </span>
                   <span className="budget-v2-link-variant-cell">
                     {!isContainer && row.raw?.node?.apu_id && (

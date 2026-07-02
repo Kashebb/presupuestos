@@ -69,7 +69,7 @@ export default function PanelApu({ selectedRow, onEditApu, onChangeApu, onUnlink
           <div className="budget-v2-apu-card">
             <small>Linea seleccionada</small>
             <strong>{selectedRow.descripcion}</strong>
-            <span>{selectedRow.unidad} | {selectedRow.metrado} | P.U. meta {selectedRow.puMeta || "-"}</span>
+            <span>{selectedRow.unidad} | {selectedRow.metrado} | P.U. ref {selectedRow.puRef || "-"}</span>
           </div>
           {selectedHasApu ? (
             <>
