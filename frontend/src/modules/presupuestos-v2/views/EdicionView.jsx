@@ -3,7 +3,7 @@ import { ActionButton, ModalShell } from "../../../components/ui";
 import { API } from "../data";
 import PresupuestoTree from "../components/PresupuestoTree";
 import CollapsibleSidePanel from "../components/CollapsibleSidePanel";
-import { visibleContainers } from "../logic/tree";
+import { nearestContainerIdsForRows, visibleContainers } from "../logic/tree";
 import { editColumns, emptyEditRows } from "../mockData";
 
 const FIELD_BY_COLUMN = {
@@ -76,6 +76,10 @@ export default function EdicionView({
   apus = [],
   selectedProjectId,
   onDataChange,
+  selectedTreeId = "all",
+  setSelectedTreeId,
+  selectedRowId,
+  setSelectedRowId,
   onSelectionCountChange,
 }) {
   const displayRows = rows.length ? rows : emptyEditRows;
@@ -94,13 +98,14 @@ export default function EdicionView({
   const [confirmConfig, setConfirmConfig] = useState(null);
   const [collapsedTreeIds, setCollapsedTreeIds] = useState(new Set());
   const [showTree, setShowTree] = useState(true);
+  const [addRowsMenuOpen, setAddRowsMenuOpen] = useState(false);
+  const [bulkRowCount, setBulkRowCount] = useState("5");
 
   const activeRow = displayRows.find((row) => row.id === activeCell.rowId);
   const canEditActiveRow = activeRow?.kind === "line";
   const canDeleteActiveRow = Boolean(activeRow?.sourceId);
   const canStructureActiveRow = Boolean(activeRow?.sourceId);
   const dirtyCount = Object.values(drafts).reduce((sum, rowDraft) => sum + Object.keys(rowDraft).length, 0);
-  const activeTreeId = activeRow?.kind === "container" ? activeRow.id : activeRow?.parentId || "all";
   const treeRows = useMemo(() => visibleContainers(displayRows, collapsedTreeIds), [collapsedTreeIds, displayRows]);
   const activeRowIndex = displayRows.findIndex((row) => row.id === activeCell.rowId);
   const activeColIndex = editColumns.findIndex((column) => column.key === activeCell.colKey);
@@ -117,6 +122,10 @@ export default function EdicionView({
         row.raw?.node?.observaciones,
       ].join(" ")).includes(query));
   }, [displayRows, searchQuery]);
+  const treeMarkerIds = useMemo(
+    () => nearestContainerIdsForRows(displayRows, searchMatches.map((match) => match.row)),
+    [displayRows, searchMatches]
+  );
 
   const activeSuggestions = useMemo(() => {
     if (!activeRow || activeRow.kind !== "line" || !["descripcion", "unidad"].includes(activeCell.colKey)) return [];
@@ -301,6 +310,8 @@ export default function EdicionView({
     setSelectionEnd(next);
     setRowSelectionAnchor(rowIndex);
     setRowSelectionEnd(rowIndex);
+    setSelectedRowId?.(row.id);
+    setSelectedTreeId?.(row.kind === "container" ? row.id : row.parentId || "all");
     setDragging(true);
   };
 
@@ -308,6 +319,8 @@ export default function EdicionView({
     setActiveCell({ rowId: row.id, colKey: "descripcion" });
     setSelectionAnchor({ rowIndex, colIndex: 0 });
     setSelectionEnd({ rowIndex, colIndex: editColumns.length - 1 });
+    setSelectedRowId?.(row.id);
+    setSelectedTreeId?.(row.kind === "container" ? row.id : row.parentId || "all");
     if (extend) {
       setRowSelectionEnd(rowIndex);
     } else {
@@ -322,6 +335,8 @@ export default function EdicionView({
     setSelectionEnd({ rowIndex, colIndex: editColumns.length - 1 });
     setRowSelectionAnchor(rowIndex);
     setRowSelectionEnd(rowIndex);
+    setSelectedRowId?.(row.id);
+    setSelectedTreeId?.(row.kind === "container" ? row.id : row.parentId || "all");
     requestAnimationFrame(() => {
       document.querySelector(`[data-budget-row-id="${row.id}"]`)?.scrollIntoView({
         block: "center",
@@ -339,15 +354,47 @@ export default function EdicionView({
   };
 
   const selectTreeRow = (rowId) => {
+    setSelectedTreeId?.(rowId);
     if (rowId === "all") {
+      setSelectedRowId?.("");
       const firstRow = displayRows[0];
-      if (firstRow) focusRow(firstRow, 0);
+      if (firstRow) {
+        setActiveCell({ rowId: firstRow.id, colKey: "descripcion" });
+        setSelectionAnchor({ rowIndex: 0, colIndex: 0 });
+        setSelectionEnd({ rowIndex: 0, colIndex: editColumns.length - 1 });
+        setRowSelectionAnchor(0);
+        setRowSelectionEnd(0);
+        requestAnimationFrame(() => {
+          document.querySelector(`[data-budget-row-id="${firstRow.id}"]`)?.scrollIntoView({
+            block: "center",
+            inline: "nearest",
+          });
+        });
+      }
       return;
     }
     const rowIndex = displayRows.findIndex((row) => row.id === rowId);
     if (rowIndex < 0) return;
     focusRow(displayRows[rowIndex], rowIndex);
   };
+
+  useEffect(() => {
+    if (!selectedRowId || selectedRowId === activeCell.rowId) return;
+    const rowIndex = displayRows.findIndex((row) => row.id === selectedRowId);
+    if (rowIndex < 0) return;
+    const row = displayRows[rowIndex];
+    setActiveCell({ rowId: row.id, colKey: activeCell.colKey || "descripcion" });
+    setSelectionAnchor({ rowIndex, colIndex: 0 });
+    setSelectionEnd({ rowIndex, colIndex: editColumns.length - 1 });
+    setRowSelectionAnchor(rowIndex);
+    setRowSelectionEnd(rowIndex);
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-budget-row-id="${row.id}"]`)?.scrollIntoView({
+        block: "center",
+        inline: "nearest",
+      });
+    });
+  }, [activeCell.colKey, activeCell.rowId, displayRows, selectedRowId]);
 
   const toggleTreeCollapse = (rowId) => {
     setCollapsedTreeIds((current) => {
@@ -462,16 +509,24 @@ export default function EdicionView({
     }
   };
 
-  const addRowBelow = async () => {
+  const addRowsBelow = async (count = 1) => {
     if (!selectedProjectId || !canEditActiveRow) return;
-    setSaveState("Agregando fila...");
+    const safeCount = Number.parseInt(String(count), 10);
+    if (!Number.isInteger(safeCount) || safeCount < 1 || safeCount > 100) {
+      setError("La cantidad debe estar entre 1 y 100 filas.");
+      return;
+    }
+    setSaveState(safeCount === 1 ? "Agregando fila..." : `Agregando ${safeCount} filas...`);
     setError("");
+    setAddRowsMenuOpen(false);
     try {
-      const response = await fetch(`${API}/presupuestos/proyectos/${selectedProjectId}/nodos`, {
+      const isBulk = safeCount > 1;
+      const response = await fetch(`${API}/presupuestos/proyectos/${selectedProjectId}/nodos${isBulk ? "/bulk" : ""}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           despues_de_id: activeRow.sourceId,
+          ...(isBulk ? { cantidad: safeCount } : {}),
           descripcion: "",
           unidad: activeRow.unidad || "",
           metrado: null,
@@ -482,12 +537,22 @@ export default function EdicionView({
         const detail = await response.json().catch(() => null);
         throw new Error(detail?.detail || "No se pudo agregar la fila.");
       }
-      setSaveState("Fila agregada");
+      const detail = await response.json().catch(() => null);
+      const firstNewRow = Array.isArray(detail) ? detail[0] : detail;
+      if (firstNewRow?.id) setPendingFocusRowId(String(firstNewRow.id));
+      setSaveState(safeCount === 1 ? "Fila agregada" : `${safeCount} filas agregadas`);
       onDataChange?.();
     } catch (err) {
       setSaveState(dirtyCount ? "Cambios pendientes" : "Sin cambios pendientes");
       setError(err.message || "No se pudo agregar la fila.");
     }
+  };
+
+  const addRowBelow = () => addRowsBelow(1);
+
+  const addBulkRows = (event) => {
+    event.preventDefault();
+    addRowsBelow(bulkRowCount);
   };
 
   const deleteActiveRow = async () => {
@@ -649,7 +714,36 @@ export default function EdicionView({
     <>
       <div className="budget-v2-toolbar">
         <div className="budget-v2-toolbar-group">
-          <DisabledButton type="button" disabled={!canEditActiveRow} reason={addRowDisabledReason} onClick={addRowBelow}>Agregar fila</DisabledButton>
+          <span className="budget-v2-split-button" title={!canEditActiveRow ? addRowDisabledReason : ""}>
+            <button type="button" disabled={!canEditActiveRow} onClick={addRowBelow}>Agregar fila</button>
+            <button
+              type="button"
+              className="budget-v2-split-button-arrow"
+              disabled={!canEditActiveRow}
+              aria-label="Mas opciones para agregar filas"
+              aria-expanded={addRowsMenuOpen}
+              onClick={() => setAddRowsMenuOpen((open) => !open)}
+            >
+              v
+            </button>
+            {addRowsMenuOpen && canEditActiveRow && (
+              <form className="budget-v2-add-rows-menu" onSubmit={addBulkRows}>
+                <label htmlFor="budget-v2-bulk-row-count">Cantidad de filas</label>
+                <div>
+                  <input
+                    id="budget-v2-bulk-row-count"
+                    type="number"
+                    min="1"
+                    max="100"
+                    step="1"
+                    value={bulkRowCount}
+                    onChange={(event) => setBulkRowCount(event.target.value)}
+                  />
+                  <button type="submit">Agregar</button>
+                </div>
+              </form>
+            )}
+          </span>
           <DisabledButton type="button" disabled={!canDeleteActiveRow} reason={deleteRowDisabledReason} onClick={confirmDeleteActiveRow}>Eliminar fila</DisabledButton>
         </div>
         <div className="budget-v2-toolbar-group">
@@ -690,11 +784,12 @@ export default function EdicionView({
         <CollapsibleSidePanel side="left" label="EDT" open={showTree} onToggle={() => setShowTree(value => !value)}>
           <PresupuestoTree
             rows={treeRows}
-            selectedTreeId={activeTreeId}
+            selectedTreeId={selectedTreeId}
             onSelect={selectTreeRow}
             collapsedTreeIds={collapsedTreeIds}
             onToggleCollapse={toggleTreeCollapse}
             mode="edicion"
+            markerIds={treeMarkerIds}
           />
         </CollapsibleSidePanel>
 

@@ -162,6 +162,10 @@ export default function PresupuestosV2Shell() {
             apus={apus}
             selectedProjectId={selectedProjectId}
             onDataChange={reload}
+            selectedTreeId={selectedTreeId}
+            setSelectedTreeId={setSelectedTreeId}
+            selectedRowId={selectedRowId}
+            setSelectedRowId={setSelectedRowId}
             onSelectionCountChange={setFooterCount}
           />
         )}

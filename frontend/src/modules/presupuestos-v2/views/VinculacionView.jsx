@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ActionButton, ErrorBanner, ModalShell } from "../../../components/ui";
 import ApuDetalle from "../../../pages/ApuDetalle";
 import { API, statusMeta, vincFilters } from "../data";
-import { descendantsOf, visibleContainers } from "../logic/tree";
+import { descendantsOf, nearestContainerIdsForRows, visibleContainers } from "../logic/tree";
 import PanelApu from "../components/PanelApu";
 import PresupuestoTree from "../components/PresupuestoTree";
 import CollapsibleSidePanel from "../components/CollapsibleSidePanel";
@@ -131,6 +131,10 @@ export default function VinculacionView({
         row.raw?.node?.observaciones,
       ].join(" ")).includes(query));
   }, [searchQuery, visibleRows]);
+  const treeMarkerIds = useMemo(
+    () => nearestContainerIdsForRows(rows, searchMatches.map((match) => match.row)),
+    [rows, searchMatches]
+  );
 
   const treeRows = useMemo(() => visibleContainers(rows, collapsedTreeIds), [collapsedTreeIds, rows]);
   const selectedRow = rows.find((row) => row.id === selectedRowId);
@@ -365,6 +369,11 @@ export default function VinculacionView({
     if (row) setSelectedRowId(row.id);
   };
 
+  const selectTableRow = (row) => {
+    setSelectedRowId(row.id);
+    setSelectedTreeId(row.kind === "container" ? row.id : row.parentId || "all");
+  };
+
   const editarApu = () => {
     if (!selectedRow?.raw?.node?.apu_id) return;
     setActionError("");
@@ -398,6 +407,7 @@ export default function VinculacionView({
           collapsedTreeIds={collapsedTreeIds}
           onToggleCollapse={toggleTreeCollapse}
           mode="vinculacion"
+          markerIds={treeMarkerIds}
         />
       </CollapsibleSidePanel>
 
@@ -460,9 +470,9 @@ export default function VinculacionView({
                   role="button"
                   tabIndex={0}
                   className={`budget-v2-link-row ${isContainer ? "budget-v2-link-container" : ""} ${selected ? "budget-v2-link-selected" : ""}`}
-                  onClick={() => setSelectedRowId(row.id)}
+                  onClick={() => selectTableRow(row)}
                   onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") setSelectedRowId(row.id);
+                    if (event.key === "Enter" || event.key === " ") selectTableRow(row);
                   }}
                 >
                   <span>

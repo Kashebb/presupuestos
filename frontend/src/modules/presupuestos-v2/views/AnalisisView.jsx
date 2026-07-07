@@ -3,12 +3,21 @@ import DetalleAnalisis from "../components/DetalleAnalisis";
 import PresupuestoTree from "../components/PresupuestoTree";
 import CollapsibleSidePanel from "../components/CollapsibleSidePanel";
 import { analysisFilters, statusMeta } from "../data";
-import { descendantsOf } from "../logic/tree";
+import { descendantsOf, nearestContainerIdsForRows } from "../logic/tree";
+
+function normalizarTexto(texto) {
+  return String(texto || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
 
 export default function AnalisisView({ rows = [], selectedTreeId, setSelectedTreeId, selectedRowId, setSelectedRowId, onVisibleCountChange }) {
   const [analysisFilter, setAnalysisFilter] = useState("todos");
   const [showTree, setShowTree] = useState(true);
   const [showDetailPanel, setShowDetailPanel] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchIndex, setSearchIndex] = useState(-1);
   const treeRows = rows.filter((row) => row.kind === "container");
 
   const visibleRows = useMemo(() => {
@@ -22,6 +31,23 @@ export default function AnalisisView({ rows = [], selectedTreeId, setSelectedTre
   }, [analysisFilter, rows, selectedTreeId]);
 
   const selectedRow = rows.find((row) => row.id === selectedRowId);
+  const searchMatches = useMemo(() => {
+    const query = normalizarTexto(searchQuery.trim());
+    if (!query) return [];
+    return visibleRows
+      .map((row, rowIndex) => ({ row, rowIndex }))
+      .filter(({ row }) => normalizarTexto([
+        row.descripcion,
+        row.unidad,
+        row.apu,
+        row.apuNombre,
+        row.varianteApu,
+      ].join(" ")).includes(query));
+  }, [searchQuery, visibleRows]);
+  const treeMarkerIds = useMemo(
+    () => nearestContainerIdsForRows(rows, searchMatches.map((match) => match.row)),
+    [rows, searchMatches]
+  );
   const summary = useMemo(() => {
     const lines = rows.filter((row) => row.kind === "line");
     const totalRef = lines.reduce((sum, row) => sum + (row.raw?.totalRef || 0), 0);
@@ -42,10 +68,43 @@ export default function AnalisisView({ rows = [], selectedTreeId, setSelectedTre
     onVisibleCountChange(visibleRows.length);
   }, [onVisibleCountChange, visibleRows.length]);
 
+  useEffect(() => {
+    setSearchIndex(-1);
+  }, [searchQuery, selectedTreeId, analysisFilter]);
+
+  const selectTreeRow = (rowId) => {
+    setSelectedTreeId(rowId);
+    if (rowId === "all") {
+      setSelectedRowId("");
+      return;
+    }
+    const row = rows.find((item) => item.id === rowId);
+    if (row) setSelectedRowId(row.id);
+  };
+
+  const selectTableRow = (row) => {
+    setSelectedRowId(row.id);
+    setSelectedTreeId(row.kind === "container" ? row.id : row.parentId || "all");
+  };
+
+  const goToSearchMatch = (direction = 1) => {
+    if (!searchMatches.length) return;
+    const nextIndex = (searchIndex + direction + searchMatches.length) % searchMatches.length;
+    const match = searchMatches[nextIndex];
+    setSearchIndex(nextIndex);
+    selectTableRow(match.row);
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-budget-analysis-row-id="${match.row.id}"]`)?.scrollIntoView({
+        block: "center",
+        inline: "nearest",
+      });
+    });
+  };
+
   return (
     <div className={`budget-v2-analysis-layout ${!showTree ? "budget-v2-left-collapsed" : ""} ${!showDetailPanel ? "budget-v2-right-collapsed" : ""}`}>
       <CollapsibleSidePanel side="left" label="EDT" open={showTree} onToggle={() => setShowTree(value => !value)}>
-        <PresupuestoTree rows={treeRows} selectedTreeId={selectedTreeId} onSelect={setSelectedTreeId} mode="analisis" />
+        <PresupuestoTree rows={treeRows} selectedTreeId={selectedTreeId} onSelect={selectTreeRow} mode="analisis" markerIds={treeMarkerIds} />
       </CollapsibleSidePanel>
 
       <section className="budget-v2-analysis-main">
@@ -62,6 +121,24 @@ export default function AnalisisView({ rows = [], selectedTreeId, setSelectedTre
                 {label}
               </button>
             ))}
+          </div>
+          <div className="budget-v2-toolbar-spacer" />
+          <div className="budget-v2-search" role="search">
+            <input
+              type="search"
+              value={searchQuery}
+              placeholder="Buscar en analisis..."
+              aria-label="Buscar en analisis"
+              onChange={(event) => setSearchQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") return;
+                event.preventDefault();
+                goToSearchMatch(event.shiftKey ? -1 : 1);
+              }}
+            />
+            <span>{searchQuery.trim() ? `${searchMatches.length} resultado(s)` : "Buscar"}</span>
+            <button type="button" disabled={!searchMatches.length} onClick={() => goToSearchMatch(-1)}>Anterior</button>
+            <button type="button" disabled={!searchMatches.length} onClick={() => goToSearchMatch(1)}>Siguiente</button>
           </div>
         </div>
         <div className="budget-v2-analysis-table">
@@ -83,8 +160,9 @@ export default function AnalisisView({ rows = [], selectedTreeId, setSelectedTre
                 <button
                   key={row.id}
                   type="button"
+                  data-budget-analysis-row-id={row.id}
                   className={`budget-v2-analysis-row ${isContainer ? "budget-v2-link-container" : ""} ${selected ? "budget-v2-link-selected" : ""}`}
-                  onClick={() => setSelectedRowId(row.id)}
+                  onClick={() => selectTableRow(row)}
                 >
                   <span style={{ paddingLeft: `${10 + row.level * 18}px` }}>
                     <strong>{row.descripcion}</strong>

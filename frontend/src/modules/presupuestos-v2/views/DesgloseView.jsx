@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import CollapsibleSidePanel from "../components/CollapsibleSidePanel";
 import PanelApu from "../components/PanelApu";
 import PresupuestoTree from "../components/PresupuestoTree";
-import { descendantsOf, visibleContainers } from "../logic/tree";
+import { descendantsOf, nearestContainerIdsForRows, visibleContainers } from "../logic/tree";
 
 function normalizarTexto(texto) {
   return String(texto || "")
@@ -46,6 +46,10 @@ export default function DesgloseView({
         row.varianteApu,
       ].join(" ")).includes(query));
   }, [searchQuery, visibleRows]);
+  const treeMarkerIds = useMemo(
+    () => nearestContainerIdsForRows(rows, searchMatches.map((match) => match.row)),
+    [rows, searchMatches]
+  );
 
   useEffect(() => {
     onVisibleCountChange(visibleRows.length);
@@ -74,6 +78,11 @@ export default function DesgloseView({
     if (row) setSelectedRowId(row.id);
   };
 
+  const selectTableRow = (row) => {
+    setSelectedRowId(row.id);
+    setSelectedTreeId(row.kind === "container" ? row.id : row.parentId || "all");
+  };
+
   const goToSearchMatch = (direction = 1) => {
     if (!searchMatches.length) return;
     const nextIndex = (searchIndex + direction + searchMatches.length) % searchMatches.length;
@@ -98,6 +107,7 @@ export default function DesgloseView({
           collapsedTreeIds={collapsedTreeIds}
           onToggleCollapse={toggleTreeCollapse}
           mode="desglose"
+          markerIds={treeMarkerIds}
         />
       </CollapsibleSidePanel>
 
@@ -147,7 +157,7 @@ export default function DesgloseView({
                   type="button"
                   data-budget-breakdown-row-id={row.id}
                   className={`budget-v2-link-row budget-v2-breakdown-grid-row ${isContainer ? "budget-v2-link-container" : ""} ${selected ? "budget-v2-link-selected" : ""}`}
-                  onClick={() => setSelectedRowId(row.id)}
+                  onClick={() => selectTableRow(row)}
                 >
                   <span style={{ paddingLeft: `${10 + row.level * 18}px` }}>
                     <strong>{row.descripcion}</strong>

@@ -442,6 +442,59 @@ textarea {
   padding-right: 8px;
 }
 
+.budget-v2-split-button {
+  position: relative;
+  display: inline-flex;
+}
+
+.budget-v2-toolbar .budget-v2-split-button button:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.budget-v2-toolbar .budget-v2-split-button-arrow {
+  width: 28px;
+  border-left: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  padding: 5px 0;
+}
+
+.budget-v2-add-rows-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  width: 220px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  box-shadow: var(--shadow-md);
+}
+
+.budget-v2-add-rows-menu label {
+  display: block;
+  margin-bottom: 6px;
+  color: #4b5563;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.budget-v2-add-rows-menu div {
+  display: flex;
+  gap: 6px;
+}
+
+.budget-v2-add-rows-menu input {
+  min-width: 0;
+  width: 78px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 5px 7px;
+  font-size: 12px;
+}
+
 .budget-v2-toolbar button,
 .budget-v2-save-button {
   border: 1px solid var(--color-border);
@@ -785,11 +838,48 @@ textarea {
   border-right: 1px solid var(--color-border);
 }
 
+.budget-v2-tree-search {
+  display: grid;
+  gap: 4px;
+  border-bottom: 1px solid var(--color-border);
+  padding: 8px;
+}
+
+.budget-v2-tree-search input {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  padding: 5px 7px;
+  color: #111827;
+  font-size: 11px;
+}
+
+.budget-v2-tree-search input:focus {
+  border-color: var(--color-primary-dark);
+  box-shadow: 0 0 0 1px rgba(22, 101, 52, 0.12);
+  outline: none;
+}
+
+.budget-v2-tree-search span {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.budget-v2-tree-scroll-frame {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
 .budget-v2-tree-scroll {
   flex: 1;
   min-height: 0;
+  height: 100%;
   overflow-x: hidden;
   overflow-y: auto;
+  padding-right: 8px;
 }
 
 .budget-v2-apu-panel {
@@ -912,6 +1002,36 @@ textarea {
 .budget-v2-tree-item:hover,
 .budget-v2-tree-active {
   background: #dcfce7;
+}
+
+.budget-v2-tree-marked {
+  box-shadow: inset -3px 0 0 #16a34a;
+}
+
+.budget-v2-tree-scroll-marks {
+  position: absolute;
+  top: 8px;
+  right: 2px;
+  bottom: 8px;
+  width: 4px;
+  pointer-events: none;
+}
+
+.budget-v2-tree-scroll-marks i {
+  position: absolute;
+  right: 0;
+  width: 4px;
+  height: 10px;
+  border-radius: 999px;
+  background: #16a34a;
+  transform: translateY(-50%);
+}
+
+.budget-v2-tree-empty {
+  padding: 10px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .budget-v2-tree-item span {
