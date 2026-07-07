@@ -20,7 +20,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
@@ -1114,6 +1114,10 @@ class NodoCreate(BaseModel):
     precio_unitario_ref: Optional[float] = None
 
 
+class NodoBulkCreate(NodoCreate):
+    cantidad: int = Field(ge=1, le=100)
+
+
 class NodoMoverRequest(BaseModel):
     accion: str
     nodo_ids: Optional[list[int]] = None
@@ -1386,6 +1390,52 @@ def editar_nodo(nodo_id: int, data: NodoUpdate, db: Session = Depends(get_db)):
     return salida
 
 
+def _crear_rubros_debajo(
+    db: Session,
+    proyecto: Proyecto,
+    referencia: NodoPresupuesto,
+    data: NodoCreate,
+    cantidad: int,
+) -> list[NodoPresupuesto]:
+    orden_referencia = referencia.orden or 0
+    (
+        db.query(NodoPresupuesto)
+        .filter(NodoPresupuesto.proyecto_id == proyecto.id, NodoPresupuesto.orden > orden_referencia)
+        .update({NodoPresupuesto.orden: NodoPresupuesto.orden + cantidad}, synchronize_session=False)
+    )
+
+    nuevos = []
+    fecha = datetime.utcnow()
+    for indice in range(cantidad):
+        nuevo = NodoPresupuesto(
+            proyecto_id=proyecto.id,
+            padre_id=referencia.padre_id,
+            tipo="RUBRO",
+            nivel=referencia.nivel if referencia.nivel is not None else 6,
+            item=None,
+            descripcion=_texto(data.descripcion) or "(nuevo rubro)",
+            orden=orden_referencia + 1 + indice,
+            unidad=_texto(data.unidad),
+            metrado=float(data.metrado) if data.metrado is not None else None,
+            precio_unitario_ref=float(data.precio_unitario_ref) if data.precio_unitario_ref is not None else None,
+            activo_como_rubro=True,
+            tipo_rubro="PENDIENTE",
+            observaciones=None,
+            estado_actualizacion="activo",
+            origen_edicion="manual",
+            requiere_revision_apu=False,
+            fecha_edicion_manual=fecha,
+        )
+        db.add(nuevo)
+        nuevos.append(nuevo)
+
+    db.flush()
+    _renumerar_rubros_activos_hermanos(db, proyecto.id, referencia.padre_id)
+    db.flush()
+    proyecto.fecha_actualizacion = datetime.utcnow()
+    return nuevos
+
+
 @router.post("/proyectos/{proyecto_id}/nodos", response_model=NodoOut, status_code=201)
 def crear_rubro_debajo(proyecto_id: int, data: NodoCreate, db: Session = Depends(get_db)):
     proyecto = db.query(Proyecto).filter(Proyecto.id == proyecto_id).first()
@@ -1402,40 +1452,33 @@ def crear_rubro_debajo(proyecto_id: int, data: NodoCreate, db: Session = Depends
     if not _es_rubro_operativo(db, referencia):
         raise HTTPException(status_code=400, detail="La fila nueva debe agregarse debajo de un rubro operativo")
 
-    orden_referencia = referencia.orden or 0
-    (
-        db.query(NodoPresupuesto)
-        .filter(NodoPresupuesto.proyecto_id == proyecto_id, NodoPresupuesto.orden > orden_referencia)
-        .update({NodoPresupuesto.orden: NodoPresupuesto.orden + 1}, synchronize_session=False)
-    )
-
-    nuevo = NodoPresupuesto(
-        proyecto_id=proyecto_id,
-        padre_id=referencia.padre_id,
-        tipo="RUBRO",
-        nivel=referencia.nivel if referencia.nivel is not None else 6,
-        item=_siguiente_item_rubro(db, proyecto_id, referencia.padre_id, referencia.item),
-        descripcion=_texto(data.descripcion) or "(nuevo rubro)",
-        orden=orden_referencia + 1,
-        unidad=_texto(data.unidad),
-        metrado=float(data.metrado) if data.metrado is not None else None,
-        precio_unitario_ref=float(data.precio_unitario_ref) if data.precio_unitario_ref is not None else None,
-        activo_como_rubro=True,
-        tipo_rubro="PENDIENTE",
-        observaciones=None,
-        estado_actualizacion="activo",
-        origen_edicion="manual",
-        requiere_revision_apu=False,
-        fecha_edicion_manual=datetime.utcnow(),
-    )
-    db.add(nuevo)
-    db.flush()
-    _renumerar_rubros_activos_hermanos(db, proyecto_id, referencia.padre_id)
-    db.flush()
-    proyecto.fecha_actualizacion = datetime.utcnow()
+    nuevo = _crear_rubros_debajo(db, proyecto, referencia, data, 1)[0]
     db.commit()
     db.refresh(nuevo)
     return _nodo_out(nuevo)
+
+
+@router.post("/proyectos/{proyecto_id}/nodos/bulk", response_model=list[NodoOut], status_code=201)
+def crear_rubros_debajo(proyecto_id: int, data: NodoBulkCreate, db: Session = Depends(get_db)):
+    proyecto = db.query(Proyecto).filter(Proyecto.id == proyecto_id).first()
+    if not proyecto:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+
+    referencia = (
+        db.query(NodoPresupuesto)
+        .filter(NodoPresupuesto.id == data.despues_de_id, NodoPresupuesto.proyecto_id == proyecto_id)
+        .first()
+    )
+    if not referencia:
+        raise HTTPException(status_code=404, detail="Nodo de referencia no encontrado")
+    if not _es_rubro_operativo(db, referencia):
+        raise HTTPException(status_code=400, detail="Las filas nuevas deben agregarse debajo de un rubro operativo")
+
+    nuevos = _crear_rubros_debajo(db, proyecto, referencia, data, data.cantidad)
+    db.commit()
+    for nuevo in nuevos:
+        db.refresh(nuevo)
+    return [_nodo_out(nuevo) for nuevo in nuevos]
 
 
 @router.patch("/nodos/{nodo_id}/marcar-obsoleto", response_model=NodoOut)

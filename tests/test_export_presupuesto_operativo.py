@@ -20,7 +20,9 @@ from app.api.apus import calcular_costo_apu
 from app.api.presupuestos import (
     CambiarVarianteAPURequest,
     CrearVarianteAPURequest,
+    NodoBulkCreate,
     cambiar_variante_apu,
+    crear_rubros_debajo,
     crear_variante_apu,
     exportar_presupuesto_operativo,
 )
@@ -154,6 +156,77 @@ class ExportPresupuestoOperativoTest(unittest.TestCase):
         with self.assertRaises(HTTPException) as ctx:
             exportar_presupuesto_operativo(999, self.db)
         self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_crear_rubros_debajo_inserta_varias_filas_mismo_nivel(self):
+        proyecto = Proyecto(nombre="Proyecto Filas", codigo="PF-01")
+        self.db.add(proyecto)
+        self.db.flush()
+
+        capitulo = NodoPresupuesto(
+            proyecto_id=proyecto.id,
+            tipo="CAPITULO",
+            nivel=0,
+            item="1",
+            descripcion="Capitulo",
+            orden=1,
+            activo_como_rubro=False,
+            estado_actualizacion="activo",
+        )
+        self.db.add(capitulo)
+        self.db.flush()
+
+        referencia = NodoPresupuesto(
+            proyecto_id=proyecto.id,
+            padre_id=capitulo.id,
+            tipo="RUBRO",
+            nivel=1,
+            item="1.01",
+            descripcion="Rubro referencia",
+            orden=2,
+            unidad="m2",
+            activo_como_rubro=True,
+            tipo_rubro="PENDIENTE",
+            estado_actualizacion="activo",
+        )
+        siguiente = NodoPresupuesto(
+            proyecto_id=proyecto.id,
+            padre_id=capitulo.id,
+            tipo="RUBRO",
+            nivel=1,
+            item="1.02",
+            descripcion="Rubro siguiente",
+            orden=3,
+            unidad="m2",
+            activo_como_rubro=True,
+            tipo_rubro="PENDIENTE",
+            estado_actualizacion="activo",
+        )
+        self.db.add_all([referencia, siguiente])
+        self.db.commit()
+
+        result = crear_rubros_debajo(
+            proyecto.id,
+            NodoBulkCreate(despues_de_id=referencia.id, cantidad=3, unidad="m2"),
+            self.db,
+        )
+
+        self.assertEqual(len(result), 3)
+        rubros = (
+            self.db.query(NodoPresupuesto)
+            .filter(NodoPresupuesto.padre_id == capitulo.id)
+            .order_by(NodoPresupuesto.orden)
+            .all()
+        )
+        self.assertEqual([r.descripcion for r in rubros], [
+            "Rubro referencia",
+            "(nuevo rubro)",
+            "(nuevo rubro)",
+            "(nuevo rubro)",
+            "Rubro siguiente",
+        ])
+        self.assertEqual([r.item for r in rubros], ["1.01", "1.02", "1.03", "1.04", "1.05"])
+        self.assertTrue(all(r.padre_id == capitulo.id and r.nivel == 1 for r in rubros[1:4]))
+        self.assertTrue(all(r.activo_como_rubro for r in rubros[1:4]))
 
     def test_crear_variante_apu_copia_items_y_asigna_rubro(self):
         proyecto = Proyecto(nombre="Proyecto Variantes", codigo="PV-01")
