@@ -1574,9 +1574,16 @@ textarea {
 }
 
 .budget-v2-create-apu-list {
-  overflow: hidden;
+  max-height: min(360px, 48vh);
+  overflow-x: hidden;
+  overflow-y: auto;
   border: 1px solid #e5e7eb;
   border-radius: var(--radius-md);
+}
+
+.budget-v2-resource-modal {
+  display: grid;
+  gap: 12px;
 }
 
 .budget-v2-create-apu-option {
