@@ -106,6 +106,7 @@ export default function VinculacionView({
   const [actionStatus, setActionStatus] = useState("");
   const [actionError, setActionError] = useState("");
   const [apuImpacto, setApuImpacto] = useState(null);
+  const [apuEditorOverride, setApuEditorOverride] = useState(null);
   const [showTree, setShowTree] = useState(true);
   const [showApuPanel, setShowApuPanel] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -217,6 +218,7 @@ export default function VinculacionView({
     setVarianteNombre("");
     setVarianteSourceId("");
     setApuImpacto(null);
+    setApuEditorOverride(null);
     setActionError("");
     setActionStatus("");
   }, [selectedRowId]);
@@ -402,6 +404,7 @@ export default function VinculacionView({
   const abrirEditorApuGlobal = () => {
     if (!selectedRow?.raw?.node?.apu_id) return;
     setActionError("");
+    setApuEditorOverride(null);
     setModalImpactoApuOpen(false);
     setModalEditarApuOpen(true);
   };
@@ -414,6 +417,34 @@ export default function VinculacionView({
     setVarianteSourceId(String(selectedRow.apuEfectivoId || selectedRow.raw.node.apu_id));
     setActionError("");
     setModalVarianteOpen(true);
+  };
+
+  const aislarNoLiberados = async () => {
+    if (!selectedRow?.raw?.node?.apu_id) return;
+    setActionError("");
+    setActionStatus("Aislando rubros no liberados...");
+    try {
+      const response = await fetch(`${API}/presupuestos/proyectos/${selectedProjectId}/apus/${selectedRow.raw.node.apu_id}/aislar-no-liberados`, {
+        method: "POST",
+      });
+      const detail = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(detail?.detail || "No se pudo aislar el APU.");
+      setModalImpactoApuOpen(false);
+      setApuEditorOverride({
+        id: detail.apu_id,
+        codigo: detail.variante?.codigo || selectedRow.apu,
+        nombre: detail.variante?.nombre || selectedRow.apuNombre,
+        unidad: selectedRow.unidad || selectedRow.raw?.apu?.unidad || "",
+        rendimiento: selectedRow.rendimiento || selectedRow.raw?.apu?.rendimiento || 1,
+        estado: "en_revision",
+      });
+      setActionStatus(`${detail.rubros_reasignados} rubro(s) no liberados aislados. ${detail.rubros_liberados_preservados} rubro(s) liberados quedaron intactos.`);
+      setModalEditarApuOpen(true);
+      onDataChange?.();
+    } catch (err) {
+      setActionStatus("");
+      setActionError(err.message || "No se pudo aislar el APU.");
+    }
   };
 
   const editarApu = async () => {
@@ -440,6 +471,7 @@ export default function VinculacionView({
 
   const cerrarEditorApu = async ({ refresh = true } = {}) => {
     setModalEditarApuOpen(false);
+    setApuEditorOverride(null);
     if (refresh) {
       setActionStatus("APU actualizado.");
       onDataChange?.();
@@ -848,6 +880,9 @@ export default function VinculacionView({
               <ActionButton onClick={crearVarianteParaRubroActual}>
                 Solo este rubro
               </ActionButton>
+              <ActionButton onClick={aislarNoLiberados}>
+                Aislar no liberados
+              </ActionButton>
               <ActionButton variant="primary" onClick={abrirEditorApuGlobal}>
                 Editar compartido
               </ActionButton>
@@ -858,6 +893,7 @@ export default function VinculacionView({
             <div className="budget-v2-create-apu-intro">
               <strong>{selectedRow.apuNombre || selectedRow.apu}</strong>
               <span>Este APU esta vinculado a {apuImpacto.total_rubros} rubro(s). Si editas el compartido, el cambio se vera en todos esos rubros.</span>
+              <span>Aislar no liberados crea una variante para los rubros activos y conserva intactos los paquetes liberados.</span>
             </div>
             {(apuImpacto.paquetes || []).length > 0 && (
               <div className="budget-v2-impact-list">
@@ -884,7 +920,7 @@ export default function VinculacionView({
         </ModalShell>
       )}
 
-      {modalEditarApuOpen && selectedRow?.raw?.node?.apu_id && (
+      {modalEditarApuOpen && (apuEditorOverride || selectedRow?.raw?.node?.apu_id) && (
         <ModalShell
           title="Editar APU"
           size="lg"
@@ -892,7 +928,7 @@ export default function VinculacionView({
         >
           <div className="budget-v2-apu-editor-modal">
             <ApuDetalle
-              apu={{
+              apu={apuEditorOverride || {
                 id: selectedRow.raw.node.apu_id,
                 codigo: selectedRow.raw.apu?.codigo || selectedRow.apu,
                 nombre: selectedRow.raw.apu?.nombre || selectedRow.apuNombre || selectedRow.descripcion,

@@ -15,6 +15,7 @@ from app.models.apu import APU
 from app.models.presupuesto import NodoPresupuesto, Proyecto
 from app.api.presupuestos import (
     PaqueteCreate,
+    aislar_apu_no_liberados,
     crear_paquete,
     impacto_apu_paquetes,
     liberar_paquete,
@@ -111,6 +112,47 @@ class PaquetesPresupuestoTest(unittest.TestCase):
         self.assertEqual(len(impacto.paquetes), 1)
         self.assertEqual(impacto.paquetes[0].estado, "liberado")
         self.assertEqual(impacto.paquetes[0].rubros, 1)
+
+    def test_aislar_apu_reasigna_solo_no_liberados(self):
+        apu = APU(codigo="APU-AISLAR", nombre="APU aislar", unidad="u", rendimiento=1.0)
+        self.db.add(apu)
+        self.db.commit()
+        rubro_liberado = NodoPresupuesto(
+            proyecto_id=self.proyecto.id,
+            padre_id=self.nodo.id,
+            tipo="RUBRO",
+            descripcion="Rubro liberado",
+            orden=2,
+            unidad="u",
+            metrado=1,
+            apu_id=apu.id,
+            activo_como_rubro=True,
+        )
+        rubro_activo = NodoPresupuesto(
+            proyecto_id=self.proyecto.id,
+            tipo="RUBRO",
+            descripcion="Rubro activo",
+            orden=3,
+            unidad="u",
+            metrado=1,
+            apu_id=apu.id,
+            activo_como_rubro=True,
+        )
+        self.db.add_all([rubro_liberado, rubro_activo])
+        self.db.commit()
+        paquete = crear_paquete(self.proyecto.id, PaqueteCreate(nodo_id=self.nodo.id), self.db)
+        liberar_paquete(paquete.id, self.db)
+
+        result = aislar_apu_no_liberados(self.proyecto.id, apu.id, self.db)
+        self.db.refresh(rubro_liberado)
+        self.db.refresh(rubro_activo)
+
+        self.assertTrue(result.created)
+        self.assertEqual(result.rubros_reasignados, 1)
+        self.assertEqual(result.rubros_liberados_preservados, 1)
+        self.assertEqual(rubro_liberado.apu_id, apu.id)
+        self.assertEqual(rubro_activo.apu_id, result.apu_id)
+        self.assertEqual(result.variante.variante_nombre, "NO LIBERADOS")
 
 
 if __name__ == "__main__":

@@ -1279,6 +1279,14 @@ class VarianteAPUAsignadaOut(BaseModel):
 # CRUD Proyectos
 # ════════════════════════════════════════
 
+class AislarAPUNoLiberadosOut(BaseModel):
+    variante: VarianteAPUOut
+    apu_id: int
+    rubros_reasignados: int
+    rubros_liberados_preservados: int
+    created: bool = True
+
+
 @router.get("/proyectos/", response_model=list[ProyectoOut])
 def listar_proyectos(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     if not backup.existe_backup_diario_hoy():
@@ -2557,6 +2565,84 @@ def listar_variantes_apu(proyecto_id: int, apu_base_id: int, db: Session = Depen
         .all()
     )
     return [_variante_out(db, variante) for variante in variantes]
+
+
+@router.post("/proyectos/{proyecto_id}/apus/{apu_id}/aislar-no-liberados", response_model=AislarAPUNoLiberadosOut)
+def aislar_apu_no_liberados(proyecto_id: int, apu_id: int, db: Session = Depends(get_db)):
+    proyecto = db.query(Proyecto.id).filter(Proyecto.id == proyecto_id).first()
+    if not proyecto:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    source = (
+        db.query(APU)
+        .options(joinedload(APU.items))
+        .filter(APU.id == apu_id)
+        .first()
+    )
+    if not source:
+        raise HTTPException(status_code=404, detail="APU no encontrado")
+
+    base_apu = _apu_base(db, source)
+    nodos = db.query(NodoPresupuesto).filter(NodoPresupuesto.proyecto_id == proyecto_id).all()
+    hijos_por_padre: dict[Optional[int], list[NodoPresupuesto]] = {}
+    for nodo in nodos:
+        hijos_por_padre.setdefault(nodo.padre_id, []).append(nodo)
+
+    ids_liberados: set[int] = set()
+    paquetes_liberados = (
+        db.query(PaquetePresupuesto)
+        .filter(PaquetePresupuesto.proyecto_id == proyecto_id, PaquetePresupuesto.estado == "liberado")
+        .all()
+    )
+    for paquete in paquetes_liberados:
+        ids_liberados.add(paquete.nodo_id)
+        ids_liberados.update(_descendientes_ids(paquete.nodo_id, hijos_por_padre))
+
+    usos = [nodo for nodo in nodos if nodo.apu_id == apu_id]
+    rubros_liberados = [nodo for nodo in usos if nodo.id in ids_liberados]
+    rubros_no_liberados = [nodo for nodo in usos if nodo.id not in ids_liberados]
+    if not rubros_no_liberados:
+        raise HTTPException(status_code=400, detail="No hay rubros no liberados para aislar")
+
+    variante_nombre = "NO LIBERADOS"
+    variante = _buscar_variante_existente(db, proyecto_id, base_apu.id, variante_nombre)
+    created = False
+    if not variante:
+        variante = APU(
+            codigo=_siguiente_codigo_variante(db, base_apu),
+            nombre=f"{base_apu.nombre} - {variante_nombre}",
+            descripcion=source.descripcion or base_apu.descripcion,
+            categoria=source.categoria,
+            subcategoria=source.subcategoria,
+            unidad=source.unidad,
+            rendimiento=source.rendimiento,
+            estado="en_revision",
+            version=1,
+            observacion=f"Variante '{variante_nombre}' de {base_apu.codigo or base_apu.nombre}",
+            es_variante=True,
+            apu_base_id=base_apu.id,
+            proyecto_id=proyecto_id,
+            variante_nombre=variante_nombre,
+            copiado_desde_apu_id=source.id,
+        )
+        db.add(variante)
+        db.flush()
+        _copiar_items_apu(db, source, variante)
+        created = True
+
+    for nodo in rubros_no_liberados:
+        nodo.apu_id = variante.id
+        nodo.tipo_rubro = "VINCULADO"
+        nodo.observaciones = None
+
+    db.commit()
+    db.refresh(variante)
+    return AislarAPUNoLiberadosOut(
+        variante=_variante_out(db, variante),
+        apu_id=variante.id,
+        rubros_reasignados=len(rubros_no_liberados),
+        rubros_liberados_preservados=len(rubros_liberados),
+        created=created,
+    )
 
 
 @router.post("/nodos/{nodo_id}/variantes-apu", response_model=VarianteAPUAsignadaOut, status_code=201)
