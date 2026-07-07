@@ -78,9 +78,12 @@ export default function EdicionView({
   onDataChange,
   selectedTreeId = "all",
   setSelectedTreeId,
+  collapsedTreeIds,
+  setCollapsedTreeIds,
   selectedRowId,
   setSelectedRowId,
   onSelectionCountChange,
+  onRibbonActionsChange,
 }) {
   const displayRows = rows.length ? rows : emptyEditRows;
   const [activeCell, setActiveCell] = useState({ rowId: String(displayRows[0]?.id || "draft-1"), colKey: "descripcion" });
@@ -96,7 +99,6 @@ export default function EdicionView({
   const [searchQuery, setSearchQuery] = useState("");
   const [searchIndex, setSearchIndex] = useState(-1);
   const [confirmConfig, setConfirmConfig] = useState(null);
-  const [collapsedTreeIds, setCollapsedTreeIds] = useState(new Set());
   const [showTree, setShowTree] = useState(true);
   const [addRowsMenuOpen, setAddRowsMenuOpen] = useState(false);
   const [bulkRowCount, setBulkRowCount] = useState("5");
@@ -710,76 +712,119 @@ export default function EdicionView({
     });
   };
 
+  const ribbonActions = useMemo(() => [
+    {
+      key: "agregar-fila",
+      render: () => (
+        <span className="budget-v2-split-button" title={!canEditActiveRow ? addRowDisabledReason : ""}>
+          <button type="button" disabled={!canEditActiveRow} onClick={addRowBelow}>Agregar fila</button>
+          <button
+            type="button"
+            className="budget-v2-split-button-arrow"
+            disabled={!canEditActiveRow}
+            aria-label="Mas opciones para agregar filas"
+            aria-expanded={addRowsMenuOpen}
+            onClick={() => setAddRowsMenuOpen((open) => !open)}
+          >
+            v
+          </button>
+          {addRowsMenuOpen && canEditActiveRow && (
+            <form className="budget-v2-add-rows-menu" onSubmit={addBulkRows}>
+              <label htmlFor="budget-v2-bulk-row-count">Cantidad de filas</label>
+              <div>
+                <input
+                  id="budget-v2-bulk-row-count"
+                  type="number"
+                  min="1"
+                  max="100"
+                  step="1"
+                  value={bulkRowCount}
+                  onChange={(event) => setBulkRowCount(event.target.value)}
+                />
+                <button type="submit">Agregar</button>
+              </div>
+            </form>
+          )}
+        </span>
+      ),
+    },
+    {
+      key: "eliminar-fila",
+      render: () => (
+        <DisabledButton type="button" disabled={!canDeleteActiveRow} reason={deleteRowDisabledReason} onClick={confirmDeleteActiveRow}>
+          Eliminar fila
+        </DisabledButton>
+      ),
+    },
+    {
+      key: "subir",
+      render: () => (
+        <DisabledButton type="button" disabled={!canStructureActiveRow || Boolean(dirtyCount) || !moveAvailability.up} reason={upDisabledReason} onClick={() => moveRows("subir")}>
+          Subir
+        </DisabledButton>
+      ),
+    },
+    {
+      key: "bajar",
+      render: () => (
+        <DisabledButton type="button" disabled={!canStructureActiveRow || Boolean(dirtyCount) || !moveAvailability.down} reason={downDisabledReason} onClick={() => moveRows("bajar")}>
+          Bajar
+        </DisabledButton>
+      ),
+    },
+    {
+      key: "aplicar-sangria",
+      render: () => (
+        <DisabledButton type="button" disabled={!canStructureActiveRow || Boolean(dirtyCount)} reason={indentDisabledReason} onClick={applyIndent}>
+          Aplicar sangria
+        </DisabledButton>
+      ),
+    },
+    {
+      key: "quitar-sangria",
+      render: () => (
+        <DisabledButton type="button" disabled={!canStructureActiveRow || Boolean(dirtyCount)} reason={removeIndentDisabledReason} onClick={removeIndent}>
+          Quitar sangria
+        </DisabledButton>
+      ),
+    },
+    {
+      key: "guardar",
+      render: () => (
+        <button type="button" className="budget-v2-save-button" disabled={!dirtyCount} onClick={saveChanges}>
+          Guardar
+        </button>
+      ),
+    },
+  ], [
+    addRowDisabledReason,
+    addRowsMenuOpen,
+    activeRow,
+    bulkRowCount,
+    canDeleteActiveRow,
+    canEditActiveRow,
+    canStructureActiveRow,
+    deleteRowDisabledReason,
+    displayRows,
+    dirtyCount,
+    downDisabledReason,
+    drafts,
+    indentDisabledReason,
+    moveAvailability.down,
+    moveAvailability.up,
+    removeIndentDisabledReason,
+    selectedProjectId,
+    structureRows,
+    upDisabledReason,
+  ]);
+
+  useEffect(() => {
+    onRibbonActionsChange?.(ribbonActions);
+    return () => onRibbonActionsChange?.([]);
+  }, [onRibbonActionsChange, ribbonActions]);
+
   return (
     <>
-      <div className="budget-v2-toolbar">
-        <div className="budget-v2-toolbar-group">
-          <span className="budget-v2-split-button" title={!canEditActiveRow ? addRowDisabledReason : ""}>
-            <button type="button" disabled={!canEditActiveRow} onClick={addRowBelow}>Agregar fila</button>
-            <button
-              type="button"
-              className="budget-v2-split-button-arrow"
-              disabled={!canEditActiveRow}
-              aria-label="Mas opciones para agregar filas"
-              aria-expanded={addRowsMenuOpen}
-              onClick={() => setAddRowsMenuOpen((open) => !open)}
-            >
-              v
-            </button>
-            {addRowsMenuOpen && canEditActiveRow && (
-              <form className="budget-v2-add-rows-menu" onSubmit={addBulkRows}>
-                <label htmlFor="budget-v2-bulk-row-count">Cantidad de filas</label>
-                <div>
-                  <input
-                    id="budget-v2-bulk-row-count"
-                    type="number"
-                    min="1"
-                    max="100"
-                    step="1"
-                    value={bulkRowCount}
-                    onChange={(event) => setBulkRowCount(event.target.value)}
-                  />
-                  <button type="submit">Agregar</button>
-                </div>
-              </form>
-            )}
-          </span>
-          <DisabledButton type="button" disabled={!canDeleteActiveRow} reason={deleteRowDisabledReason} onClick={confirmDeleteActiveRow}>Eliminar fila</DisabledButton>
-        </div>
-        <div className="budget-v2-toolbar-group">
-          <DisabledButton type="button" disabled={!canStructureActiveRow || Boolean(dirtyCount) || !moveAvailability.up} reason={upDisabledReason} onClick={() => moveRows("subir")}>Subir</DisabledButton>
-          <DisabledButton type="button" disabled={!canStructureActiveRow || Boolean(dirtyCount) || !moveAvailability.down} reason={downDisabledReason} onClick={() => moveRows("bajar")}>Bajar</DisabledButton>
-          <DisabledButton type="button" disabled={!canStructureActiveRow || Boolean(dirtyCount)} reason={indentDisabledReason} onClick={applyIndent}>Aplicar sangria</DisabledButton>
-          <DisabledButton type="button" disabled={!canStructureActiveRow || Boolean(dirtyCount)} reason={removeIndentDisabledReason} onClick={removeIndent}>Quitar sangria</DisabledButton>
-        </div>
-        <div className="budget-v2-toolbar-spacer" />
-        <div className="budget-v2-search" role="search">
-          <input
-            type="search"
-            value={searchQuery}
-            placeholder="Buscar en edicion..."
-            aria-label="Buscar en edicion"
-            onChange={(event) => setSearchQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key !== "Enter") return;
-              event.preventDefault();
-              goToSearchMatch(event.shiftKey ? -1 : 1);
-            }}
-          />
-          <span>{searchQuery.trim() ? `${searchMatches.length} resultado(s)` : "Buscar"}</span>
-          <button type="button" disabled={!searchMatches.length} onClick={() => goToSearchMatch(-1)}>Anterior</button>
-          <button type="button" disabled={!searchMatches.length} onClick={() => goToSearchMatch(1)}>Siguiente</button>
-        </div>
-        <span className={`budget-v2-save-state ${dirtyCount ? "budget-v2-save-state-dirty" : ""}`}>{saveState}</span>
-        <button type="button" className="budget-v2-save-button" disabled={!dirtyCount} onClick={saveChanges}>Guardar</button>
-      </div>
-      {Boolean(dirtyCount) && (
-        <div className="budget-v2-state" style={{ margin: "0 0 10px", borderColor: "#fde68a", background: "#fffbeb", color: "#854d0e" }}>
-          Hay cambios pendientes sin guardar. Guarda los cambios antes de mover filas, aplicar sangria o quitar sangria.
-        </div>
-      )}
-      {error && <div className="budget-v2-edit-error">{error}</div>}
-
       <div className={`budget-v2-edit-layout ${!showTree ? "budget-v2-left-collapsed" : ""}`}>
         <CollapsibleSidePanel side="left" label="EDT" open={showTree} onToggle={() => setShowTree(value => !value)}>
           <PresupuestoTree
@@ -799,6 +844,34 @@ export default function EdicionView({
           onMouseUp={() => setDragging(false)}
           onMouseLeave={() => setDragging(false)}
         >
+          <div className="budget-v2-toolbar budget-v2-grid-toolbar">
+            <div className="budget-v2-toolbar-spacer" />
+            <div className="budget-v2-search" role="search">
+              <input
+                type="search"
+                value={searchQuery}
+                placeholder="Buscar en edicion..."
+                aria-label="Buscar en edicion"
+                onChange={(event) => setSearchQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter") return;
+                  event.preventDefault();
+                  goToSearchMatch(event.shiftKey ? -1 : 1);
+                }}
+              />
+              <span>{searchQuery.trim() ? `${searchMatches.length} resultado(s)` : "Buscar"}</span>
+              <button type="button" disabled={!searchMatches.length} onClick={() => goToSearchMatch(-1)}>Anterior</button>
+              <button type="button" disabled={!searchMatches.length} onClick={() => goToSearchMatch(1)}>Siguiente</button>
+            </div>
+            <span className={`budget-v2-save-state ${dirtyCount ? "budget-v2-save-state-dirty" : ""}`}>{saveState}</span>
+          </div>
+          {Boolean(dirtyCount) && (
+            <div className="budget-v2-state budget-v2-grid-state">
+              Hay cambios pendientes sin guardar. Guarda los cambios antes de mover filas, aplicar sangria o quitar sangria.
+            </div>
+          )}
+          {error && <div className="budget-v2-edit-error">{error}</div>}
+
           <div className="budget-v2-grid-header" style={{ gridTemplateColumns: gridTemplate }}>
             <div className="budget-v2-grid-corner" />
             {editColumns.map((column) => (

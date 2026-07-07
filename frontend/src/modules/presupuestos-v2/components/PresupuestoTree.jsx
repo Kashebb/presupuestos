@@ -67,7 +67,7 @@ export default function PresupuestoTree({
                       onToggleCollapse?.(row.id);
                     }}
                   >
-                    {collapsedTreeIds?.has(row.id) ? ">" : "v"}
+                    {collapsedTreeIds?.has(row.id) ? "+" : "-"}
                   </span>
                   <span>{row.descripcion}</span>
                   {row.paquete && <em className="budget-v2-tree-package">{row.paquete.estado === "liberado" ? "Liberado" : "Paquete"}</em>}

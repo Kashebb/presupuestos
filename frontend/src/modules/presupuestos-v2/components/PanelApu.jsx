@@ -147,7 +147,7 @@ export default function PanelApu({ selectedRow, onEditApu, onChangeApu, onUnlink
                 </div>
                 {tagError && <div className="budget-v2-panel-note budget-v2-panel-note-error">{tagError}</div>}
                 {onUpdateApuTags && (
-                  <button type="button" className="budget-v2-apu-primary" disabled={savingTags} onClick={saveTags}>
+                  <button type="button" className="budget-v2-panel-action budget-v2-panel-action-primary" disabled={savingTags} onClick={saveTags}>
                     {savingTags ? "Guardando..." : "Guardar etiquetas"}
                   </button>
                 )}

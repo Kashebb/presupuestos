@@ -13,7 +13,7 @@ export default function CollapsibleSidePanel({
         onClick={onToggle}
         title={`Mostrar ${label}`}
       >
-        <strong>{side === "left" ? ">" : "<"}</strong>
+        <strong>+</strong>
         <span>{label}</span>
       </button>
     );
@@ -28,7 +28,7 @@ export default function CollapsibleSidePanel({
         onClick={onToggle}
         title={`Ocultar ${label}`}
       >
-        {side === "left" ? "<" : ">"}
+        -
       </button>
     </div>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActionButton,
   ErrorBanner,
@@ -75,8 +75,10 @@ function pct(value) {
 export default function PresupuestosV2Shell() {
   const [view, setView] = useState("edicion");
   const [ribbonGroup, setRibbonGroup] = useState("edicion");
+  const [viewRibbonActions, setViewRibbonActions] = useState({});
   const [workspaceMode, setWorkspaceMode] = useState("lista");
   const [selectedTreeId, setSelectedTreeId] = useState("all");
+  const [collapsedTreeIds, setCollapsedTreeIds] = useState(new Set());
   const [selectedRowId, setSelectedRowId] = useState("");
   const [footerCount, setFooterCount] = useState(1);
   const [exportModalOpen, setExportModalOpen] = useState(false);
@@ -95,6 +97,14 @@ export default function PresupuestosV2Shell() {
   const [packageStatus, setPackageStatus] = useState("");
   const [packageSummaryOpen, setPackageSummaryOpen] = useState(false);
   const [showReleasedPackages, setShowReleasedPackages] = useState(false);
+
+  const setEdicionRibbonActions = useCallback((actions) => {
+    setViewRibbonActions((current) => ({ ...current, edicion: actions }));
+  }, []);
+
+  const setVinculacionRibbonActions = useCallback((actions) => {
+    setViewRibbonActions((current) => ({ ...current, vinculacion: actions }));
+  }, []);
   const {
     projects,
     selectedProject,
@@ -419,20 +429,16 @@ export default function PresupuestosV2Shell() {
     {
       id: "edicion",
       label: "Edicion",
-      actions: [
-        { label: "Abrir edicion", active: view === "edicion", onClick: () => switchView("edicion", "edicion") },
-        { label: "Agregar filas", onClick: () => switchView("edicion", "edicion"), hint: "Disponible dentro de la grilla de edicion." },
-        { label: "Guardar", onClick: () => switchView("edicion", "edicion"), hint: "Usa Guardar en la grilla cuando existan cambios pendientes." },
-      ],
+      actions: view === "edicion" && viewRibbonActions.edicion?.length
+        ? viewRibbonActions.edicion
+        : [{ label: "Editar presupuesto", active: view === "edicion", onClick: () => switchView("edicion", "edicion") }],
     },
     {
       id: "vinculacion",
       label: "Vinculacion",
-      actions: [
-        { label: "Abrir vinculacion", active: view === "vinculacion", onClick: () => switchView("vinculacion", "vinculacion") },
-        { label: "Vincular APU", onClick: () => switchView("vinculacion", "vinculacion"), hint: selectedRow ? `Seleccion actual: ${selectedRow.descripcion}` : "Selecciona un rubro para vincular." },
-        { label: "Subcontratado", onClick: () => switchView("vinculacion", "vinculacion") },
-      ],
+      actions: view === "vinculacion" && viewRibbonActions.vinculacion?.length
+        ? viewRibbonActions.vinculacion
+        : [{ label: "Vincular presupuesto", active: view === "vinculacion", onClick: () => switchView("vinculacion", "vinculacion") }],
     },
     {
       id: "apus",
@@ -488,43 +494,29 @@ export default function PresupuestosV2Shell() {
       ],
     },
     {
-      id: "orden",
-      label: "Orden",
-      actions: [
-        { label: "Subir / bajar", onClick: () => switchView("edicion", "orden"), hint: "Disponible en la barra compacta de edicion." },
-        { label: "Sangria", onClick: () => switchView("edicion", "orden") },
-        { label: "Quitar sangria", onClick: () => switchView("edicion", "orden") },
-      ],
-    },
-    {
-      id: "vista",
-      label: "Vista",
-      actions: [
-        { label: "Edicion", active: view === "edicion", onClick: () => switchView("edicion", "vista") },
-        { label: "Vinculacion", active: view === "vinculacion", onClick: () => switchView("vinculacion", "vista") },
-        { label: "Desglose", active: view === "desglose", onClick: () => switchView("desglose", "vista") },
-        { label: "Analisis", active: view === "analisis", onClick: () => switchView("analisis", "vista") },
-      ],
-    },
-    {
-      id: "exportar",
-      label: "Exportar",
+      id: "exportar-importar",
+      label: "Exportar/Importar",
       actions: [
         { label: "Exportar Excel", onClick: () => setExportModalOpen(true), disabled: !selectedProjectId || loading || Boolean(error) },
         { label: "Todo", onClick: () => exportProject("all", "todo"), disabled: !selectedProjectId || loading || Boolean(error) },
         { label: "Seleccion", onClick: () => exportProject("selected", "todo"), disabled: !selectedTreeRow || loading || Boolean(error) },
-      ],
-    },
-    {
-      id: "importar",
-      label: "Importar",
-      actions: [
         { label: "Importar Excel", disabled: true, hint: "Se mantiene fuera de esta fase para no tocar datos." },
       ],
     },
   ];
 
   const activeRibbonGroup = ribbonGroups.find((group) => group.id === ribbonGroup) || ribbonGroups[0];
+  const selectRibbonGroup = (groupId) => {
+    if (groupId === "edicion") {
+      switchView("edicion", "edicion");
+      return;
+    }
+    if (groupId === "vinculacion") {
+      switchView("vinculacion", "vinculacion");
+      return;
+    }
+    setRibbonGroup(groupId);
+  };
 
   if (workspaceMode === "lista") {
     return (
@@ -580,18 +572,6 @@ export default function PresupuestosV2Shell() {
 
   return (
     <div className="budget-v2-shell">
-      <header className="budget-v2-header">
-        <div>
-          <div className="budget-v2-kicker">Presupuesto operativo</div>
-          <h1>Presupuestos</h1>
-          <p>{selectedProject ? `${selectedProject.nombre} · ${selectedProject.codigo || "sin codigo"}` : "Lectura de datos reales del backend existente."}</p>
-        </div>
-        <div className="budget-v2-status">
-          <span>{view === "edicion" ? "Edicion" : view === "vinculacion" ? "Vinculacion" : view === "desglose" ? "Desglose" : "Analisis"}</span>
-          <strong>{view === "analisis" || view === "desglose" ? "Solo lectura" : "Activo"}</strong>
-        </div>
-      </header>
-
       <section className="budget-v2-workspace">
         <div className="budget-v2-projectbar">
           <button type="button" className="budget-v2-back-button" onClick={backToProjects}>Volver a proyectos</button>
@@ -612,7 +592,7 @@ export default function PresupuestosV2Shell() {
                 key={group.id}
                 type="button"
                 className={activeRibbonGroup.id === group.id ? "budget-v2-ribbon-tab-active" : ""}
-                onClick={() => setRibbonGroup(group.id)}
+                onClick={() => selectRibbonGroup(group.id)}
               >
                 {group.label}
               </button>
@@ -620,16 +600,22 @@ export default function PresupuestosV2Shell() {
           </div>
           <div className="budget-v2-ribbon-actions">
             {activeRibbonGroup.actions.map((action) => (
-              <button
-                key={action.label}
-                type="button"
-                className={action.active ? "budget-v2-ribbon-action-active" : ""}
-                disabled={action.disabled}
-                title={action.hint || ""}
-                onClick={action.onClick}
-              >
-                {action.label}
-              </button>
+              action.render ? (
+                <div key={action.key || action.label} className="budget-v2-ribbon-action-slot">
+                  {action.render()}
+                </div>
+              ) : (
+                <button
+                  key={action.key || action.label}
+                  type="button"
+                  className={action.active ? "budget-v2-ribbon-action-active" : ""}
+                  disabled={action.disabled}
+                  title={action.hint || ""}
+                  onClick={action.onClick}
+                >
+                  {action.label}
+                </button>
+              )
             ))}
           </div>
         </div>
@@ -642,9 +628,12 @@ export default function PresupuestosV2Shell() {
             onDataChange={reload}
             selectedTreeId={selectedTreeId}
             setSelectedTreeId={setSelectedTreeId}
+            collapsedTreeIds={collapsedTreeIds}
+            setCollapsedTreeIds={setCollapsedTreeIds}
             selectedRowId={selectedRowId}
             setSelectedRowId={setSelectedRowId}
             onSelectionCountChange={setFooterCount}
+            onRibbonActionsChange={setEdicionRibbonActions}
           />
         )}
         {resourceStatus && <div className="budget-v2-action-panel"><span className="budget-v2-action-status">{resourceStatus}</span></div>}
@@ -658,9 +647,12 @@ export default function PresupuestosV2Shell() {
             onDataChange={reload}
             selectedTreeId={selectedTreeId}
             setSelectedTreeId={setSelectedTreeId}
+            collapsedTreeIds={collapsedTreeIds}
+            setCollapsedTreeIds={setCollapsedTreeIds}
             selectedRowId={selectedRowId}
             setSelectedRowId={setSelectedRowId}
             onVisibleCountChange={setFooterCount}
+            onRibbonActionsChange={setVinculacionRibbonActions}
           />
         )}
         {view === "desglose" && (

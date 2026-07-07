@@ -87,12 +87,14 @@ export default function VinculacionView({
   onDataChange,
   selectedTreeId,
   setSelectedTreeId,
+  collapsedTreeIds,
+  setCollapsedTreeIds,
   selectedRowId,
   setSelectedRowId,
   onVisibleCountChange,
+  onRibbonActionsChange,
 }) {
   const [vincFilter, setVincFilter] = useState("pendiente");
-  const [collapsedTreeIds, setCollapsedTreeIds] = useState(new Set());
   const [modalVincularOpen, setModalVincularOpen] = useState(false);
   const [modalCrearOpen, setModalCrearOpen] = useState(false);
   const [modalEditarApuOpen, setModalEditarApuOpen] = useState(false);
@@ -487,6 +489,35 @@ export default function VinculacionView({
     });
   };
 
+  const ribbonActions = useMemo(() => [
+    {
+      key: "vincular-apu",
+      label: "Vincular APU",
+      disabled: !canUseSelectedLine,
+      hint: canUseSelectedLine ? "" : "Selecciona una linea operativa.",
+      onClick: () => setModalVincularOpen(true),
+    },
+    {
+      key: "subcontratado",
+      label: "Subcontratado",
+      disabled: !canUseSelectedLine || selectedRow.estado === "sin_apu",
+      hint: !canUseSelectedLine ? "Selecciona una linea operativa." : "",
+      onClick: marcarNoAplica,
+    },
+    {
+      key: "crear-apu",
+      label: "Crear APU",
+      disabled: !canCreateApu,
+      hint: canCreateApu ? "" : "Selecciona una linea sin APU y con unidad.",
+      onClick: () => setModalCrearOpen(true),
+    },
+  ], [canCreateApu, canUseSelectedLine, selectedRow]);
+
+  useEffect(() => {
+    onRibbonActionsChange?.(ribbonActions);
+    return () => onRibbonActionsChange?.([]);
+  }, [onRibbonActionsChange, ribbonActions]);
+
   return (
     <div className={`budget-v2-linking-layout ${!showTree ? "budget-v2-left-collapsed" : ""} ${!showApuPanel ? "budget-v2-right-collapsed" : ""}`}>
       <CollapsibleSidePanel side="left" label="EDT" open={showTree} onToggle={() => setShowTree(value => !value)}>
@@ -528,9 +559,6 @@ export default function VinculacionView({
             <button type="button" disabled={!searchMatches.length} onClick={() => goToSearchMatch(-1)}>Anterior</button>
             <button type="button" disabled={!searchMatches.length} onClick={() => goToSearchMatch(1)}>Siguiente</button>
           </div>
-          <button type="button" disabled={!canUseSelectedLine} onClick={() => setModalVincularOpen(true)}>Vincular APU</button>
-          <button type="button" disabled={!canUseSelectedLine || selectedRow.estado === "sin_apu"} onClick={marcarNoAplica}>Subcontratado</button>
-          <button type="button" disabled={!canCreateApu} onClick={() => setModalCrearOpen(true)}>Crear APU</button>
         </div>
         {(actionStatus || actionError) && (
           <div className="budget-v2-action-panel">
