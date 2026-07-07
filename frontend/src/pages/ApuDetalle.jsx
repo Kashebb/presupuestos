@@ -108,7 +108,7 @@ const InfoIcon = ({ tooltip }) => (
   </span>
 );
 
-export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "Volver a APUs" }) {
+export default function ApuDetalle({ apu: apuInicial, projectId = null, onVolver, volverLabel = "Volver a APUs" }) {
   const [apu, setApu]                       = useState(apuInicial);
   const [rendimientoEdit, setRendimientoEdit] = useState(apuInicial.rendimiento);
   const [items, setItems]                   = useState([]);
@@ -329,6 +329,57 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
       cancelarEditarRecurso();
     } catch (err) {
       setError(err.message || "No se pudo guardar el recurso.");
+    } finally {
+      setRecursoGuardando(false);
+    }
+  };
+
+  const guardarRecursoSoloProyecto = async () => {
+    if (!projectId || !recursoDraft?.id) return;
+    if (recursoDraft.proyecto_id) {
+      await guardarRecursoEditado();
+      return;
+    }
+    const precio = parseNumero(recursoDraft.precio_unitario);
+    if (!recursoDraft.descripcion?.trim() || !recursoDraft.unidad?.trim()) {
+      setError("Nombre y unidad del recurso son obligatorios.");
+      return;
+    }
+    if (!Number.isFinite(precio) || precio < 0) {
+      setError("El precio del recurso no es valido.");
+      return;
+    }
+
+    setRecursoGuardando(true);
+    setError("");
+    try {
+      const response = await fetch(`${API}/presupuestos/proyectos/${projectId}/apus/${apu.id}/recursos/${recursoDraft.id}/copiar-para-proyecto`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          descripcion: recursoDraft.descripcion.trim(),
+          unidad: recursoDraft.unidad.trim(),
+          precio_unitario: round4(precio),
+          fuente_precio: recursoDraft.fuente_precio?.trim() || null,
+          observacion: recursoDraft.observacion?.trim() || null,
+          estado_validacion: recursoDraft.estado_validacion || "pendiente",
+          nota_validacion: recursoDraft.nota_validacion?.trim() || null,
+        }),
+      });
+      const detail = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(detail?.detail || "No se pudo crear el recurso del proyecto.");
+      setRecursos((actuales) => {
+        const sinDuplicado = actuales.filter((recurso) => recurso.id !== detail.recurso.id);
+        return [...sinDuplicado, detail.recurso];
+      });
+      setItems((actuales) => actuales.map((item) => (
+        item.recurso_id === recursoDraft.id ? { ...item, recurso_id: detail.recurso_id } : item
+      )));
+      const costo = await fetch(`${API}/apus/${apu.id}/costo`).then(r => r.ok ? r.json() : null).catch(() => null);
+      setCostoOficial(costo);
+      cancelarEditarRecurso();
+    } catch (err) {
+      setError(err.message || "No se pudo crear el recurso del proyecto.");
     } finally {
       setRecursoGuardando(false);
     }
@@ -947,9 +998,15 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
                                   style={{ border: "1px solid #cbd5e1", borderRadius: "6px", background: "#fff", color: "#475569", cursor: "pointer", fontSize: "0.78rem", fontWeight: 700, padding: "7px 10px" }}>
                                   Cancelar
                                 </button>
+                                {projectId && (
+                                  <button type="button" onClick={guardarRecursoSoloProyecto} disabled={recursoGuardando}
+                                    style={{ border: "1px solid #0f766e", borderRadius: "6px", background: "#0f766e", color: "#fff", cursor: "pointer", fontSize: "0.78rem", fontWeight: 700, padding: "7px 10px" }}>
+                                    {recursoDraft.proyecto_id ? "Guardar proyecto" : "Solo proyecto"}
+                                  </button>
+                                )}
                                 <button type="button" onClick={guardarRecursoEditado} disabled={recursoGuardando}
                                   style={{ border: "1px solid #166534", borderRadius: "6px", background: "#166534", color: "#fff", cursor: "pointer", fontSize: "0.78rem", fontWeight: 700, padding: "7px 10px" }}>
-                                  {recursoGuardando ? "Guardando..." : "Guardar recurso"}
+                                  {recursoGuardando ? "Guardando..." : "Guardar maestro"}
                                 </button>
                               </div>
                             </div>

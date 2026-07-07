@@ -11,11 +11,14 @@ BACKEND = ROOT / "backend"
 sys.path.insert(0, str(BACKEND))
 
 from app.models.base import Base
-from app.models.apu import APU
+from app.models.apu import APU, APUItem
 from app.models.presupuesto import NodoPresupuesto, Proyecto
+from app.models.recurso import Recurso
 from app.api.presupuestos import (
     PaqueteCreate,
+    RecursoProyectoUpdate,
     aislar_apu_no_liberados,
+    copiar_recurso_para_proyecto,
     crear_paquete,
     impacto_apu_paquetes,
     liberar_paquete,
@@ -153,6 +156,51 @@ class PaquetesPresupuestoTest(unittest.TestCase):
         self.assertEqual(rubro_liberado.apu_id, apu.id)
         self.assertEqual(rubro_activo.apu_id, result.apu_id)
         self.assertEqual(result.variante.variante_nombre, "NO LIBERADOS")
+
+    def test_copia_recurso_para_proyecto_y_actualiza_apu(self):
+        recurso = Recurso(
+            codigo="MAT-MAESTRO",
+            descripcion="Material maestro",
+            categoria="material",
+            unidad="u",
+            precio_unitario=1.0,
+        )
+        apu = APU(
+            codigo="APU-PROY",
+            nombre="APU proyecto",
+            unidad="u",
+            rendimiento=1.0,
+            es_variante=True,
+            proyecto_id=self.proyecto.id,
+            variante_nombre="PROYECTO",
+        )
+        self.db.add_all([recurso, apu])
+        self.db.flush()
+        apu.items.append(APUItem(recurso_id=recurso.id, categoria="material", cantidad=1.0, orden=1))
+        self.db.commit()
+
+        result = copiar_recurso_para_proyecto(
+            self.proyecto.id,
+            apu.id,
+            recurso.id,
+            RecursoProyectoUpdate(
+                descripcion="Material proyecto",
+                unidad="u",
+                precio_unitario=2.5,
+                fuente_precio="Cotizacion A",
+                observacion="Solo proyecto",
+                estado_validacion="aprobado",
+            ),
+            self.db,
+        )
+
+        item = self.db.query(APUItem).filter(APUItem.apu_id == apu.id).first()
+        self.assertTrue(result.created)
+        self.assertNotEqual(result.recurso_id, recurso.id)
+        self.assertEqual(item.recurso_id, result.recurso_id)
+        self.assertEqual(result.recurso.proyecto_id, self.proyecto.id)
+        self.assertEqual(result.recurso.recurso_base_id, recurso.id)
+        self.assertEqual(result.recurso.precio_unitario, 2.5)
 
 
 if __name__ == "__main__":

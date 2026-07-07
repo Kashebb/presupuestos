@@ -3,6 +3,8 @@ from typing import Optional, List
 from datetime import date
 
 class RecursoBase(BaseModel):
+    proyecto_id: Optional[int] = None
+    recurso_base_id: Optional[int] = None
     codigo: str
     descripcion: str
     categoria: str

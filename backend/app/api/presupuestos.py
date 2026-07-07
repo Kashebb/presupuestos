@@ -13,6 +13,7 @@ Rutas:
 """
 import io
 import json
+import math
 import re
 import unicodedata
 from typing import Optional, Any
@@ -28,7 +29,9 @@ from app import backup
 from app.db import get_db
 from app.models.presupuesto import Proyecto, NodoPresupuesto, ActualizacionPresupuestoLote, PaquetePresupuesto
 from app.models.apu import APU, APUItem
+from app.models.recurso import Recurso
 from app.api.apus import calcular_costo_apu, siguiente_codigo_apu
+from app.schemas.recurso import RecursoOut
 
 router = APIRouter(prefix="/presupuestos", tags=["Presupuestos"])
 
@@ -1116,6 +1119,16 @@ def _copiar_items_apu(db: Session, source: APU, destino: APU) -> None:
         )
 
 
+def _codigo_recurso_proyecto(db: Session, recurso: Recurso, proyecto_id: int) -> str:
+    base = f"{recurso.codigo}-P{proyecto_id}" if recurso.codigo else f"REC-{recurso.id}-P{proyecto_id}"
+    candidato = base
+    contador = 2
+    while db.query(Recurso.id).filter(Recurso.codigo == candidato).first():
+        candidato = f"{base}-{contador}"
+        contador += 1
+    return candidato
+
+
 def _descendientes_ids(nodo_id: int, hijos_por_padre: dict[Optional[int], list[NodoPresupuesto]]) -> set[int]:
     ids = set()
     pendientes = list(hijos_por_padre.get(nodo_id, []))
@@ -1284,6 +1297,23 @@ class AislarAPUNoLiberadosOut(BaseModel):
     apu_id: int
     rubros_reasignados: int
     rubros_liberados_preservados: int
+    created: bool = True
+
+
+class RecursoProyectoUpdate(BaseModel):
+    descripcion: str
+    unidad: str
+    precio_unitario: float
+    fuente_precio: Optional[str] = None
+    observacion: Optional[str] = None
+    estado_validacion: str = "pendiente"
+    nota_validacion: Optional[str] = None
+
+
+class RecursoProyectoOut(BaseModel):
+    recurso: RecursoOut
+    recurso_id: int
+    apu_id: int
     created: bool = True
 
 
@@ -2643,6 +2673,86 @@ def aislar_apu_no_liberados(proyecto_id: int, apu_id: int, db: Session = Depends
         rubros_liberados_preservados=len(rubros_liberados),
         created=created,
     )
+
+
+@router.post("/proyectos/{proyecto_id}/apus/{apu_id}/recursos/{recurso_id}/copiar-para-proyecto", response_model=RecursoProyectoOut)
+def copiar_recurso_para_proyecto(
+    proyecto_id: int,
+    apu_id: int,
+    recurso_id: int,
+    data: RecursoProyectoUpdate,
+    db: Session = Depends(get_db),
+):
+    proyecto = db.query(Proyecto.id).filter(Proyecto.id == proyecto_id).first()
+    if not proyecto:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    apu = db.query(APU).filter(APU.id == apu_id).first()
+    if not apu:
+        raise HTTPException(status_code=404, detail="APU no encontrado")
+    if not apu.es_variante or apu.proyecto_id != proyecto_id:
+        raise HTTPException(status_code=400, detail="Primero aisla o crea una variante APU para este proyecto")
+    recurso_base = db.query(Recurso).filter(Recurso.id == recurso_id).first()
+    if not recurso_base:
+        raise HTTPException(status_code=404, detail="Recurso no encontrado")
+    item_existe = (
+        db.query(APUItem.id)
+        .filter(APUItem.apu_id == apu_id, APUItem.recurso_id == recurso_id)
+        .first()
+    )
+    if not item_existe:
+        raise HTTPException(status_code=404, detail="El recurso no esta usado por este APU")
+    if data.precio_unitario < 0 or not math.isfinite(data.precio_unitario):
+        raise HTTPException(status_code=400, detail="Precio invalido")
+    descripcion = " ".join(data.descripcion.split())
+    unidad = " ".join(data.unidad.split())
+    if not descripcion or not unidad:
+        raise HTTPException(status_code=400, detail="Nombre y unidad del recurso son obligatorios")
+
+    recurso = (
+        db.query(Recurso)
+        .filter(Recurso.proyecto_id == proyecto_id, Recurso.recurso_base_id == recurso_id)
+        .first()
+    )
+    created = False
+    if not recurso:
+        recurso = Recurso(
+            proyecto_id=proyecto_id,
+            recurso_base_id=recurso_id,
+            codigo=_codigo_recurso_proyecto(db, recurso_base, proyecto_id),
+            descripcion=descripcion,
+            categoria=recurso_base.categoria,
+            subcategoria=recurso_base.subcategoria,
+            familia=recurso_base.familia,
+            unidad=unidad,
+            precio_unitario=data.precio_unitario,
+            fecha_precio=recurso_base.fecha_precio,
+            fecha_validacion=recurso_base.fecha_validacion,
+            etiquetas=list(recurso_base.etiquetas or []),
+            activo=True,
+        )
+        db.add(recurso)
+        db.flush()
+        created = True
+
+    recurso.descripcion = descripcion
+    recurso.unidad = unidad
+    recurso.precio_unitario = data.precio_unitario
+    recurso.fuente_precio = data.fuente_precio
+    recurso.observacion = data.observacion
+    recurso.estado_validacion = data.estado_validacion or "pendiente"
+    recurso.fuente_validacion = "PRESUPUESTOS"
+    recurso.nota_validacion = data.nota_validacion
+    if "especial del proyecto" not in (recurso.etiquetas or []):
+        recurso.etiquetas = [*(recurso.etiquetas or []), "especial del proyecto"]
+
+    (
+        db.query(APUItem)
+        .filter(APUItem.apu_id == apu_id, APUItem.recurso_id == recurso_id)
+        .update({APUItem.recurso_id: recurso.id}, synchronize_session=False)
+    )
+    db.commit()
+    db.refresh(recurso)
+    return RecursoProyectoOut(recurso=recurso, recurso_id=recurso.id, apu_id=apu_id, created=created)
 
 
 @router.post("/nodos/{nodo_id}/variantes-apu", response_model=VarianteAPUAsignadaOut, status_code=201)

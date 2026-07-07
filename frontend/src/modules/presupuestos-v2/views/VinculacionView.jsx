@@ -936,6 +936,7 @@ export default function VinculacionView({
                 rendimiento: selectedRow.rendimiento || 1,
                 estado: selectedRow.raw.apu?.estado || "en_revision",
               }}
+              projectId={selectedProjectId}
               onVolver={() => cerrarEditorApu({ refresh: true })}
               volverLabel="Guardar y cerrar"
             />
