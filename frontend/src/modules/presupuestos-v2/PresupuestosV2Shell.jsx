@@ -62,6 +62,16 @@ function parseNumero(valor) {
   return Number(normalizado);
 }
 
+function fmtMoney(value) {
+  if (!Number.isFinite(value)) return "$0.00";
+  return `$${value.toLocaleString("es-EC", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function pct(value) {
+  if (!Number.isFinite(value)) return "0%";
+  return `${value.toLocaleString("es-EC", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}%`;
+}
+
 export default function PresupuestosV2Shell() {
   const [view, setView] = useState("edicion");
   const [ribbonGroup, setRibbonGroup] = useState("edicion");
@@ -83,6 +93,7 @@ export default function PresupuestosV2Shell() {
   const [packageSaving, setPackageSaving] = useState(false);
   const [packageError, setPackageError] = useState("");
   const [packageStatus, setPackageStatus] = useState("");
+  const [packageSummaryOpen, setPackageSummaryOpen] = useState(false);
   const [showReleasedPackages, setShowReleasedPackages] = useState(false);
   const {
     projects,
@@ -150,6 +161,44 @@ export default function PresupuestosV2Shell() {
       });
     return rows.filter((row) => !hiddenIds.has(row.id));
   }, [paquetes, rows, showReleasedPackages]);
+  const packageSummaries = useMemo(() => {
+    return paquetes.map((paquete) => {
+      const ids = descendantsOf(rows, String(paquete.nodo_id));
+      const packageRows = rows.filter((row) => ids.has(row.id));
+      const lines = packageRows.filter((row) => row.kind === "line");
+      const totalRef = lines.reduce((sum, row) => sum + Number(row.raw?.totalRef || 0), 0);
+      const totalMeta = lines.reduce((sum, row) => sum + Number(row.raw?.totalMeta || 0), 0);
+      const linked = lines.filter((row) => row.estado === "vinculado" || row.estado === "revisar").length;
+      const pending = lines.filter((row) => row.estado === "pendiente").length;
+      const sinApu = lines.filter((row) => row.estado === "sin_apu").length;
+      const revisar = lines.filter((row) => row.estado === "revisar").length;
+      const progress = lines.length ? (linked / lines.length) * 100 : 0;
+      return {
+        ...paquete,
+        lines: lines.length,
+        linked,
+        pending,
+        sinApu,
+        revisar,
+        progress,
+        totalRef,
+        totalMeta,
+        diff: totalMeta - totalRef,
+      };
+    }).sort((a, b) => (a.estado === "liberado") - (b.estado === "liberado") || a.nombre.localeCompare(b.nombre));
+  }, [paquetes, rows]);
+  const packageTotals = useMemo(() => {
+    return packageSummaries.reduce((acc, item) => {
+      acc.paquetes += 1;
+      acc.liberados += item.estado === "liberado" ? 1 : 0;
+      acc.rubros += item.lines;
+      acc.pendientes += item.pending;
+      acc.revisar += item.revisar;
+      acc.totalRef += item.totalRef;
+      acc.totalMeta += item.totalMeta;
+      return acc;
+    }, { paquetes: 0, liberados: 0, rubros: 0, pendientes: 0, revisar: 0, totalRef: 0, totalMeta: 0 });
+  }, [packageSummaries]);
 
   useEffect(() => {
     if (selectedTreeId !== "all" && !visibleRows.some((row) => row.id === selectedTreeId)) {
@@ -406,6 +455,12 @@ export default function PresupuestosV2Shell() {
       id: "paquetes",
       label: "Paquetes",
       actions: [
+        {
+          label: "Resumen",
+          onClick: () => setPackageSummaryOpen(true),
+          disabled: !paquetes.length,
+          hint: "Ver avance, totales y estado por paquete.",
+        },
         {
           label: "Crear paquete",
           onClick: abrirCrearPaquete,
@@ -676,6 +731,81 @@ export default function PresupuestosV2Shell() {
                   <strong>{selectedTreeRow ? selectedTreeRow.descripcion : "No hay rama seleccionada"}</strong>
                   <span>{selectedTreeRow ? "Aplica la vista elegida solo dentro de esta rama." : "Selecciona una rama en el arbol para habilitar esta opcion."}</span>
                 </div>
+              </div>
+            </div>
+          </ModalShell>
+        )}
+        {packageSummaryOpen && (
+          <ModalShell
+            title="Resumen de paquetes"
+            size="lg"
+            onClose={() => setPackageSummaryOpen(false)}
+            footer={<ActionButton onClick={() => setPackageSummaryOpen(false)}>Cerrar</ActionButton>}
+          >
+            <div className="budget-v2-package-summary">
+              <div className="budget-v2-package-summary-metrics">
+                <div>
+                  <small>Paquetes</small>
+                  <strong>{packageTotals.paquetes}</strong>
+                </div>
+                <div>
+                  <small>Liberados</small>
+                  <strong>{packageTotals.liberados}</strong>
+                </div>
+                <div>
+                  <small>Rubros</small>
+                  <strong>{packageTotals.rubros}</strong>
+                </div>
+                <div>
+                  <small>Pendientes</small>
+                  <strong>{packageTotals.pendientes}</strong>
+                </div>
+                <div>
+                  <small>Total meta</small>
+                  <strong>{fmtMoney(packageTotals.totalMeta)}</strong>
+                </div>
+              </div>
+              <div className="budget-v2-package-summary-table">
+                <div className="budget-v2-package-summary-head">
+                  <span>Paquete</span>
+                  <span>Avance</span>
+                  <span>Rubros</span>
+                  <span>Pend.</span>
+                  <span>Revisar</span>
+                  <span>Total ref</span>
+                  <span>Total meta</span>
+                  <span>Dif.</span>
+                </div>
+                {packageSummaries.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="budget-v2-package-summary-row"
+                    onClick={() => {
+                      setSelectedTreeId(String(item.nodo_id));
+                      setSelectedRowId(String(item.nodo_id));
+                      setPackageSummaryOpen(false);
+                    }}
+                  >
+                    <span>
+                      <strong>{item.nombre}</strong>
+                      <small>{item.estado === "liberado" ? "Liberado" : "Activo"}</small>
+                    </span>
+                    <span>
+                      <i><b style={{ width: `${Math.min(100, Math.max(0, item.progress))}%` }} /></i>
+                      <small>{pct(item.progress)}</small>
+                    </span>
+                    <span>{item.lines}</span>
+                    <span>{item.pending}</span>
+                    <span>{item.revisar}</span>
+                    <span>{fmtMoney(item.totalRef)}</span>
+                    <span>{fmtMoney(item.totalMeta)}</span>
+                    <span className={item.diff >= 0 ? "budget-v2-package-diff-positive" : "budget-v2-package-diff-negative"}>{fmtMoney(item.diff)}</span>
+                  </button>
+                ))}
+                {!packageSummaries.length && (
+                  <div className="budget-v2-tree-empty">No hay paquetes definidos en este proyecto.</div>
+                )}
               </div>
             </div>
           </ModalShell>

@@ -1687,6 +1687,114 @@ textarea {
   color: #991b1b;
 }
 
+.budget-v2-package-summary {
+  display: grid;
+  gap: 12px;
+}
+
+.budget-v2-package-summary-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.budget-v2-package-summary-metrics div {
+  display: grid;
+  gap: 3px;
+  border: 1px solid #e5e7eb;
+  border-radius: var(--radius-sm);
+  background: #f8fafc;
+  padding: 9px;
+}
+
+.budget-v2-package-summary-metrics small,
+.budget-v2-package-summary-row small {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.budget-v2-package-summary-metrics strong {
+  color: #111827;
+  font-size: 15px;
+}
+
+.budget-v2-package-summary-table {
+  display: grid;
+  overflow-x: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: var(--radius-sm);
+}
+
+.budget-v2-package-summary-head,
+.budget-v2-package-summary-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) 120px 58px 58px 58px 110px 110px 110px;
+  gap: 8px;
+  align-items: center;
+  min-width: 860px;
+  padding: 8px 10px;
+}
+
+.budget-v2-package-summary-head {
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.budget-v2-package-summary-row {
+  border: 0;
+  border-top: 1px solid #eef2f7;
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+}
+
+.budget-v2-package-summary-row:hover {
+  background: #f8fafc;
+}
+
+.budget-v2-package-summary-row > span:first-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.budget-v2-package-summary-row strong {
+  overflow: hidden;
+  color: #111827;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.budget-v2-package-summary-row i {
+  display: block;
+  overflow: hidden;
+  width: 72px;
+  height: 7px;
+  border-radius: 999px;
+  background: #e5e7eb;
+}
+
+.budget-v2-package-summary-row i b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #16a34a;
+}
+
+.budget-v2-package-diff-positive {
+  color: #b45309;
+  font-weight: 850;
+}
+
+.budget-v2-package-diff-negative {
+  color: #166534;
+  font-weight: 850;
+}
+
 .budget-v2-tag-picker {
   display: flex;
   flex-wrap: wrap;
