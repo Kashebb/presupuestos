@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { ActionButton, PageHeader, SectionHeader } from "../components/ui";
 
 const API = "http://127.0.0.1:8000";
@@ -16,6 +16,13 @@ const ESTADOS_APU = [
   ["revisar_costo", "Revisar costo"],
   ["inactivo", "Inactivo"],
   ["activo", "Activo"],
+];
+
+const ESTADOS_VALIDACION_RECURSO = [
+  ["pendiente", "Pendiente"],
+  ["aprobado", "Aprobado"],
+  ["referencial", "Referencial"],
+  ["incompleto", "Incompleto"],
 ];
 
 const normalizarBusqueda = (valor) =>
@@ -122,6 +129,9 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
   const [categoriasCostoObjetivo, setCategoriasCostoObjetivo] = useState(["equipo", "mano_de_obra"]);
   const [costoObjetivoValor, setCostoObjetivoValor] = useState("");
   const [panelCostoObjetivoOpen, setPanelCostoObjetivoOpen] = useState(false);
+  const [recursoEditandoId, setRecursoEditandoId] = useState(null);
+  const [recursoDraft, setRecursoDraft] = useState(null);
+  const [recursoGuardando, setRecursoGuardando] = useState(false);
 
   useEffect(() => {
     const cargar = async () => {
@@ -253,6 +263,76 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
   };
 
   // â”€â”€ Agregar ítem â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  const iniciarEditarRecurso = (recurso) => {
+    if (!recurso) return;
+    setRecursoEditandoId(recurso.id);
+    setRecursoDraft({
+      ...recurso,
+      precio_unitario: fmt4(recurso.precio_unitario),
+      fuente_precio: recurso.fuente_precio || "",
+      observacion: recurso.observacion || "",
+      estado_validacion: recurso.estado_validacion || "pendiente",
+      nota_validacion: recurso.nota_validacion || "",
+    });
+    setError("");
+  };
+
+  const cancelarEditarRecurso = () => {
+    setRecursoEditandoId(null);
+    setRecursoDraft(null);
+    setRecursoGuardando(false);
+  };
+
+  const guardarRecursoEditado = async () => {
+    if (!recursoDraft?.id) return;
+    const precio = parseNumero(recursoDraft.precio_unitario);
+    if (!recursoDraft.descripcion?.trim()) {
+      setError("El nombre del recurso es obligatorio.");
+      return;
+    }
+    if (!recursoDraft.unidad?.trim()) {
+      setError("La unidad del recurso es obligatoria.");
+      return;
+    }
+    if (!Number.isFinite(precio) || precio < 0) {
+      setError("El precio del recurso no es valido.");
+      return;
+    }
+
+    setRecursoGuardando(true);
+    setError("");
+    try {
+      const body = {
+        ...recursoDraft,
+        descripcion: recursoDraft.descripcion.trim(),
+        unidad: recursoDraft.unidad.trim(),
+        precio_unitario: round4(precio),
+        fuente_precio: recursoDraft.fuente_precio?.trim() || null,
+        observacion: recursoDraft.observacion?.trim() || null,
+        estado_validacion: recursoDraft.estado_validacion || "pendiente",
+        fuente_validacion: "PRESUPUESTOS",
+        nota_validacion: recursoDraft.nota_validacion?.trim() || null,
+        activo: recursoDraft.activo !== false,
+        etiquetas: Array.isArray(recursoDraft.etiquetas) ? recursoDraft.etiquetas : [],
+      };
+      const response = await fetch(`${API}/recursos/${recursoDraft.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const detail = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(detail?.detail || "No se pudo guardar el recurso.");
+      setRecursos((actuales) => actuales.map((recurso) => recurso.id === detail.id ? detail : recurso));
+      const costo = await fetch(`${API}/apus/${apu.id}/costo`).then(r => r.ok ? r.json() : null).catch(() => null);
+      setCostoOficial(costo);
+      cancelarEditarRecurso();
+    } catch (err) {
+      setError(err.message || "No se pudo guardar el recurso.");
+    } finally {
+      setRecursoGuardando(false);
+    }
+  };
 
   const confirmarAgregar = async () => {
     if (!formItem.recurso_id) { setError("Selecciona un recurso."); return; }
@@ -761,7 +841,8 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
                     const C = recurso ? round4(round4(item.cantidad) * round4(recurso.precio_unitario)) : 0;
                     const D = usaRendimiento ? round4(C * round4(R)) : C;
                     return (
-                      <tr key={globalIdx}
+                      <Fragment key={globalIdx}>
+                      <tr
                         onMouseEnter={e => e.currentTarget.style.background = "#f9fafb"}
                         onMouseLeave={e => e.currentTarget.style.background = ""}>
 
@@ -812,13 +893,70 @@ export default function ApuDetalle({ apu: apuInicial, onVolver, volverLabel = "V
                         )}
 
                         {/* Eliminar */}
-                        <td style={{ ...tdR, padding: "9px 6px" }}>
+                        <td style={{ ...tdR, padding: "9px 6px", whiteSpace: "nowrap" }}>
+                          {recurso && (
+                            <button type="button" onClick={() => iniciarEditarRecurso(recurso)}
+                              style={{ background: "none", border: "1px solid #bbf7d0", borderRadius: "5px", cursor: "pointer", color: "#166534", fontSize: "0.72rem", fontWeight: 700, padding: "3px 6px", marginRight: "4px" }}>
+                              Editar
+                            </button>
+                          )}
                           <button onClick={() => eliminarItem(globalIdx)}
                             style={{ background: "none", border: "none", cursor: "pointer", color: "#d1d5db", fontSize: "1rem" }}
                             onMouseEnter={e => e.currentTarget.style.color = "#ef4444"}
                             onMouseLeave={e => e.currentTarget.style.color = "#d1d5db"}>✕</button>
                         </td>
                       </tr>
+                      {recursoEditandoId === recurso?.id && recursoDraft && (
+                        <tr>
+                          <td colSpan={7} style={{ padding: "10px 14px", background: "#f8fafc", borderBottom: "1px solid #e5e7eb" }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "8px", alignItems: "end" }}>
+                              <label style={{ display: "grid", gap: "4px", color: "#64748b", fontSize: "0.72rem", fontWeight: 700 }}>
+                                Nombre
+                                <input value={recursoDraft.descripcion || ""} onChange={e => setRecursoDraft({ ...recursoDraft, descripcion: e.target.value })}
+                                  style={{ border: "1px solid #cbd5e1", borderRadius: "6px", padding: "6px 8px", fontSize: "0.8rem" }} />
+                              </label>
+                              <label style={{ display: "grid", gap: "4px", color: "#64748b", fontSize: "0.72rem", fontWeight: 700 }}>
+                                Unidad
+                                <input value={recursoDraft.unidad || ""} onChange={e => setRecursoDraft({ ...recursoDraft, unidad: e.target.value })}
+                                  style={{ border: "1px solid #cbd5e1", borderRadius: "6px", padding: "6px 8px", fontSize: "0.8rem" }} />
+                              </label>
+                              <label style={{ display: "grid", gap: "4px", color: "#64748b", fontSize: "0.72rem", fontWeight: 700 }}>
+                                Precio
+                                <input type="text" inputMode="decimal" value={recursoDraft.precio_unitario || ""} onChange={e => setRecursoDraft({ ...recursoDraft, precio_unitario: e.target.value })}
+                                  style={{ border: "1px solid #cbd5e1", borderRadius: "6px", padding: "6px 8px", fontSize: "0.8rem", textAlign: "right" }} />
+                              </label>
+                              <label style={{ display: "grid", gap: "4px", color: "#64748b", fontSize: "0.72rem", fontWeight: 700 }}>
+                                Fuente/cotizacion
+                                <input value={recursoDraft.fuente_precio || ""} onChange={e => setRecursoDraft({ ...recursoDraft, fuente_precio: e.target.value })}
+                                  style={{ border: "1px solid #cbd5e1", borderRadius: "6px", padding: "6px 8px", fontSize: "0.8rem" }} />
+                              </label>
+                              <label style={{ display: "grid", gap: "4px", color: "#64748b", fontSize: "0.72rem", fontWeight: 700 }}>
+                                Estado
+                                <select value={recursoDraft.estado_validacion || "pendiente"} onChange={e => setRecursoDraft({ ...recursoDraft, estado_validacion: e.target.value })}
+                                  style={{ border: "1px solid #cbd5e1", borderRadius: "6px", padding: "6px 8px", fontSize: "0.8rem", background: "#fff" }}>
+                                  {ESTADOS_VALIDACION_RECURSO.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                                </select>
+                              </label>
+                              <label style={{ display: "grid", gridColumn: "span 2", gap: "4px", color: "#64748b", fontSize: "0.72rem", fontWeight: 700 }}>
+                                Observacion
+                                <input value={recursoDraft.observacion || ""} onChange={e => setRecursoDraft({ ...recursoDraft, observacion: e.target.value })}
+                                  style={{ border: "1px solid #cbd5e1", borderRadius: "6px", padding: "6px 8px", fontSize: "0.8rem" }} />
+                              </label>
+                              <div style={{ display: "flex", gridColumn: "span 2", gap: "8px", justifyContent: "flex-end" }}>
+                                <button type="button" onClick={cancelarEditarRecurso}
+                                  style={{ border: "1px solid #cbd5e1", borderRadius: "6px", background: "#fff", color: "#475569", cursor: "pointer", fontSize: "0.78rem", fontWeight: 700, padding: "7px 10px" }}>
+                                  Cancelar
+                                </button>
+                                <button type="button" onClick={guardarRecursoEditado} disabled={recursoGuardando}
+                                  style={{ border: "1px solid #166534", borderRadius: "6px", background: "#166534", color: "#fff", cursor: "pointer", fontSize: "0.78rem", fontWeight: 700, padding: "7px 10px" }}>
+                                  {recursoGuardando ? "Guardando..." : "Guardar recurso"}
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     );
                   })}
 
