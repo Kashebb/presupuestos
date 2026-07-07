@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActionButton,
   ErrorBanner,
@@ -12,6 +12,7 @@ import {
   labelClass,
 } from "../../components/ui";
 import { API, usePresupuestosV2Data } from "./data";
+import { descendantsOf } from "./logic/tree";
 import AnalisisView from "./views/AnalisisView";
 import DesgloseView from "./views/DesgloseView";
 import EdicionView from "./views/EdicionView";
@@ -69,12 +70,19 @@ export default function PresupuestosV2Shell() {
   const [resourceCodeLoading, setResourceCodeLoading] = useState(false);
   const [resourceError, setResourceError] = useState("");
   const [resourceStatus, setResourceStatus] = useState("");
+  const [packageModalOpen, setPackageModalOpen] = useState(false);
+  const [packageForm, setPackageForm] = useState({ nombre: "", observacion: "" });
+  const [packageSaving, setPackageSaving] = useState(false);
+  const [packageError, setPackageError] = useState("");
+  const [packageStatus, setPackageStatus] = useState("");
+  const [showReleasedPackages, setShowReleasedPackages] = useState(false);
   const {
     projects,
     selectedProject,
     selectedProjectId,
     setSelectedProjectId,
     apus,
+    paquetes,
     costsByApu,
     rows,
     loading,
@@ -112,6 +120,37 @@ export default function PresupuestosV2Shell() {
 
   const selectedTreeRow = selectedTreeId === "all" ? null : rows.find((row) => row.id === selectedTreeId);
   const selectedRow = selectedRowId ? rows.find((row) => row.id === selectedRowId) : null;
+  const selectedContextRow = selectedTreeRow || selectedRow;
+  const paquetesByNodeId = useMemo(() => new Map(paquetes.map((paquete) => [String(paquete.nodo_id), paquete])), [paquetes]);
+  const rowsById = useMemo(() => new Map(rows.map((row) => [row.id, row])), [rows]);
+  const selectedPackage = useMemo(() => {
+    let cursor = selectedContextRow;
+    while (cursor) {
+      const paquete = paquetesByNodeId.get(cursor.id);
+      if (paquete) return paquete;
+      cursor = cursor.parentId ? rowsById.get(cursor.parentId) : null;
+    }
+    return null;
+  }, [paquetesByNodeId, rowsById, selectedContextRow]);
+  const visibleRows = useMemo(() => {
+    if (showReleasedPackages) return rows;
+    const hiddenIds = new Set();
+    paquetes
+      .filter((paquete) => paquete.estado === "liberado")
+      .forEach((paquete) => {
+        descendantsOf(rows, String(paquete.nodo_id)).forEach((id) => hiddenIds.add(id));
+      });
+    return rows.filter((row) => !hiddenIds.has(row.id));
+  }, [paquetes, rows, showReleasedPackages]);
+
+  useEffect(() => {
+    if (selectedTreeId !== "all" && !visibleRows.some((row) => row.id === selectedTreeId)) {
+      setSelectedTreeId("all");
+    }
+    if (selectedRowId && !visibleRows.some((row) => row.id === selectedRowId)) {
+      setSelectedRowId("");
+    }
+  }, [selectedRowId, selectedTreeId, visibleRows]);
 
   const switchView = (nextView, nextGroup = nextView) => {
     setView(nextView);
@@ -250,6 +289,72 @@ export default function PresupuestosV2Shell() {
     }
   };
 
+  const abrirCrearPaquete = () => {
+    if (!selectedContextRow) {
+      setPackageStatus("Selecciona una rama del arbol para crear un paquete.");
+      return;
+    }
+    setRibbonGroup("paquetes");
+    setPackageError("");
+    setPackageStatus("");
+    setPackageForm({
+      nombre: selectedContextRow.paquete?.nombre || selectedContextRow.descripcion || "",
+      observacion: selectedContextRow.paquete?.observacion || "",
+    });
+    setPackageModalOpen(true);
+  };
+
+  const guardarPaquete = async () => {
+    if (!selectedContextRow?.sourceId) {
+      setPackageError("Selecciona una rama valida del presupuesto.");
+      return;
+    }
+    if (!packageForm.nombre.trim()) {
+      setPackageError("El nombre del paquete es obligatorio.");
+      return;
+    }
+    setPackageSaving(true);
+    setPackageError("");
+    try {
+      const response = await fetch(`${API}/presupuestos/proyectos/${selectedProjectId}/paquetes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nodo_id: selectedContextRow.sourceId,
+          nombre: packageForm.nombre.trim(),
+          observacion: packageForm.observacion.trim() || null,
+        }),
+      });
+      const detail = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(detail?.detail || "No se pudo crear el paquete.");
+      setPackageModalOpen(false);
+      setPackageStatus(`Paquete creado: ${detail?.nombre || packageForm.nombre}`);
+      reload();
+    } catch (err) {
+      setPackageError(err.message || "No se pudo crear el paquete.");
+    } finally {
+      setPackageSaving(false);
+    }
+  };
+
+  const cambiarEstadoPaquete = async (paquete, accion) => {
+    if (!paquete) {
+      setPackageStatus("Selecciona una rama que pertenezca a un paquete.");
+      return;
+    }
+    setPackageError("");
+    setPackageStatus("");
+    try {
+      const response = await fetch(`${API}/presupuestos/paquetes/${paquete.id}/${accion}`, { method: "PATCH" });
+      const detail = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(detail?.detail || "No se pudo actualizar el paquete.");
+      setPackageStatus(accion === "liberar" ? `Paquete liberado: ${detail.nombre}` : `Paquete reabierto: ${detail.nombre}`);
+      reload();
+    } catch (err) {
+      setPackageStatus(err.message || "No se pudo actualizar el paquete.");
+    }
+  };
+
   const ribbonGroups = [
     {
       id: "edicion",
@@ -290,8 +395,30 @@ export default function PresupuestosV2Shell() {
       id: "paquetes",
       label: "Paquetes",
       actions: [
-        { label: "Definir paquete", disabled: true, hint: "Fase posterior: paquetes/subproyectos." },
-        { label: "Mostrar liberados", disabled: true, hint: "Fase posterior: filtro de paquetes liberados." },
+        {
+          label: "Crear paquete",
+          onClick: abrirCrearPaquete,
+          disabled: !selectedContextRow || Boolean(selectedContextRow.paquete),
+          hint: selectedContextRow?.paquete ? "Esta rama ya tiene paquete." : "Crea un paquete desde la seleccion actual.",
+        },
+        {
+          label: "Liberar",
+          onClick: () => cambiarEstadoPaquete(selectedPackage, "liberar"),
+          disabled: !selectedPackage || selectedPackage.estado === "liberado",
+          hint: "Marca el paquete como finalizado y lo oculta del trabajo activo.",
+        },
+        {
+          label: "Reabrir",
+          onClick: () => cambiarEstadoPaquete(selectedPackage, "reabrir"),
+          disabled: !selectedPackage || selectedPackage.estado !== "liberado",
+          hint: "Devuelve el paquete al trabajo activo.",
+        },
+        {
+          label: showReleasedPackages ? "Ocultar liberados" : "Mostrar liberados",
+          active: showReleasedPackages,
+          onClick: () => setShowReleasedPackages((current) => !current),
+          hint: "Los paquetes liberados se ocultan por defecto en arbol y tablas.",
+        },
       ],
     },
     {
@@ -406,11 +533,11 @@ export default function PresupuestosV2Shell() {
             <small>Proyecto</small>
             <strong>{selectedProject ? `${selectedProject.nombre} · ${selectedProject.codigo || "sin codigo"}` : "Proyecto seleccionado"}</strong>
           </div>
-          <span>{loading ? "Cargando..." : `${rows.length} fila(s) cargadas`}</span>
+          <span>{loading ? "Cargando..." : `${visibleRows.length} fila(s) visibles`}</span>
         </div>
         {error && <div className="budget-v2-state budget-v2-state-error">{error}</div>}
         {!error && !loading && !projects.length && <div className="budget-v2-state">No hay proyectos registrados.</div>}
-        {!error && !loading && Boolean(projects.length) && !rows.length && <div className="budget-v2-state">Este proyecto no tiene nodos cargados.</div>}
+        {!error && !loading && Boolean(projects.length) && !visibleRows.length && <div className="budget-v2-state">No hay filas visibles con los filtros actuales.</div>}
 
         <div className="budget-v2-ribbon" aria-label="Cinta de acciones de Presupuestos V2">
           <div className="budget-v2-ribbon-tabs">
@@ -443,7 +570,7 @@ export default function PresupuestosV2Shell() {
 
         {view === "edicion" && (
           <EdicionView
-            rows={rows}
+            rows={visibleRows}
             apus={apus}
             selectedProjectId={selectedProjectId}
             onDataChange={reload}
@@ -455,9 +582,10 @@ export default function PresupuestosV2Shell() {
           />
         )}
         {resourceStatus && <div className="budget-v2-action-panel"><span className="budget-v2-action-status">{resourceStatus}</span></div>}
+        {packageStatus && <div className="budget-v2-action-panel"><span className="budget-v2-action-status">{packageStatus}</span></div>}
         {view === "vinculacion" && (
           <VinculacionView
-            rows={rows}
+            rows={visibleRows}
             apus={apus}
             costsByApu={costsByApu}
             selectedProjectId={selectedProjectId}
@@ -471,7 +599,7 @@ export default function PresupuestosV2Shell() {
         )}
         {view === "desglose" && (
           <DesgloseView
-            rows={rows}
+            rows={visibleRows}
             selectedTreeId={selectedTreeId}
             setSelectedTreeId={setSelectedTreeId}
             selectedRowId={selectedRowId}
@@ -481,7 +609,7 @@ export default function PresupuestosV2Shell() {
         )}
         {view === "analisis" && (
           <AnalisisView
-            rows={rows}
+            rows={visibleRows}
             selectedTreeId={selectedTreeId}
             setSelectedTreeId={setSelectedTreeId}
             selectedRowId={selectedRowId}
@@ -525,6 +653,48 @@ export default function PresupuestosV2Shell() {
                   <span>{selectedTreeRow ? "Incluye esta rama con todos sus capitulos y rubros." : "Selecciona una rama en el arbol para habilitar esta opcion."}</span>
                 </div>
               </div>
+            </div>
+          </ModalShell>
+        )}
+        {packageModalOpen && (
+          <ModalShell
+            title="Crear paquete"
+            size="md"
+            onClose={() => {
+              setPackageModalOpen(false);
+              setPackageError("");
+            }}
+            footer={
+              <>
+                <ActionButton onClick={() => setPackageModalOpen(false)}>Cancelar</ActionButton>
+                <ActionButton variant="primary" disabled={packageSaving} onClick={guardarPaquete}>
+                  {packageSaving ? "Guardando..." : "Guardar paquete"}
+                </ActionButton>
+              </>
+            }
+          >
+            <div className="budget-v2-package-modal">
+              <div className="budget-v2-create-apu-intro">
+                <strong>{selectedContextRow?.descripcion || "Rama seleccionada"}</strong>
+                <span>El paquete queda asociado a esta rama del arbol. Al liberarlo, se oculta del trabajo activo por defecto.</span>
+              </div>
+              <label className={labelClass}>Nombre *</label>
+              <input
+                className={fieldClass}
+                value={packageForm.nombre}
+                onChange={(event) => setPackageForm({ ...packageForm, nombre: event.target.value })}
+                placeholder="Nombre del paquete"
+                autoFocus
+              />
+              <label className={labelClass}>Observacion</label>
+              <textarea
+                className={fieldClass}
+                rows={3}
+                value={packageForm.observacion}
+                onChange={(event) => setPackageForm({ ...packageForm, observacion: event.target.value })}
+                placeholder="Nota opcional"
+              />
+              <ErrorBanner>{packageError}</ErrorBanner>
             </div>
           </ModalShell>
         )}

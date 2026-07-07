@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app import backup
 from app.db import get_db
-from app.models.presupuesto import Proyecto, NodoPresupuesto, ActualizacionPresupuestoLote
+from app.models.presupuesto import Proyecto, NodoPresupuesto, ActualizacionPresupuestoLote, PaquetePresupuesto
 from app.models.apu import APU, APUItem
 from app.api.apus import calcular_costo_apu, siguiente_codigo_apu
 
@@ -864,6 +864,31 @@ class ProyectoOut(BaseModel):
         from_attributes = True
 
 
+class PaqueteCreate(BaseModel):
+    nodo_id: int
+    nombre: Optional[str] = None
+    observacion: Optional[str] = None
+
+
+class PaqueteUpdate(BaseModel):
+    nombre: Optional[str] = None
+    observacion: Optional[str] = None
+
+
+class PaqueteOut(BaseModel):
+    id: int
+    proyecto_id: int
+    nodo_id: int
+    nombre: str
+    estado: str
+    observacion: Optional[str] = None
+    fecha_creacion: datetime
+    fecha_liberacion: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
 class NodoOut(BaseModel):
     id: int
     proyecto_id: int
@@ -1273,6 +1298,103 @@ def eliminar_proyecto(proyecto_id: int, db: Session = Depends(get_db)):
 # ════════════════════════════════════════
 # Nodos — árbol completo
 # ════════════════════════════════════════
+
+# Paquetes de presupuesto
+
+def _validar_nodo_paquete(db: Session, proyecto_id: int, nodo_id: int) -> NodoPresupuesto:
+    proyecto = db.query(Proyecto.id).filter(Proyecto.id == proyecto_id).first()
+    if not proyecto:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    nodo = (
+        db.query(NodoPresupuesto)
+        .filter(NodoPresupuesto.id == nodo_id, NodoPresupuesto.proyecto_id == proyecto_id)
+        .first()
+    )
+    if not nodo:
+        raise HTTPException(status_code=404, detail="Nodo seleccionado no encontrado en el proyecto")
+    return nodo
+
+
+@router.get("/proyectos/{proyecto_id}/paquetes", response_model=list[PaqueteOut])
+def listar_paquetes(proyecto_id: int, db: Session = Depends(get_db)):
+    proyecto = db.query(Proyecto.id).filter(Proyecto.id == proyecto_id).first()
+    if not proyecto:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    return (
+        db.query(PaquetePresupuesto)
+        .filter(PaquetePresupuesto.proyecto_id == proyecto_id)
+        .order_by(PaquetePresupuesto.fecha_creacion.desc(), PaquetePresupuesto.id.desc())
+        .all()
+    )
+
+
+@router.post("/proyectos/{proyecto_id}/paquetes", response_model=PaqueteOut, status_code=201)
+def crear_paquete(proyecto_id: int, data: PaqueteCreate, db: Session = Depends(get_db)):
+    nodo = _validar_nodo_paquete(db, proyecto_id, data.nodo_id)
+    existente = (
+        db.query(PaquetePresupuesto)
+        .filter(PaquetePresupuesto.proyecto_id == proyecto_id, PaquetePresupuesto.nodo_id == data.nodo_id)
+        .first()
+    )
+    if existente:
+        raise HTTPException(status_code=400, detail="La rama seleccionada ya tiene un paquete definido")
+
+    nombre = " ".join((data.nombre or nodo.descripcion or "").split())
+    if not nombre:
+        raise HTTPException(status_code=400, detail="El nombre del paquete es obligatorio")
+
+    paquete = PaquetePresupuesto(
+        proyecto_id=proyecto_id,
+        nodo_id=data.nodo_id,
+        nombre=nombre[:240],
+        observacion=data.observacion,
+    )
+    db.add(paquete)
+    db.commit()
+    db.refresh(paquete)
+    return paquete
+
+
+@router.patch("/paquetes/{paquete_id}", response_model=PaqueteOut)
+def actualizar_paquete(paquete_id: int, data: PaqueteUpdate, db: Session = Depends(get_db)):
+    paquete = db.query(PaquetePresupuesto).filter(PaquetePresupuesto.id == paquete_id).first()
+    if not paquete:
+        raise HTTPException(status_code=404, detail="Paquete no encontrado")
+    if data.nombre is not None:
+        nombre = " ".join(data.nombre.split())
+        if not nombre:
+            raise HTTPException(status_code=400, detail="El nombre del paquete es obligatorio")
+        paquete.nombre = nombre[:240]
+    if data.observacion is not None:
+        paquete.observacion = data.observacion
+    db.commit()
+    db.refresh(paquete)
+    return paquete
+
+
+@router.patch("/paquetes/{paquete_id}/liberar", response_model=PaqueteOut)
+def liberar_paquete(paquete_id: int, db: Session = Depends(get_db)):
+    paquete = db.query(PaquetePresupuesto).filter(PaquetePresupuesto.id == paquete_id).first()
+    if not paquete:
+        raise HTTPException(status_code=404, detail="Paquete no encontrado")
+    paquete.estado = "liberado"
+    paquete.fecha_liberacion = datetime.utcnow()
+    db.commit()
+    db.refresh(paquete)
+    return paquete
+
+
+@router.patch("/paquetes/{paquete_id}/reabrir", response_model=PaqueteOut)
+def reabrir_paquete(paquete_id: int, db: Session = Depends(get_db)):
+    paquete = db.query(PaquetePresupuesto).filter(PaquetePresupuesto.id == paquete_id).first()
+    if not paquete:
+        raise HTTPException(status_code=404, detail="Paquete no encontrado")
+    paquete.estado = "activo"
+    paquete.fecha_liberacion = None
+    db.commit()
+    db.refresh(paquete)
+    return paquete
+
 
 @router.get("/proyectos/{proyecto_id}/nodos", response_model=list[NodoOut])
 def listar_nodos(proyecto_id: int, db: Session = Depends(get_db)):

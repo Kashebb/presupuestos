@@ -80,12 +80,14 @@ function lineStatus(node, apuCost) {
   return "vinculado";
 }
 
-function buildRows(nodes, costsByApu, apusById) {
+function buildRows(nodes, costsByApu, apusById, paquetes = []) {
   const rubrosByContainer = new Map();
   const rowsById = new Map();
+  const paqueteByNodeId = new Map(paquetes.map((paquete) => [String(paquete.nodo_id), paquete]));
 
   const rows = nodes.filter((node) => node.estado_actualizacion !== "obsoleto").map((node) => {
     const line = isLine(node);
+    const paquete = paqueteByNodeId.get(String(node.id)) || null;
     const cost = node.apu_id ? costsByApu.get(node.apu_id) : null;
     const apu = node.apu_id ? apusById.get(node.apu_id) : null;
     const baseApu = apu?.es_variante ? apusById.get(apu.apu_base_id) : apu;
@@ -128,6 +130,7 @@ function buildRows(nodes, costsByApu, apusById) {
       apuNombre: baseApu?.nombre || apu?.nombre || "",
       apuBaseId: baseApu?.id || null,
       apuEfectivoId: apu?.id || null,
+      paquete,
       varianteApu: apu?.es_variante ? (apu.variante_nombre || "Variante") : (apu ? "Base" : ""),
       rendimiento: apu?.rendimiento,
       desglose: fmtBreakdown(breakdownRaw),
@@ -182,6 +185,7 @@ export function usePresupuestosV2Data() {
   const [projects, setProjects] = useState([]);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [nodes, setNodes] = useState([]);
+  const [paquetes, setPaquetes] = useState([]);
   const [apus, setApus] = useState([]);
   const [costs, setCosts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -215,6 +219,7 @@ export function usePresupuestosV2Data() {
   useEffect(() => {
     if (!selectedProjectId) {
       setNodes([]);
+      setPaquetes([]);
       return;
     }
 
@@ -223,21 +228,25 @@ export function usePresupuestosV2Data() {
       setLoading(true);
       setError("");
       try {
-        const [nodesResponse, apusResponse, costsResponse] = await Promise.all([
+        const [nodesResponse, paquetesResponse, apusResponse, costsResponse] = await Promise.all([
           fetch(`${API}/presupuestos/proyectos/${selectedProjectId}/nodos`),
+          fetch(`${API}/presupuestos/proyectos/${selectedProjectId}/paquetes`),
           fetch(`${API}/apus/?limit=2000`),
           fetch(`${API}/apus/costos/resumen?limit=2000`),
         ]);
         if (!nodesResponse.ok) throw new Error("No se pudieron cargar los rubros del proyecto.");
+        if (!paquetesResponse.ok) throw new Error("No se pudieron cargar los paquetes del proyecto.");
         if (!apusResponse.ok) throw new Error("No se pudieron cargar los APUs.");
         if (!costsResponse.ok) throw new Error("No se pudieron cargar los costos de APUs.");
-        const [nodesData, apusData, costsData] = await Promise.all([
+        const [nodesData, paquetesData, apusData, costsData] = await Promise.all([
           nodesResponse.json(),
+          paquetesResponse.json(),
           apusResponse.json(),
           costsResponse.json(),
         ]);
         if (cancelled) return;
         setNodes(nodesData);
+        setPaquetes(paquetesData);
         setApus(apusData);
         setCosts(costsData);
       } catch (err) {
@@ -255,8 +264,8 @@ export function usePresupuestosV2Data() {
   const rows = useMemo(() => {
     const costsByApu = new Map(costs.map((cost) => [cost.apu_id, cost]));
     const apusById = new Map(apus.map((apu) => [apu.id, apu]));
-    return buildRows(nodes, costsByApu, apusById);
-  }, [apus, costs, nodes]);
+    return buildRows(nodes, costsByApu, apusById, paquetes);
+  }, [apus, costs, nodes, paquetes]);
 
   const costsByApu = useMemo(() => {
     return Object.fromEntries(costs.map((cost) => [cost.apu_id, cost]));
@@ -270,6 +279,7 @@ export function usePresupuestosV2Data() {
     selectedProjectId,
     setSelectedProjectId,
     apus,
+    paquetes,
     costsByApu,
     rows,
     loading,

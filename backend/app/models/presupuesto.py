@@ -3,7 +3,7 @@ Modelos: Proyecto y NodoPresupuesto
 Módulo: Presupuestos - Sesión 12
 """
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Text, Boolean
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Text, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.models.base import Base
 
@@ -24,6 +24,14 @@ class Proyecto(Base):
         back_populates="proyecto",
         cascade="all, delete-orphan",
         foreign_keys="NodoPresupuesto.proyecto_id",
+        lazy="select",
+    )
+
+    paquetes = relationship(
+        "PaquetePresupuesto",
+        back_populates="proyecto",
+        cascade="all, delete-orphan",
+        foreign_keys="PaquetePresupuesto.proyecto_id",
         lazy="select",
     )
 
@@ -98,5 +106,28 @@ class ActualizacionPresupuestoLote(Base):
     fecha_creacion = Column(DateTime, default=datetime.utcnow)
 
     proyecto = relationship("Proyecto", foreign_keys=[proyecto_id], lazy="select")
+
+
+class PaquetePresupuesto(Base):
+    __tablename__ = "paquetes_presupuesto"
+    __table_args__ = (
+        UniqueConstraint("proyecto_id", "nodo_id", name="uq_paquetes_presupuesto_proyecto_nodo"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    proyecto_id = Column(Integer, ForeignKey("proyectos.id", ondelete="CASCADE"), nullable=False, index=True)
+    nodo_id = Column(Integer, ForeignKey("nodos_presupuesto.id", ondelete="CASCADE"), nullable=False, index=True)
+    nombre = Column(String(240), nullable=False)
+    estado = Column(String(30), default="activo", nullable=False)
+    observacion = Column(Text, nullable=True)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow, nullable=False)
+    fecha_liberacion = Column(DateTime, nullable=True)
+
+    proyecto = relationship(
+        "Proyecto",
+        back_populates="paquetes",
+        foreign_keys=[proyecto_id],
+    )
+    nodo = relationship("NodoPresupuesto", foreign_keys=[nodo_id], lazy="select")
 
     

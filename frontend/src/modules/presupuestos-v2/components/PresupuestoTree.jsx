@@ -70,6 +70,7 @@ export default function PresupuestoTree({
                     {collapsedTreeIds?.has(row.id) ? ">" : "v"}
                   </span>
                   <span>{row.descripcion}</span>
+                  {row.paquete && <em className="budget-v2-tree-package">{row.paquete.estado === "liberado" ? "Liberado" : "Paquete"}</em>}
                   <i className={`budget-v2-tree-dot ${treeStatusClass(row)}`} />
                 </span>
               ) : (

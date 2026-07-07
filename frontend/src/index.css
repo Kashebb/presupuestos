@@ -1128,6 +1128,19 @@ textarea {
   white-space: nowrap;
 }
 
+.budget-v2-tree-package {
+  flex: 0 0 auto;
+  border: 1px solid #bfdbfe;
+  border-radius: var(--radius-sm);
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 850;
+  line-height: 1;
+  padding: 3px 5px;
+}
+
 .budget-v2-tree-toggle {
   color: #64748b;
   cursor: pointer;
@@ -1581,7 +1594,8 @@ textarea {
   border-radius: var(--radius-md);
 }
 
-.budget-v2-resource-modal {
+.budget-v2-resource-modal,
+.budget-v2-package-modal {
   display: grid;
   gap: 12px;
 }
