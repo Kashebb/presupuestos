@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Enum
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Enum, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .base import Base
@@ -29,6 +29,7 @@ class APU(Base):
     estado = Column(String, default="en_revision")
     version = Column(Integer, default=1)
     observacion = Column(String, nullable=True)
+    etiquetas = Column(JSON, nullable=False, default=list)
     es_variante = Column(Boolean, default=False, nullable=False)
     apu_base_id = Column(Integer, ForeignKey("apus.id", ondelete="CASCADE"), nullable=True)
     proyecto_id = Column(Integer, ForeignKey("proyectos.id", ondelete="CASCADE"), nullable=True)

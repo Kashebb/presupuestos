@@ -345,6 +345,27 @@ export default function VinculacionView({
     setModalVincularOpen(true);
   };
 
+  const actualizarEtiquetasApu = async (etiquetas) => {
+    if (!selectedRow?.raw?.node?.apu_id) return;
+    setActionStatus("Guardando etiquetas...");
+    setActionError("");
+    try {
+      const response = await fetch(`${API}/apus/${selectedRow.raw.node.apu_id}/etiquetas`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ etiquetas }),
+      });
+      const detail = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(detail?.detail || "No se pudieron guardar las etiquetas.");
+      setActionStatus("Etiquetas actualizadas.");
+      onDataChange?.();
+    } catch (err) {
+      setActionStatus("");
+      setActionError(err.message || "No se pudieron guardar las etiquetas.");
+      throw err;
+    }
+  };
+
   const goToSearchMatch = (direction = 1) => {
     if (!searchMatches.length) return;
     const nextIndex = (searchIndex + direction + searchMatches.length) % searchMatches.length;
@@ -516,6 +537,7 @@ export default function VinculacionView({
           onEditApu={editarApu}
           onChangeApu={cambiarApu}
           onUnlinkApu={desvincularApu}
+          onUpdateApuTags={actualizarEtiquetasApu}
         />
       </CollapsibleSidePanel>
 

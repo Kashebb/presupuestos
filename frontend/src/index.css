@@ -1586,6 +1586,36 @@ textarea {
   gap: 12px;
 }
 
+.budget-v2-tag-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.budget-v2-tag-picker label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #dbe3ea;
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: #334155;
+  padding: 5px 7px;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.budget-v2-tag-picker input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+}
+
+.budget-v2-tag-picker-compact {
+  max-height: 130px;
+  overflow-y: auto;
+}
+
 .budget-v2-create-apu-option {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, Date
+from sqlalchemy import Column, Integer, String, Float, Boolean, Date, JSON
 from app.models.base import Base
 
 class Recurso(Base):
@@ -19,4 +19,5 @@ class Recurso(Base):
     fuente_validacion = Column(String, nullable=True)
     fecha_validacion = Column(Date, nullable=True)
     nota_validacion = Column(String, nullable=True)
+    etiquetas = Column(JSON, nullable=False, default=list)
     activo = Column(Boolean, default=True)

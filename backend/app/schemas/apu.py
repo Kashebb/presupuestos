@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 
@@ -28,6 +28,7 @@ class APUBase(BaseModel):
     estado: str = "en_revision"
     version: int = 1
     observacion: Optional[str] = None
+    etiquetas: List[str] = Field(default_factory=list)
     es_variante: bool = False
     apu_base_id: Optional[int] = None
     proyecto_id: Optional[int] = None
@@ -39,6 +40,9 @@ class APUCreate(APUBase):
 
 class APUUpdate(APUBase):
     items: Optional[List[APUItemCreate]] = None
+
+class APUEtiquetasUpdate(BaseModel):
+    etiquetas: List[str] = Field(default_factory=list)
 
 class APUOut(APUBase):
     id: int

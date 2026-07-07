@@ -5,11 +5,36 @@ from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 from app.db import get_db
 from app.models.apu import APU, APUItem
-from app.schemas.apu import APUCreate, APUUpdate, APUOut
+from app.schemas.apu import APUCreate, APUUpdate, APUOut, APUEtiquetasUpdate
 
 router = APIRouter(prefix="/apus", tags=["apus"])
 
 CODIGO_APU_RE = re.compile(r"^(.*?)(\d+)$")
+ETIQUETAS_APU_CONTROLADAS = {
+    "validado",
+    "referencial",
+    "incompleto",
+    "solo mano de obra",
+    "solo materiales",
+    "mano de obra + materiales",
+    "ajustado con cotizacion",
+    "requiere cotizacion",
+    "subcontratado",
+    "especial del proyecto",
+}
+
+
+def _normalizar_etiquetas(etiquetas: list[str]) -> list[str]:
+    resultado = []
+    for etiqueta in etiquetas or []:
+        valor = str(etiqueta or "").strip().lower()
+        if not valor:
+            continue
+        if valor not in ETIQUETAS_APU_CONTROLADAS:
+            raise HTTPException(status_code=400, detail=f"Etiqueta APU no permitida: {etiqueta}")
+        if valor not in resultado:
+            resultado.append(valor)
+    return resultado
 
 
 def siguiente_codigo_apu(db: Session):
@@ -36,6 +61,8 @@ def _r4(value):
 def _normalizar_apu_data(data: dict) -> dict:
     if "rendimiento" in data and data["rendimiento"] is not None:
         data["rendimiento"] = _r4(data["rendimiento"])
+    if "etiquetas" in data:
+        data["etiquetas"] = _normalizar_etiquetas(data.get("etiquetas") or [])
     return data
 
 
@@ -169,6 +196,16 @@ def actualizar_apu(apu_id: int, apu: APUUpdate, db: Session = Depends(get_db)):
         for item in apu.items:
             db_item = APUItem(apu_id=apu_id, **_normalizar_item_data(item.model_dump()))
             db.add(db_item)
+    db.commit()
+    db.refresh(db_apu)
+    return db_apu
+
+@router.patch("/{apu_id}/etiquetas", response_model=APUOut)
+def actualizar_etiquetas_apu(apu_id: int, data: APUEtiquetasUpdate, db: Session = Depends(get_db)):
+    db_apu = db.query(APU).filter(APU.id == apu_id).first()
+    if not db_apu:
+        raise HTTPException(status_code=404, detail="APU no encontrado")
+    db_apu.etiquetas = _normalizar_etiquetas(data.etiquetas)
     db.commit()
     db.refresh(db_apu)
     return db_apu

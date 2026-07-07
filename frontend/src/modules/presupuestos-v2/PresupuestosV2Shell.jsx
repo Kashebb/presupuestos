@@ -18,6 +18,16 @@ import EdicionView from "./views/EdicionView";
 import VinculacionView from "./views/VinculacionView";
 
 const CATEGORIAS_RECURSO = ["mano_de_obra", "material", "equipo", "transporte", "otros"];
+const ETIQUETAS_RECURSO_CONTROLADAS = [
+  "precio validado",
+  "precio referencial",
+  "precio cotizado",
+  "proveedor confirmado",
+  "sin precio actualizado",
+  "requiere validacion",
+  "especial del proyecto",
+  "solo este subproyecto",
+];
 const ETIQUETAS_RECURSO = {
   mano_de_obra: "Mano de Obra",
   material: "Material",
@@ -34,6 +44,7 @@ const RECURSO_VACIO = {
   familia: "",
   precio_unitario: "",
   estado_validacion: "pendiente",
+  etiquetas: [],
 };
 
 function parseNumero(valor) {
@@ -224,6 +235,7 @@ export default function PresupuestosV2Shell() {
           descripcion: resourceForm.descripcion.trim(),
           unidad: resourceForm.unidad.trim(),
           precio_unitario: precio,
+          etiquetas: resourceForm.etiquetas,
           activo: true,
         }),
       });
@@ -618,6 +630,30 @@ export default function PresupuestosV2Shell() {
                     placeholder="0.0000"
                   />
                 </div>
+
+                <ModalFormFull>
+                  <label className={labelClass}>Etiquetas controladas</label>
+                  <div className="budget-v2-tag-picker">
+                    {ETIQUETAS_RECURSO_CONTROLADAS.map((etiqueta) => {
+                      const checked = resourceForm.etiquetas.includes(etiqueta);
+                      return (
+                        <label key={etiqueta}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) => {
+                              const next = event.target.checked
+                                ? [...resourceForm.etiquetas, etiqueta]
+                                : resourceForm.etiquetas.filter((item) => item !== etiqueta);
+                              setResourceForm({ ...resourceForm, etiquetas: next });
+                            }}
+                          />
+                          <span>{etiqueta}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </ModalFormFull>
               </ModalFormGrid>
               <ErrorBanner>{resourceError}</ErrorBanner>
             </div>

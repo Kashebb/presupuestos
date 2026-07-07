@@ -1,12 +1,25 @@
 import { useEffect, useState } from "react";
 import { API, statusMeta } from "../data";
 
+const ETIQUETAS_APU_CONTROLADAS = [
+  "validado",
+  "referencial",
+  "incompleto",
+  "solo mano de obra",
+  "solo materiales",
+  "mano de obra + materiales",
+  "ajustado con cotizacion",
+  "requiere cotizacion",
+  "subcontratado",
+  "especial del proyecto",
+];
+
 function fmtMoney(value) {
   if (!Number.isFinite(value)) return "-";
   return `$${value.toLocaleString("es-EC", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
 }
 
-export default function PanelApu({ selectedRow, onEditApu, onChangeApu, onUnlinkApu }) {
+export default function PanelApu({ selectedRow, onEditApu, onChangeApu, onUnlinkApu, onUpdateApuTags }) {
   const selectedHasApu = selectedRow?.kind === "line" && Boolean(selectedRow.apu);
   const hasActions = Boolean(onEditApu || onChangeApu || onUnlinkApu);
   const selectedApuId = selectedRow?.raw?.node?.apu_id || null;
@@ -15,6 +28,9 @@ export default function PanelApu({ selectedRow, onEditApu, onChangeApu, onUnlink
   const [detalleCosto, setDetalleCosto] = useState(null);
   const [cargandoDetalle, setCargandoDetalle] = useState(false);
   const [errorDetalle, setErrorDetalle] = useState("");
+  const [draftTags, setDraftTags] = useState([]);
+  const [savingTags, setSavingTags] = useState(false);
+  const [tagError, setTagError] = useState("");
 
   useEffect(() => {
     if (!selectedApuId) {
@@ -48,6 +64,33 @@ export default function PanelApu({ selectedRow, onEditApu, onChangeApu, onUnlink
       cancelled = true;
     };
   }, [selectedApuId, selectedApuPuMeta, selectedApuRendimiento]);
+
+  useEffect(() => {
+    setDraftTags(Array.isArray(selectedRow?.raw?.apu?.etiquetas) ? selectedRow.raw.apu.etiquetas : []);
+    setTagError("");
+    setSavingTags(false);
+  }, [selectedApuId, selectedRow?.raw?.apu?.etiquetas]);
+
+  const toggleTag = (tag, checked) => {
+    setDraftTags((current) => {
+      if (checked && !current.includes(tag)) return [...current, tag];
+      if (!checked) return current.filter((item) => item !== tag);
+      return current;
+    });
+  };
+
+  const saveTags = async () => {
+    if (!onUpdateApuTags) return;
+    setSavingTags(true);
+    setTagError("");
+    try {
+      await onUpdateApuTags(draftTags);
+    } catch (err) {
+      setTagError(err.message || "No se pudieron guardar las etiquetas.");
+    } finally {
+      setSavingTags(false);
+    }
+  };
 
   const subtotales = detalleCosto?.subtotales || {};
 
@@ -84,7 +127,30 @@ export default function PanelApu({ selectedRow, onEditApu, onChangeApu, onUnlink
                   <span>Variante {selectedRow.varianteApu || "Base"}</span>
                   <span>Und {selectedRow.unidad}</span>
                   <span>Rend. {Number.isFinite(selectedRow.rendimiento) ? selectedRow.rendimiento.toFixed(4) : "-"}</span>
+                  {draftTags.map((tag) => <span key={tag}>{tag}</span>)}
                 </div>
+              </div>
+              <div className="budget-v2-apu-card">
+                <small>Etiquetas APU</small>
+                <div className="budget-v2-tag-picker budget-v2-tag-picker-compact">
+                  {ETIQUETAS_APU_CONTROLADAS.map((tag) => (
+                    <label key={tag}>
+                      <input
+                        type="checkbox"
+                        checked={draftTags.includes(tag)}
+                        disabled={!onUpdateApuTags || savingTags}
+                        onChange={(event) => toggleTag(tag, event.target.checked)}
+                      />
+                      <span>{tag}</span>
+                    </label>
+                  ))}
+                </div>
+                {tagError && <div className="budget-v2-panel-note budget-v2-panel-note-error">{tagError}</div>}
+                {onUpdateApuTags && (
+                  <button type="button" className="budget-v2-apu-primary" disabled={savingTags} onClick={saveTags}>
+                    {savingTags ? "Guardando..." : "Guardar etiquetas"}
+                  </button>
+                )}
               </div>
               <div className="budget-v2-apu-card">
                 <small>Comparacion economica</small>

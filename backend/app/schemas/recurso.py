@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Optional, List
 from datetime import date
 
 class RecursoBase(BaseModel):
@@ -17,6 +17,7 @@ class RecursoBase(BaseModel):
     fuente_validacion: Optional[str] = None
     fecha_validacion: Optional[date] = None
     nota_validacion: Optional[str] = None
+    etiquetas: List[str] = Field(default_factory=list)
     activo: bool = True
 
 class RecursoCreate(RecursoBase):
@@ -27,6 +28,9 @@ class RecursoUpdate(RecursoBase):
 
 class RecursoPrecioUpdate(BaseModel):
     precio_unitario: float
+
+class RecursoEtiquetasUpdate(BaseModel):
+    etiquetas: List[str] = Field(default_factory=list)
 
 class RecursoOut(RecursoBase):
     id: int

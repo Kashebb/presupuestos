@@ -6,10 +6,33 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.db import get_db
 from app.models.recurso import Recurso
-from app.schemas.recurso import RecursoCreate, RecursoUpdate, RecursoOut, RecursoPrecioUpdate
+from app.schemas.recurso import RecursoCreate, RecursoUpdate, RecursoOut, RecursoPrecioUpdate, RecursoEtiquetasUpdate
 
 router = APIRouter(prefix="/recursos", tags=["recursos"])
 CODIGO_CONSECUTIVO_RE = re.compile(r"^(.+-)(\d+)$")
+ETIQUETAS_RECURSO_CONTROLADAS = {
+    "precio validado",
+    "precio referencial",
+    "precio cotizado",
+    "proveedor confirmado",
+    "sin precio actualizado",
+    "requiere validacion",
+    "especial del proyecto",
+    "solo este subproyecto",
+}
+
+
+def _normalizar_etiquetas(etiquetas: list[str]) -> list[str]:
+    resultado = []
+    for etiqueta in etiquetas or []:
+        valor = str(etiqueta or "").strip().lower()
+        if not valor:
+            continue
+        if valor not in ETIQUETAS_RECURSO_CONTROLADAS:
+            raise HTTPException(status_code=400, detail=f"Etiqueta recurso no permitida: {etiqueta}")
+        if valor not in resultado:
+            resultado.append(valor)
+    return resultado
 
 
 def _patrones_codigo_por_categoria(db: Session, categoria: str, subcategoria: Optional[str] = None):
@@ -133,7 +156,9 @@ def obtener_recurso(recurso_id: int, db: Session = Depends(get_db)):
 
 @router.post("/", response_model=RecursoOut)
 def crear_recurso(recurso: RecursoCreate, db: Session = Depends(get_db)):
-    db_recurso = Recurso(**recurso.model_dump())
+    data = recurso.model_dump()
+    data["etiquetas"] = _normalizar_etiquetas(data.get("etiquetas") or [])
+    db_recurso = Recurso(**data)
     db.add(db_recurso)
     db.commit()
     db.refresh(db_recurso)
@@ -161,8 +186,20 @@ def actualizar_recurso(recurso_id: int, recurso: RecursoUpdate, db: Session = De
     db_recurso = db.query(Recurso).filter(Recurso.id == recurso_id).first()
     if not db_recurso:
         raise HTTPException(status_code=404, detail="Recurso no encontrado")
-    for key, value in recurso.model_dump().items():
+    data = recurso.model_dump()
+    data["etiquetas"] = _normalizar_etiquetas(data.get("etiquetas") or [])
+    for key, value in data.items():
         setattr(db_recurso, key, value)
+    db.commit()
+    db.refresh(db_recurso)
+    return db_recurso
+
+@router.patch("/{recurso_id}/etiquetas", response_model=RecursoOut)
+def actualizar_etiquetas_recurso(recurso_id: int, data: RecursoEtiquetasUpdate, db: Session = Depends(get_db)):
+    db_recurso = db.query(Recurso).filter(Recurso.id == recurso_id).first()
+    if not db_recurso:
+        raise HTTPException(status_code=404, detail="Recurso no encontrado")
+    db_recurso.etiquetas = _normalizar_etiquetas(data.etiquetas)
     db.commit()
     db.refresh(db_recurso)
     return db_recurso
