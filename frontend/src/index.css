@@ -1594,6 +1594,41 @@ textarea {
   border-radius: var(--radius-md);
 }
 
+.budget-v2-export-views {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 8px;
+}
+
+.budget-v2-export-views button {
+  display: grid;
+  gap: 3px;
+  border: 1px solid #dbe3ea;
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+  padding: 8px;
+  text-align: left;
+}
+
+.budget-v2-export-views button:hover,
+.budget-v2-export-view-active {
+  border-color: #166534 !important;
+  background: #f0fdf4 !important;
+}
+
+.budget-v2-export-views strong {
+  color: #111827;
+  font-size: 12px;
+}
+
+.budget-v2-export-views span {
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
 .budget-v2-resource-modal,
 .budget-v2-package-modal,
 .budget-v2-impact-modal {

@@ -491,6 +491,78 @@ class ExportPresupuestoOperativoTest(unittest.TestCase):
         self.assertNotIn("Grupo B", descriptions)
         self.assertNotIn("Rubro B", descriptions)
 
+    def test_exporta_vista_filtrada_pendientes_con_jerarquia(self):
+        proyecto = Proyecto(nombre="Proyecto Vista", codigo="PV-06")
+        recurso = Recurso(
+            codigo="MAT-VISTA",
+            descripcion="Material vista",
+            categoria="material",
+            unidad="u",
+            precio_unitario=2.0,
+        )
+        apu = APU(codigo="APU-VISTA", nombre="APU vista", unidad="m2", rendimiento=1.0)
+        apu.items.append(APUItem(recurso=recurso, categoria="material", cantidad=1.0, orden=1))
+        self.db.add_all([proyecto, recurso, apu])
+        self.db.flush()
+
+        grupo = NodoPresupuesto(
+            proyecto_id=proyecto.id,
+            tipo="CAPITULO",
+            nivel=0,
+            item="1",
+            descripcion="Grupo vista",
+            orden=1,
+            activo_como_rubro=False,
+            estado_actualizacion="activo",
+        )
+        self.db.add(grupo)
+        self.db.flush()
+        pendiente = NodoPresupuesto(
+            proyecto_id=proyecto.id,
+            padre_id=grupo.id,
+            tipo="RUBRO",
+            nivel=1,
+            item="1.01",
+            descripcion="Rubro pendiente",
+            orden=2,
+            unidad="m2",
+            metrado=1.0,
+            precio_unitario_ref=1.0,
+            activo_como_rubro=True,
+            tipo_rubro="PENDIENTE",
+            estado_actualizacion="activo",
+        )
+        vinculado = NodoPresupuesto(
+            proyecto_id=proyecto.id,
+            padre_id=grupo.id,
+            tipo="RUBRO",
+            nivel=1,
+            item="1.02",
+            descripcion="Rubro vinculado",
+            orden=3,
+            unidad="m2",
+            metrado=1.0,
+            precio_unitario_ref=1.0,
+            apu_id=apu.id,
+            activo_como_rubro=True,
+            tipo_rubro="VINCULADO",
+            estado_actualizacion="activo",
+        )
+        self.db.add_all([pendiente, vinculado])
+        self.db.commit()
+
+        response = exportar_presupuesto_operativo(proyecto.id, self.db, vista_exportacion="pendientes")
+        content = asyncio.run(_read_response(response))
+
+        import openpyxl
+
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+        ws = wb["Presupuesto operativo"]
+        descriptions = [row[3] for row in ws.iter_rows(min_row=2, values_only=True)]
+        self.assertIn("Grupo vista", descriptions)
+        self.assertIn("Rubro pendiente", descriptions)
+        self.assertNotIn("Rubro vinculado", descriptions)
+
     def test_exporta_item_calculado_desde_jerarquia_real(self):
         proyecto = Proyecto(nombre="Proyecto Jerarquia", codigo="PJ-01")
         self.db.add(proyecto)

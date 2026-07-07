@@ -47,6 +47,13 @@ const RECURSO_VACIO = {
   estado_validacion: "pendiente",
   etiquetas: [],
 };
+const EXPORT_VIEWS = [
+  { id: "todo", label: "Todo", detail: "Todos los rubros activos." },
+  { id: "pendientes", label: "Pendientes", detail: "Rubros sin APU vinculado." },
+  { id: "vinculados", label: "Vinculados", detail: "Rubros con APU vigente." },
+  { id: "revisar", label: "Revisar", detail: "Rubros con APU por revisar." },
+  { id: "subcontratados", label: "Subcontratados", detail: "Rubros marcados sin APU." },
+];
 
 function parseNumero(valor) {
   if (valor === null || valor === undefined) return Number.NaN;
@@ -63,6 +70,7 @@ export default function PresupuestosV2Shell() {
   const [selectedRowId, setSelectedRowId] = useState("");
   const [footerCount, setFooterCount] = useState(1);
   const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportView, setExportView] = useState("todo");
   const [resourceModalOpen, setResourceModalOpen] = useState(false);
   const [resourceForm, setResourceForm] = useState(RECURSO_VACIO);
   const [resourceClassifications, setResourceClassifications] = useState([]);
@@ -157,11 +165,14 @@ export default function PresupuestosV2Shell() {
     setRibbonGroup(nextGroup);
   };
 
-  const exportProject = (scope = "all") => {
+  const exportProject = (scope = "all", viewId = exportView) => {
     if (!selectedProjectId) return;
     const params = new URLSearchParams();
     if (scope === "selected" && selectedTreeRow?.sourceId) {
       params.set("root_nodo_id", String(selectedTreeRow.sourceId));
+    }
+    if (viewId && viewId !== "todo") {
+      params.set("vista_exportacion", viewId);
     }
     const query = params.toString();
     window.open(`${API}/presupuestos/proyectos/${selectedProjectId}/exportar-operativo.xlsx${query ? `?${query}` : ""}`, "_blank", "noopener,noreferrer");
@@ -445,8 +456,8 @@ export default function PresupuestosV2Shell() {
       label: "Exportar",
       actions: [
         { label: "Exportar Excel", onClick: () => setExportModalOpen(true), disabled: !selectedProjectId || loading || Boolean(error) },
-        { label: "Todo", onClick: () => exportProject("all"), disabled: !selectedProjectId || loading || Boolean(error) },
-        { label: "Seleccion", onClick: () => exportProject("selected"), disabled: !selectedTreeRow || loading || Boolean(error) },
+        { label: "Todo", onClick: () => exportProject("all", "todo"), disabled: !selectedProjectId || loading || Boolean(error) },
+        { label: "Seleccion", onClick: () => exportProject("selected", "todo"), disabled: !selectedTreeRow || loading || Boolean(error) },
       ],
     },
     {
@@ -630,9 +641,9 @@ export default function PresupuestosV2Shell() {
             footer={
               <>
                 <ActionButton onClick={() => setExportModalOpen(false)}>Cancelar</ActionButton>
-                <ActionButton onClick={() => exportProject("all")}>Exportar todo</ActionButton>
-                <ActionButton variant="primary" onClick={() => exportProject("selected")} disabled={!selectedTreeRow}>
-                  Exportar seleccionado
+                <ActionButton onClick={() => exportProject("all", exportView)}>Exportar todo</ActionButton>
+                <ActionButton variant="primary" onClick={() => exportProject("selected", exportView)} disabled={!selectedTreeRow}>
+                  Exportar seleccion
                 </ActionButton>
               </>
             }
@@ -640,17 +651,30 @@ export default function PresupuestosV2Shell() {
             <div className="budget-v2-create-apu-modal">
               <div className="budget-v2-create-apu-intro">
                 <strong>{selectedProject ? selectedProject.nombre : "Proyecto seleccionado"}</strong>
-                <span>Elige si quieres exportar todo el presupuesto o solo la rama seleccionada en el arbol.</span>
+                <span>Elige la vista y si quieres exportar todo el presupuesto o solo la rama seleccionada en el arbol.</span>
+              </div>
+              <div className="budget-v2-export-views">
+                {EXPORT_VIEWS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={exportView === item.id ? "budget-v2-export-view-active" : ""}
+                    onClick={() => setExportView(item.id)}
+                  >
+                    <strong>{item.label}</strong>
+                    <span>{item.detail}</span>
+                  </button>
+                ))}
               </div>
               <div className="budget-v2-export-choice">
                 <div>
                   <small>Todo el presupuesto</small>
-                  <strong>Incluye todos los capitulos, grupos y rubros activos.</strong>
+                  <strong>Aplica la vista elegida sobre todos los capitulos, grupos y rubros activos.</strong>
                 </div>
                 <div>
                   <small>Seleccion actual del arbol</small>
                   <strong>{selectedTreeRow ? selectedTreeRow.descripcion : "No hay rama seleccionada"}</strong>
-                  <span>{selectedTreeRow ? "Incluye esta rama con todos sus capitulos y rubros." : "Selecciona una rama en el arbol para habilitar esta opcion."}</span>
+                  <span>{selectedTreeRow ? "Aplica la vista elegida solo dentro de esta rama." : "Selecciona una rama en el arbol para habilitar esta opcion."}</span>
                 </div>
               </div>
             </div>

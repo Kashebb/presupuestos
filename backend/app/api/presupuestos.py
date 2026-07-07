@@ -294,6 +294,55 @@ def _estado_exportacion(nodo: NodoPresupuesto, costo_apu: Optional[dict]) -> str
     return "Vinculado"
 
 
+VISTAS_EXPORTACION_ESTADO = {
+    "vinculados": "Vinculado",
+    "pendientes": "Pendiente",
+    "subcontratados": "Subcontratado",
+    "revisar": "Revisar",
+}
+
+
+def _filtrar_nodos_por_vista_exportacion(nodos: list[NodoPresupuesto], vista_exportacion: Optional[str]) -> list[NodoPresupuesto]:
+    vista = (vista_exportacion or "todo").strip().lower()
+    if vista in ("", "todo"):
+        return nodos
+    estado_objetivo = VISTAS_EXPORTACION_ESTADO.get(vista)
+    if not estado_objetivo:
+        raise HTTPException(status_code=400, detail="Vista de exportacion no permitida")
+
+    nodos_activos = [n for n in nodos if (n.estado_actualizacion or "activo") != "obsoleto"]
+    por_id = {n.id: n for n in nodos_activos}
+    hijos_por_padre: dict[Optional[int], list[NodoPresupuesto]] = {}
+    for nodo in nodos_activos:
+        padre_id = nodo.padre_id if nodo.padre_id in por_id else None
+        hijos_por_padre.setdefault(padre_id, []).append(nodo)
+
+    costos_por_apu: dict[int, dict] = {}
+    ids_incluir: set[int] = set()
+    for nodo in nodos_activos:
+        if not _es_rubro_operativo_desde_hijos(nodo, hijos_por_padre):
+            continue
+        costo_apu = None
+        if nodo.apu:
+            if nodo.apu.id not in costos_por_apu:
+                costo = calcular_costo_apu(nodo.apu)
+                costo["control_costo"] = (
+                    "revisar_costo"
+                    if "COSTO_NO_COINCIDE_CON_MAESTRO" in (nodo.apu.observacion or "")
+                    else "ok"
+                )
+                costos_por_apu[nodo.apu.id] = costo
+            costo_apu = costos_por_apu[nodo.apu.id]
+        if _estado_exportacion(nodo, costo_apu) != estado_objetivo:
+            continue
+        actual: Optional[NodoPresupuesto] = nodo
+        while actual is not None:
+            ids_incluir.add(actual.id)
+            actual = por_id.get(actual.padre_id)
+
+    return [n for n in nodos if n.id in ids_incluir]
+
+
 def _crear_workbook_presupuesto_operativo(proyecto: Proyecto, nodos: list[NodoPresupuesto]):
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -1504,6 +1553,7 @@ def exportar_presupuesto_operativo(
     proyecto_id: int,
     db: Session = Depends(get_db),
     root_nodo_id: Optional[int] = None,
+    vista_exportacion: Optional[str] = None,
 ):
     proyecto = db.query(Proyecto).filter(Proyecto.id == proyecto_id).first()
     if not proyecto:
@@ -1526,6 +1576,7 @@ def exportar_presupuesto_operativo(
             hijos_por_padre.setdefault(nodo.padre_id, []).append(nodo)
         ids_exportar = {root_nodo_id, *_descendientes_ids(root_nodo_id, hijos_por_padre)}
         nodos = [n for n in nodos if n.id in ids_exportar]
+    nodos = _filtrar_nodos_por_vista_exportacion(nodos, vista_exportacion)
     archivo = _crear_workbook_presupuesto_operativo(proyecto, nodos)
     filename = _nombre_archivo_excel(proyecto)
     return StreamingResponse(
