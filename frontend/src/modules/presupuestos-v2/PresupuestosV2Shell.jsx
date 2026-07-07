@@ -8,6 +8,7 @@ import VinculacionView from "./views/VinculacionView";
 
 export default function PresupuestosV2Shell() {
   const [view, setView] = useState("edicion");
+  const [ribbonGroup, setRibbonGroup] = useState("edicion");
   const [workspaceMode, setWorkspaceMode] = useState("lista");
   const [selectedTreeId, setSelectedTreeId] = useState("all");
   const [selectedRowId, setSelectedRowId] = useState("");
@@ -55,6 +56,12 @@ export default function PresupuestosV2Shell() {
   };
 
   const selectedTreeRow = selectedTreeId === "all" ? null : rows.find((row) => row.id === selectedTreeId);
+  const selectedRow = selectedRowId ? rows.find((row) => row.id === selectedRowId) : null;
+
+  const switchView = (nextView, nextGroup = nextView) => {
+    setView(nextView);
+    setRibbonGroup(nextGroup);
+  };
 
   const exportProject = (scope = "all") => {
     if (!selectedProjectId) return;
@@ -66,6 +73,89 @@ export default function PresupuestosV2Shell() {
     window.open(`${API}/presupuestos/proyectos/${selectedProjectId}/exportar-operativo.xlsx${query ? `?${query}` : ""}`, "_blank", "noopener,noreferrer");
     setExportModalOpen(false);
   };
+
+  const ribbonGroups = [
+    {
+      id: "edicion",
+      label: "Edicion",
+      actions: [
+        { label: "Abrir edicion", active: view === "edicion", onClick: () => switchView("edicion", "edicion") },
+        { label: "Agregar filas", onClick: () => switchView("edicion", "edicion"), hint: "Disponible dentro de la grilla de edicion." },
+        { label: "Guardar", onClick: () => switchView("edicion", "edicion"), hint: "Usa Guardar en la grilla cuando existan cambios pendientes." },
+      ],
+    },
+    {
+      id: "vinculacion",
+      label: "Vinculacion",
+      actions: [
+        { label: "Abrir vinculacion", active: view === "vinculacion", onClick: () => switchView("vinculacion", "vinculacion") },
+        { label: "Vincular APU", onClick: () => switchView("vinculacion", "vinculacion"), hint: selectedRow ? `Seleccion actual: ${selectedRow.descripcion}` : "Selecciona un rubro para vincular." },
+        { label: "Subcontratado", onClick: () => switchView("vinculacion", "vinculacion") },
+      ],
+    },
+    {
+      id: "apus",
+      label: "APUs",
+      actions: [
+        { label: "Crear / duplicar", onClick: () => switchView("vinculacion", "apus"), hint: "Usa el panel de vinculacion para crear desde APUs parecidos." },
+        { label: "Editar APU", onClick: () => switchView("vinculacion", "apus") },
+        { label: "Ver desglose", onClick: () => switchView("desglose", "apus") },
+      ],
+    },
+    {
+      id: "recursos",
+      label: "Recursos",
+      actions: [
+        { label: "Crear recurso", disabled: true, hint: "Siguiente fase: panel interno desde Presupuestos." },
+        { label: "Editar recurso", disabled: true, hint: "Siguiente fase: edicion desde Presupuestos." },
+      ],
+    },
+    {
+      id: "paquetes",
+      label: "Paquetes",
+      actions: [
+        { label: "Definir paquete", disabled: true, hint: "Fase posterior: paquetes/subproyectos." },
+        { label: "Mostrar liberados", disabled: true, hint: "Fase posterior: filtro de paquetes liberados." },
+      ],
+    },
+    {
+      id: "orden",
+      label: "Orden",
+      actions: [
+        { label: "Subir / bajar", onClick: () => switchView("edicion", "orden"), hint: "Disponible en la barra compacta de edicion." },
+        { label: "Sangria", onClick: () => switchView("edicion", "orden") },
+        { label: "Quitar sangria", onClick: () => switchView("edicion", "orden") },
+      ],
+    },
+    {
+      id: "vista",
+      label: "Vista",
+      actions: [
+        { label: "Edicion", active: view === "edicion", onClick: () => switchView("edicion", "vista") },
+        { label: "Vinculacion", active: view === "vinculacion", onClick: () => switchView("vinculacion", "vista") },
+        { label: "Desglose", active: view === "desglose", onClick: () => switchView("desglose", "vista") },
+        { label: "Analisis", active: view === "analisis", onClick: () => switchView("analisis", "vista") },
+      ],
+    },
+    {
+      id: "exportar",
+      label: "Exportar",
+      actions: [
+        { label: "Exportar Excel", onClick: () => setExportModalOpen(true), disabled: !selectedProjectId || loading || Boolean(error) },
+        { label: "Todo", onClick: () => exportProject("all"), disabled: !selectedProjectId || loading || Boolean(error) },
+        { label: "Seleccion", onClick: () => exportProject("selected"), disabled: !selectedTreeRow || loading || Boolean(error) },
+      ],
+    },
+    {
+      id: "importar",
+      label: "Importar",
+      actions: [
+        { label: "Importar Excel", disabled: true, hint: "Se mantiene fuera de esta fase para no tocar datos." },
+      ],
+    },
+  ];
+
+  const activeRibbonGroup = ribbonGroups.find((group) => group.id === ribbonGroup) || ribbonGroups[0];
 
   if (workspaceMode === "lista") {
     return (
@@ -141,19 +231,38 @@ export default function PresupuestosV2Shell() {
             <strong>{selectedProject ? `${selectedProject.nombre} · ${selectedProject.codigo || "sin codigo"}` : "Proyecto seleccionado"}</strong>
           </div>
           <span>{loading ? "Cargando..." : `${rows.length} fila(s) cargadas`}</span>
-          <ActionButton variant="secondary" compact onClick={() => setExportModalOpen(true)} disabled={!selectedProjectId || loading || Boolean(error)}>
-            Exportar Excel
-          </ActionButton>
         </div>
         {error && <div className="budget-v2-state budget-v2-state-error">{error}</div>}
         {!error && !loading && !projects.length && <div className="budget-v2-state">No hay proyectos registrados.</div>}
         {!error && !loading && Boolean(projects.length) && !rows.length && <div className="budget-v2-state">Este proyecto no tiene nodos cargados.</div>}
 
-        <div className="budget-v2-tabs" aria-label="Vistas de Presupuestos V2">
-          <button type="button" onClick={() => setView("edicion")} className={`budget-v2-tab ${view === "edicion" ? "budget-v2-tab-active" : ""}`}>Edicion</button>
-          <button type="button" onClick={() => setView("vinculacion")} className={`budget-v2-tab ${view === "vinculacion" ? "budget-v2-tab-active" : ""}`}>Vinculacion</button>
-          <button type="button" onClick={() => setView("desglose")} className={`budget-v2-tab ${view === "desglose" ? "budget-v2-tab-active" : ""}`}>Desglose</button>
-          <button type="button" onClick={() => setView("analisis")} className={`budget-v2-tab ${view === "analisis" ? "budget-v2-tab-active" : ""}`}>Analisis</button>
+        <div className="budget-v2-ribbon" aria-label="Cinta de acciones de Presupuestos V2">
+          <div className="budget-v2-ribbon-tabs">
+            {ribbonGroups.map((group) => (
+              <button
+                key={group.id}
+                type="button"
+                className={activeRibbonGroup.id === group.id ? "budget-v2-ribbon-tab-active" : ""}
+                onClick={() => setRibbonGroup(group.id)}
+              >
+                {group.label}
+              </button>
+            ))}
+          </div>
+          <div className="budget-v2-ribbon-actions">
+            {activeRibbonGroup.actions.map((action) => (
+              <button
+                key={action.label}
+                type="button"
+                className={action.active ? "budget-v2-ribbon-action-active" : ""}
+                disabled={action.disabled}
+                title={action.hint || ""}
+                onClick={action.onClick}
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {view === "edicion" && (
