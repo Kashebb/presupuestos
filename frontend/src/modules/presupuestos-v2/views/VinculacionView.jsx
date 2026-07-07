@@ -96,6 +96,7 @@ export default function VinculacionView({
   const [modalVincularOpen, setModalVincularOpen] = useState(false);
   const [modalCrearOpen, setModalCrearOpen] = useState(false);
   const [modalEditarApuOpen, setModalEditarApuOpen] = useState(false);
+  const [modalImpactoApuOpen, setModalImpactoApuOpen] = useState(false);
   const [modalVarianteOpen, setModalVarianteOpen] = useState(false);
   const [varianteRow, setVarianteRow] = useState(null);
   const [varianteNombre, setVarianteNombre] = useState("");
@@ -104,6 +105,7 @@ export default function VinculacionView({
   const [apuSeleccionado, setApuSeleccionado] = useState(null);
   const [actionStatus, setActionStatus] = useState("");
   const [actionError, setActionError] = useState("");
+  const [apuImpacto, setApuImpacto] = useState(null);
   const [showTree, setShowTree] = useState(true);
   const [showApuPanel, setShowApuPanel] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -207,12 +209,14 @@ export default function VinculacionView({
     setModalVincularOpen(false);
     setModalCrearOpen(false);
     setModalEditarApuOpen(false);
+    setModalImpactoApuOpen(false);
     setModalVarianteOpen(false);
     setApuSearch("");
     setApuSeleccionado(null);
     setVarianteRow(null);
     setVarianteNombre("");
     setVarianteSourceId("");
+    setApuImpacto(null);
     setActionError("");
     setActionStatus("");
   }, [selectedRowId]);
@@ -395,10 +399,43 @@ export default function VinculacionView({
     setSelectedTreeId(row.kind === "container" ? row.id : row.parentId || "all");
   };
 
-  const editarApu = () => {
+  const abrirEditorApuGlobal = () => {
     if (!selectedRow?.raw?.node?.apu_id) return;
     setActionError("");
+    setModalImpactoApuOpen(false);
     setModalEditarApuOpen(true);
+  };
+
+  const crearVarianteParaRubroActual = () => {
+    if (!selectedRow?.raw?.node?.apu_id) return;
+    setModalImpactoApuOpen(false);
+    setVarianteRow(selectedRow);
+    setVarianteNombre(selectedRow.paquete?.nombre || selectedRow.descripcion || "");
+    setVarianteSourceId(String(selectedRow.apuEfectivoId || selectedRow.raw.node.apu_id));
+    setActionError("");
+    setModalVarianteOpen(true);
+  };
+
+  const editarApu = async () => {
+    if (!selectedRow?.raw?.node?.apu_id) return;
+    setActionError("");
+    setActionStatus("Revisando alcance del APU...");
+    try {
+      const response = await fetch(`${API}/presupuestos/proyectos/${selectedProjectId}/apus/${selectedRow.raw.node.apu_id}/impacto-paquetes`);
+      const detail = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(detail?.detail || "No se pudo revisar el alcance del APU.");
+      const paquetesLiberados = (detail.paquetes || []).filter((paquete) => paquete.estado === "liberado");
+      if ((detail.total_rubros || 0) > 1 || paquetesLiberados.length > 0) {
+        setApuImpacto(detail);
+        setModalImpactoApuOpen(true);
+      } else {
+        abrirEditorApuGlobal();
+      }
+    } catch (err) {
+      setActionError(err.message || "No se pudo revisar el alcance del APU.");
+    } finally {
+      setActionStatus("");
+    }
   };
 
   const cerrarEditorApu = async ({ refresh = true } = {}) => {
@@ -793,6 +830,56 @@ export default function VinculacionView({
               </select>
             </label>
             <ErrorBanner>{actionError}</ErrorBanner>
+          </div>
+        </ModalShell>
+      )}
+
+      {modalImpactoApuOpen && apuImpacto && selectedRow && (
+        <ModalShell
+          title="Alcance de edicion APU"
+          size="md"
+          onClose={() => {
+            setModalImpactoApuOpen(false);
+            setApuImpacto(null);
+          }}
+          footer={
+            <>
+              <ActionButton onClick={() => setModalImpactoApuOpen(false)}>Cancelar</ActionButton>
+              <ActionButton onClick={crearVarianteParaRubroActual}>
+                Solo este rubro
+              </ActionButton>
+              <ActionButton variant="primary" onClick={abrirEditorApuGlobal}>
+                Editar compartido
+              </ActionButton>
+            </>
+          }
+        >
+          <div className="budget-v2-impact-modal">
+            <div className="budget-v2-create-apu-intro">
+              <strong>{selectedRow.apuNombre || selectedRow.apu}</strong>
+              <span>Este APU esta vinculado a {apuImpacto.total_rubros} rubro(s). Si editas el compartido, el cambio se vera en todos esos rubros.</span>
+            </div>
+            {(apuImpacto.paquetes || []).length > 0 && (
+              <div className="budget-v2-impact-list">
+                {apuImpacto.paquetes.map((paquete) => (
+                  <div key={paquete.id} className={paquete.estado === "liberado" ? "budget-v2-impact-released" : ""}>
+                    <span>{paquete.estado === "liberado" ? "Liberado" : "Activo"}</span>
+                    <strong>{paquete.nombre}</strong>
+                    <small>{paquete.rubros} rubro(s) con este APU</small>
+                  </div>
+                ))}
+              </div>
+            )}
+            {apuImpacto.rubros_fuera_paquete > 0 && (
+              <div className="budget-v2-panel-note">
+                {apuImpacto.rubros_fuera_paquete} rubro(s) usan este APU fuera de paquetes.
+              </div>
+            )}
+            {(apuImpacto.paquetes || []).some((paquete) => paquete.estado === "liberado") && (
+              <div className="budget-v2-panel-note budget-v2-panel-note-error">
+                Hay paquetes liberados usando este APU. Editar compartido tambien los cambia.
+              </div>
+            )}
           </div>
         </ModalShell>
       )}

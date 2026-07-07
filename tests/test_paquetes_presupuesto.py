@@ -11,10 +11,12 @@ BACKEND = ROOT / "backend"
 sys.path.insert(0, str(BACKEND))
 
 from app.models.base import Base
+from app.models.apu import APU
 from app.models.presupuesto import NodoPresupuesto, Proyecto
 from app.api.presupuestos import (
     PaqueteCreate,
     crear_paquete,
+    impacto_apu_paquetes,
     liberar_paquete,
     listar_paquetes,
     reabrir_paquete,
@@ -81,6 +83,34 @@ class PaquetesPresupuestoTest(unittest.TestCase):
 
         self.assertEqual(len(paquetes), 1)
         self.assertEqual(paquetes[0].nodo_id, self.nodo.id)
+
+    def test_impacto_apu_detecta_paquete_liberado(self):
+        apu = APU(codigo="APU-PKG", nombre="APU paquete", unidad="u", rendimiento=1.0)
+        self.db.add(apu)
+        self.db.commit()
+        rubro = NodoPresupuesto(
+            proyecto_id=self.proyecto.id,
+            padre_id=self.nodo.id,
+            tipo="RUBRO",
+            descripcion="Rubro con APU",
+            orden=2,
+            unidad="u",
+            metrado=1,
+            apu_id=apu.id,
+            activo_como_rubro=True,
+        )
+        self.db.add(rubro)
+        self.db.commit()
+        paquete = crear_paquete(self.proyecto.id, PaqueteCreate(nodo_id=self.nodo.id), self.db)
+        liberar_paquete(paquete.id, self.db)
+
+        impacto = impacto_apu_paquetes(self.proyecto.id, apu.id, self.db)
+
+        self.assertEqual(impacto.total_rubros, 1)
+        self.assertEqual(impacto.rubros_fuera_paquete, 0)
+        self.assertEqual(len(impacto.paquetes), 1)
+        self.assertEqual(impacto.paquetes[0].estado, "liberado")
+        self.assertEqual(impacto.paquetes[0].rubros, 1)
 
 
 if __name__ == "__main__":

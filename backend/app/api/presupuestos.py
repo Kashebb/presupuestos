@@ -889,6 +889,22 @@ class PaqueteOut(BaseModel):
         from_attributes = True
 
 
+class PaqueteImpactoAPUOut(BaseModel):
+    id: int
+    nodo_id: int
+    nombre: str
+    estado: str
+    rubros: int
+
+
+class ImpactoAPUProyectoOut(BaseModel):
+    proyecto_id: int
+    apu_id: int
+    total_rubros: int
+    rubros_fuera_paquete: int
+    paquetes: list[PaqueteImpactoAPUOut]
+
+
 class NodoOut(BaseModel):
     id: int
     proyecto_id: int
@@ -1394,6 +1410,66 @@ def reabrir_paquete(paquete_id: int, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(paquete)
     return paquete
+
+
+@router.get("/proyectos/{proyecto_id}/apus/{apu_id}/impacto-paquetes", response_model=ImpactoAPUProyectoOut)
+def impacto_apu_paquetes(proyecto_id: int, apu_id: int, db: Session = Depends(get_db)):
+    proyecto = db.query(Proyecto.id).filter(Proyecto.id == proyecto_id).first()
+    if not proyecto:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    apu = db.query(APU.id).filter(APU.id == apu_id).first()
+    if not apu:
+        raise HTTPException(status_code=404, detail="APU no encontrado")
+
+    nodos = (
+        db.query(NodoPresupuesto.id, NodoPresupuesto.padre_id, NodoPresupuesto.apu_id)
+        .filter(NodoPresupuesto.proyecto_id == proyecto_id)
+        .all()
+    )
+    padre_por_id = {nodo.id: nodo.padre_id for nodo in nodos}
+    usos = [nodo for nodo in nodos if nodo.apu_id == apu_id]
+    paquetes = (
+        db.query(PaquetePresupuesto)
+        .filter(PaquetePresupuesto.proyecto_id == proyecto_id)
+        .all()
+    )
+    paquete_por_nodo = {paquete.nodo_id: paquete for paquete in paquetes}
+    conteo_por_paquete: dict[int, int] = {}
+    fuera_paquete = 0
+
+    for uso in usos:
+        cursor = uso.id
+        paquete_encontrado: Optional[PaquetePresupuesto] = None
+        while cursor is not None:
+            paquete_encontrado = paquete_por_nodo.get(cursor)
+            if paquete_encontrado:
+                break
+            cursor = padre_por_id.get(cursor)
+        if paquete_encontrado:
+            conteo_por_paquete[paquete_encontrado.id] = conteo_por_paquete.get(paquete_encontrado.id, 0) + 1
+        else:
+            fuera_paquete += 1
+
+    paquetes_impactados = [
+        PaqueteImpactoAPUOut(
+            id=paquete.id,
+            nodo_id=paquete.nodo_id,
+            nombre=paquete.nombre,
+            estado=paquete.estado,
+            rubros=conteo,
+        )
+        for paquete in paquetes
+        if (conteo := conteo_por_paquete.get(paquete.id, 0)) > 0
+    ]
+    paquetes_impactados.sort(key=lambda item: (item.estado != "liberado", item.nombre.lower()))
+
+    return ImpactoAPUProyectoOut(
+        proyecto_id=proyecto_id,
+        apu_id=apu_id,
+        total_rubros=len(usos),
+        rubros_fuera_paquete=fuera_paquete,
+        paquetes=paquetes_impactados,
+    )
 
 
 @router.get("/proyectos/{proyecto_id}/nodos", response_model=list[NodoOut])

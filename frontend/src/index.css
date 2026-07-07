@@ -1595,9 +1595,61 @@ textarea {
 }
 
 .budget-v2-resource-modal,
-.budget-v2-package-modal {
+.budget-v2-package-modal,
+.budget-v2-impact-modal {
   display: grid;
   gap: 12px;
+}
+
+.budget-v2-impact-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(260px, 42vh);
+  overflow-y: auto;
+}
+
+.budget-v2-impact-list > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid #e5e7eb;
+  border-radius: var(--radius-sm);
+  background: #fff;
+  padding: 8px;
+}
+
+.budget-v2-impact-list span {
+  border-radius: var(--radius-sm);
+  background: #dcfce7;
+  color: #166534;
+  font-size: 10px;
+  font-weight: 850;
+  padding: 3px 5px;
+}
+
+.budget-v2-impact-list strong {
+  overflow: hidden;
+  color: #111827;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.budget-v2-impact-list small {
+  color: #64748b;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.budget-v2-impact-list .budget-v2-impact-released {
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+
+.budget-v2-impact-list .budget-v2-impact-released span {
+  background: #fee2e2;
+  color: #991b1b;
 }
 
 .budget-v2-tag-picker {
