@@ -94,7 +94,8 @@ function buildRows(nodes, costsByApu, apusById, paquetes = []) {
     const apuAjustado = Boolean(apu?.es_variante);
     const puRef = Number(node.precio_unitario_ref);
     const metrado = Number(node.metrado);
-    const puMeta = cost?.precio_unitario;
+    const estado = line ? lineStatus(node, cost) : undefined;
+    const puMeta = estado === "sin_apu" ? puRef : cost?.precio_unitario;
     const totalRef = Number.isFinite(puRef) && Number.isFinite(metrado) ? puRef * metrado : null;
     const totalMeta = Number.isFinite(puMeta) && Number.isFinite(metrado) ? puMeta * metrado : null;
     const comparable = Number.isFinite(totalRef) && totalRef > 0 && Number.isFinite(totalMeta);
@@ -126,7 +127,7 @@ function buildRows(nodes, costsByApu, apusById, paquetes = []) {
       dif: fmtMoney(diff),
       difPct: comparable ? fmtPct(diff / totalRef) : "",
       observacion: node.observaciones || "",
-      estado: line ? lineStatus(node, cost) : undefined,
+      estado,
       apu: baseApu?.codigo || apu?.codigo || cost?.codigo || "",
       apuNombre: apu?.nombre || baseApu?.nombre || "",
       apuBaseId: baseApu?.id || null,
