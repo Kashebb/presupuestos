@@ -178,18 +178,22 @@ export default function PresupuestosV2Shell() {
       const lines = packageRows.filter((row) => row.kind === "line");
       const totalRef = lines.reduce((sum, row) => sum + Number(row.raw?.totalRef || 0), 0);
       const totalMeta = lines.reduce((sum, row) => sum + Number(row.raw?.totalMeta || 0), 0);
-      const linked = lines.filter((row) => row.estado === "vinculado" || row.estado === "validado" || row.estado === "revisar").length;
+      const linked = lines.filter((row) => row.estado === "vinculado").length;
+      const validated = lines.filter((row) => row.estado === "validado").length;
+      const subcontracted = lines.filter((row) => row.estado === "sin_apu").length;
       const pending = lines.filter((row) => row.estado === "pendiente").length;
-      const sinApu = lines.filter((row) => row.estado === "sin_apu").length;
       const revisar = lines.filter((row) => row.estado === "revisar").length;
-      const progress = lines.length ? (linked / lines.length) * 100 : 0;
+      const advanced = linked + validated + subcontracted;
+      const progress = lines.length ? (advanced / lines.length) * 100 : 0;
       return {
         ...paquete,
         lines: lines.length,
         linked,
+        validated,
+        subcontracted,
         pending,
-        sinApu,
         revisar,
+        advanced,
         progress,
         totalRef,
         totalMeta,
@@ -202,12 +206,15 @@ export default function PresupuestosV2Shell() {
       acc.paquetes += 1;
       acc.liberados += item.estado === "liberado" ? 1 : 0;
       acc.rubros += item.lines;
+      acc.linked += item.linked;
+      acc.validated += item.validated;
+      acc.subcontracted += item.subcontracted;
       acc.pendientes += item.pending;
       acc.revisar += item.revisar;
       acc.totalRef += item.totalRef;
       acc.totalMeta += item.totalMeta;
       return acc;
-    }, { paquetes: 0, liberados: 0, rubros: 0, pendientes: 0, revisar: 0, totalRef: 0, totalMeta: 0 });
+    }, { paquetes: 0, liberados: 0, rubros: 0, linked: 0, validated: 0, subcontracted: 0, pendientes: 0, revisar: 0, totalRef: 0, totalMeta: 0 });
   }, [packageSummaries]);
 
   useEffect(() => {
@@ -364,6 +371,11 @@ export default function PresupuestosV2Shell() {
       setPackageStatus("Selecciona una rama del arbol para crear un paquete.");
       return;
     }
+    if (selectedPackage) {
+      setPackageError("");
+      setPackageStatus(`La rama seleccionada ya pertenece al paquete: ${selectedPackage.nombre}`);
+      return;
+    }
     setRibbonGroup("paquetes");
     setPackageError("");
     setPackageStatus("");
@@ -470,8 +482,8 @@ export default function PresupuestosV2Shell() {
         {
           label: "Crear paquete",
           onClick: abrirCrearPaquete,
-          disabled: !selectedContextRow || Boolean(selectedContextRow.paquete),
-          hint: selectedContextRow?.paquete ? "Esta rama ya tiene paquete." : "Crea un paquete desde la seleccion actual.",
+          disabled: !selectedContextRow,
+          hint: selectedPackage ? `Esta rama ya pertenece al paquete: ${selectedPackage.nombre}` : "Crea un paquete desde la seleccion actual.",
         },
         {
           label: "Liberar",
@@ -749,22 +761,32 @@ export default function PresupuestosV2Shell() {
                   <strong>{packageTotals.rubros}</strong>
                 </div>
                 <div>
-                  <small>Pendientes</small>
-                  <strong>{packageTotals.pendientes}</strong>
+                  <small>Vinculados</small>
+                  <strong>{packageTotals.linked}</strong>
                 </div>
                 <div>
-                  <small>Total meta</small>
-                  <strong>{fmtMoney(packageTotals.totalMeta)}</strong>
+                  <small>Validados</small>
+                  <strong>{packageTotals.validated}</strong>
+                </div>
+                <div>
+                  <small>Subcontratados</small>
+                  <strong>{packageTotals.subcontracted}</strong>
+                </div>
+                <div>
+                  <small>Pendientes</small>
+                  <strong>{packageTotals.pendientes}</strong>
                 </div>
               </div>
               <div className="budget-v2-package-summary-table">
                 <div className="budget-v2-package-summary-head">
                   <span>Paquete</span>
-                  <span>Avance</span>
+                  <span>Avance vinculación</span>
                   <span>Rubros</span>
+                  <span>Vinc.</span>
+                  <span>Valid.</span>
+                  <span>Subcontr.</span>
                   <span>Pend.</span>
                   <span>Revisar</span>
-                  <span>Total ref</span>
                   <span>Total meta</span>
                   <span>Dif.</span>
                 </div>
@@ -788,9 +810,11 @@ export default function PresupuestosV2Shell() {
                       <small>{pct(item.progress)}</small>
                     </span>
                     <span>{item.lines}</span>
+                    <span>{item.linked}</span>
+                    <span>{item.validated}</span>
+                    <span>{item.subcontracted}</span>
                     <span>{item.pending}</span>
                     <span>{item.revisar}</span>
-                    <span>{fmtMoney(item.totalRef)}</span>
                     <span>{fmtMoney(item.totalMeta)}</span>
                     <span className={item.diff >= 0 ? "budget-v2-package-diff-positive" : "budget-v2-package-diff-negative"}>{fmtMoney(item.diff)}</span>
                   </button>

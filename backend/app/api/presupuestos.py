@@ -1623,6 +1623,33 @@ def _validar_nodo_paquete(db: Session, proyecto_id: int, nodo_id: int) -> NodoPr
     return nodo
 
 
+def _paquete_ancestro_nodo(db: Session, proyecto_id: int, nodo: NodoPresupuesto) -> Optional[PaquetePresupuesto]:
+    paquetes = (
+        db.query(PaquetePresupuesto)
+        .filter(PaquetePresupuesto.proyecto_id == proyecto_id)
+        .all()
+    )
+    paquete_por_nodo = {paquete.nodo_id: paquete for paquete in paquetes}
+    if not paquete_por_nodo:
+        return None
+
+    nodos = (
+        db.query(NodoPresupuesto.id, NodoPresupuesto.padre_id)
+        .filter(NodoPresupuesto.proyecto_id == proyecto_id)
+        .all()
+    )
+    padre_por_id = {item.id: item.padre_id for item in nodos}
+    visitados: set[int] = set()
+    cursor: Optional[int] = nodo.id
+    while cursor is not None and cursor not in visitados:
+        visitados.add(cursor)
+        paquete = paquete_por_nodo.get(cursor)
+        if paquete:
+            return paquete
+        cursor = padre_por_id.get(cursor)
+    return None
+
+
 @router.get("/proyectos/{proyecto_id}/paquetes", response_model=list[PaqueteOut])
 def listar_paquetes(proyecto_id: int, db: Session = Depends(get_db)):
     proyecto = db.query(Proyecto.id).filter(Proyecto.id == proyecto_id).first()
@@ -1639,13 +1666,12 @@ def listar_paquetes(proyecto_id: int, db: Session = Depends(get_db)):
 @router.post("/proyectos/{proyecto_id}/paquetes", response_model=PaqueteOut, status_code=201)
 def crear_paquete(proyecto_id: int, data: PaqueteCreate, db: Session = Depends(get_db)):
     nodo = _validar_nodo_paquete(db, proyecto_id, data.nodo_id)
-    existente = (
-        db.query(PaquetePresupuesto)
-        .filter(PaquetePresupuesto.proyecto_id == proyecto_id, PaquetePresupuesto.nodo_id == data.nodo_id)
-        .first()
-    )
-    if existente:
-        raise HTTPException(status_code=400, detail="La rama seleccionada ya tiene un paquete definido")
+    paquete_ancestro = _paquete_ancestro_nodo(db, proyecto_id, nodo)
+    if paquete_ancestro:
+        raise HTTPException(
+            status_code=400,
+            detail=f"La rama seleccionada ya pertenece al paquete: {paquete_ancestro.nombre}",
+        )
 
     nombre = " ".join((data.nombre or nodo.descripcion or "").split())
     if not nombre:

@@ -68,6 +68,30 @@ class PaquetesPresupuestoTest(unittest.TestCase):
             crear_paquete(self.proyecto.id, PaqueteCreate(nodo_id=self.nodo.id), self.db)
 
         self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("Garita", ctx.exception.detail)
+
+    def test_rechaza_paquete_en_rama_que_ya_pertenece_a_otro_paquete(self):
+        crear_paquete(
+            self.proyecto.id,
+            PaqueteCreate(nodo_id=self.nodo.id, nombre="Garita principal"),
+            self.db,
+        )
+        hijo = NodoPresupuesto(
+            proyecto_id=self.proyecto.id,
+            padre_id=self.nodo.id,
+            tipo="SUBCAPITULO",
+            descripcion="Obra civil",
+            orden=2,
+            activo_como_rubro=False,
+        )
+        self.db.add(hijo)
+        self.db.commit()
+
+        with self.assertRaises(HTTPException) as ctx:
+            crear_paquete(self.proyecto.id, PaqueteCreate(nodo_id=hijo.id), self.db)
+
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("Garita principal", ctx.exception.detail)
 
     def test_libera_y_reabre_paquete(self):
         paquete = crear_paquete(self.proyecto.id, PaqueteCreate(nodo_id=self.nodo.id), self.db)

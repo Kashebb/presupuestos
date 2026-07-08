@@ -1842,10 +1842,10 @@ textarea {
 .budget-v2-package-summary-head,
 .budget-v2-package-summary-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1.5fr) 120px 58px 58px 58px 110px 110px 110px;
+  grid-template-columns: minmax(220px, 1.5fr) 130px repeat(6, 68px) 110px 110px;
   gap: 8px;
   align-items: center;
-  min-width: 860px;
+  min-width: 1080px;
   padding: 8px 10px;
 }
 
