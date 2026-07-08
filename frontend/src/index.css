@@ -530,8 +530,15 @@ textarea {
 
 .budget-v2-grid-toolbar {
   flex: 0 0 auto;
+  min-width: 0;
+  overflow: hidden;
   border-bottom: 1px solid var(--color-border);
   background: #fff;
+}
+
+.budget-v2-grid-toolbar .budget-v2-toolbar-spacer {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .budget-v2-grid-state {
@@ -568,10 +575,8 @@ textarea {
 }
 
 .budget-v2-add-rows-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 30;
+  position: fixed;
+  z-index: 80;
   width: 220px;
   padding: 10px;
   border: 1px solid var(--color-border);
@@ -600,6 +605,17 @@ textarea {
   border-radius: var(--radius-sm);
   padding: 5px 7px;
   font-size: 12px;
+}
+
+.budget-v2-add-rows-menu button {
+  border: 1px solid var(--color-primary-dark);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-dark);
+  color: #fff;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 5px 9px;
 }
 
 .budget-v2-toolbar button,
@@ -742,24 +758,32 @@ textarea {
   display: grid;
   flex: 1;
   min-height: 0;
-  grid-template-columns: var(--budget-v2-tree-width) minmax(620px, 1fr);
+  grid-template-columns: var(--budget-v2-tree-width) minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid var(--color-border);
   background: #fff;
 }
 
 .budget-v2-edit-layout.budget-v2-left-collapsed {
-  grid-template-columns: var(--budget-v2-side-rail-width) minmax(620px, 1fr);
+  grid-template-columns: var(--budget-v2-side-rail-width) minmax(0, 1fr);
 }
 
 .budget-v2-edit-layout .budget-v2-grid-shell {
   border: 0;
 }
 
+.budget-v2-edit-main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
 .budget-v2-grid-shell {
   display: flex;
   flex: 1;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
   overflow: auto;
   border: 1px solid var(--color-border);
@@ -769,12 +793,13 @@ textarea {
 .budget-v2-grid-header,
 .budget-v2-grid-row {
   display: grid;
-  min-width: 1060px;
+  width: max-content;
+  min-width: max(100%, 1060px);
 }
 
 .budget-v2-grid-header {
   position: sticky;
-  top: 43px;
+  top: 0;
   z-index: 2;
   border-bottom: 1px solid #cfd8cf;
   background: #edf2ed;

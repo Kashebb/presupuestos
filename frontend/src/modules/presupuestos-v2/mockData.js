@@ -1,10 +1,10 @@
 export const editColumns = [
-  { key: "descripcion", label: "Descripcion", width: "minmax(420px, 1.8fr)", align: "left", editable: true },
+  { key: "descripcion", label: "Descripcion", width: "520px", align: "left", editable: true },
   { key: "unidad", label: "Unidad", width: "90px", align: "center", editable: true },
   { key: "metrado", label: "Metrado", width: "120px", align: "right", editable: true },
   { key: "puRef", label: "P.U. Ref", width: "120px", align: "right", editable: true },
   { key: "ptRef", label: "Total Ref", width: "130px", align: "right", editable: false },
-  { key: "observacion", label: "Observacion", width: "minmax(240px, 1fr)", align: "left", editable: true },
+  { key: "observacion", label: "Observacion", width: "240px", align: "left", editable: true },
 ];
 
 export const emptyEditRows = Array.from({ length: 18 }, (_, index) => ({

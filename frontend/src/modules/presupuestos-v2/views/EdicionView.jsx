@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ActionButton, ModalShell } from "../../../components/ui";
 import { API } from "../data";
 import PresupuestoTree from "../components/PresupuestoTree";
@@ -101,7 +102,9 @@ export default function EdicionView({
   const [confirmConfig, setConfirmConfig] = useState(null);
   const [showTree, setShowTree] = useState(true);
   const [addRowsMenuOpen, setAddRowsMenuOpen] = useState(false);
+  const [addRowsMenuPosition, setAddRowsMenuPosition] = useState({ top: 0, left: 0 });
   const [bulkRowCount, setBulkRowCount] = useState("5");
+  const addRowsMenuButtonRef = useRef(null);
 
   const activeRow = displayRows.find((row) => row.id === activeCell.rowId);
   const canEditActiveRow = activeRow?.kind === "line";
@@ -129,6 +132,26 @@ export default function EdicionView({
     [displayRows, searchMatches]
   );
 
+  const searchableRows = useMemo(
+    () => displayRows
+      .filter((row) => row.kind === "line")
+      .map((row) => ({
+        row,
+        descripcionNorm: normalizeText(row.descripcion),
+        unidadNorm: normalizeText(row.unidad),
+      })),
+    [displayRows]
+  );
+
+  const searchableApus = useMemo(
+    () => apus.map((apu) => ({
+      apu,
+      nombreNorm: normalizeText(`${apu.codigo || ""} ${apu.nombre || ""}`),
+      unidadNorm: normalizeText(apu.unidad),
+    })),
+    [apus]
+  );
+
   const activeSuggestions = useMemo(() => {
     if (!activeRow || activeRow.kind !== "line" || !["descripcion", "unidad"].includes(activeCell.colKey)) return [];
     const draftValue = drafts[activeRow.id]?.[activeCell.colKey];
@@ -136,19 +159,19 @@ export default function EdicionView({
     if (query.length < (activeCell.colKey === "unidad" ? 1 : 2)) return [];
 
     if (activeCell.colKey === "descripcion") {
-      const rowMatches = displayRows
-        .filter((row) => row.kind === "line" && row.id !== activeRow.id && normalizeText(row.descripcion).includes(query))
+      const rowMatches = searchableRows
+        .filter((item) => item.row.id !== activeRow.id && item.descripcionNorm.includes(query))
         .slice(0, 4)
-        .map((row) => ({
+        .map(({ row }) => ({
           key: `row-${row.id}`,
           label: row.descripcion,
           detail: row.unidad ? `Fila existente | ${row.unidad}` : "Fila existente",
           unidad: row.unidad || "",
         }));
-      const apuMatches = apus
-        .filter((apu) => normalizeText(`${apu.codigo || ""} ${apu.nombre || ""}`).includes(query))
+      const apuMatches = searchableApus
+        .filter((item) => item.nombreNorm.includes(query))
         .slice(0, 4)
-        .map((apu) => ({
+        .map(({ apu }) => ({
           key: `apu-${apu.id}`,
           label: apu.nombre || apu.codigo || "",
           detail: `APU ${apu.codigo || "-"} | ${apu.unidad || "sin unidad"}`,
@@ -159,23 +182,23 @@ export default function EdicionView({
 
     const descriptionText = normalizeText(drafts[activeRow.id]?.descripcion ?? activeRow.descripcion);
     const units = new Map();
-    displayRows
-      .filter((row) => row.kind === "line" && row.unidad && normalizeText(row.unidad).includes(query))
-      .forEach((row) => {
-        const score = descriptionText && normalizeText(row.descripcion).includes(descriptionText.slice(0, 8)) ? 2 : 1;
+    searchableRows
+      .filter((item) => item.row.unidad && item.unidadNorm.includes(query))
+      .forEach(({ row, descripcionNorm }) => {
+        const score = descriptionText && descripcionNorm.includes(descriptionText.slice(0, 8)) ? 2 : 1;
         units.set(row.unidad, Math.max(units.get(row.unidad) || 0, score));
       });
-    apus
-      .filter((apu) => apu.unidad && normalizeText(apu.unidad).includes(query))
-      .forEach((apu) => {
-        const score = descriptionText && normalizeText(apu.nombre).includes(descriptionText.slice(0, 8)) ? 2 : 1;
+    searchableApus
+      .filter((item) => item.apu.unidad && item.unidadNorm.includes(query))
+      .forEach(({ apu, nombreNorm }) => {
+        const score = descriptionText && nombreNorm.includes(descriptionText.slice(0, 8)) ? 2 : 1;
         units.set(apu.unidad, Math.max(units.get(apu.unidad) || 0, score));
       });
     return [...units.entries()]
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
       .slice(0, 6)
       .map(([unidad]) => ({ key: `unit-${unidad}`, label: unidad, detail: "Unidad sugerida", unidad }));
-  }, [activeCell.colKey, activeRow, apus, displayRows, drafts]);
+  }, [activeCell.colKey, activeRow, drafts, searchableApus, searchableRows]);
 
   const gridTemplate = useMemo(
     () => `42px ${editColumns.map((column) => column.width).join(" ")}`,
@@ -554,8 +577,44 @@ export default function EdicionView({
 
   const addBulkRows = (event) => {
     event.preventDefault();
+    setAddRowsMenuOpen(false);
     addRowsBelow(bulkRowCount);
   };
+
+  const updateAddRowsMenuPosition = () => {
+    const anchor = addRowsMenuButtonRef.current;
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
+    const menuWidth = 242;
+    const margin = 12;
+    setAddRowsMenuPosition({
+      top: rect.bottom + 6,
+      left: Math.max(margin, Math.min(rect.left, window.innerWidth - menuWidth - margin)),
+    });
+  };
+
+  const toggleAddRowsMenu = () => {
+    setAddRowsMenuOpen((open) => {
+      const nextOpen = !open;
+      if (nextOpen) updateAddRowsMenuPosition();
+      return nextOpen;
+    });
+  };
+
+  useEffect(() => {
+    if (!addRowsMenuOpen) return undefined;
+    updateAddRowsMenuPosition();
+    window.addEventListener("resize", updateAddRowsMenuPosition);
+    window.addEventListener("scroll", updateAddRowsMenuPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateAddRowsMenuPosition);
+      window.removeEventListener("scroll", updateAddRowsMenuPosition, true);
+    };
+  }, [addRowsMenuOpen]);
+
+  useEffect(() => {
+    if (!canEditActiveRow) setAddRowsMenuOpen(false);
+  }, [canEditActiveRow]);
 
   const deleteActiveRow = async () => {
     if (!canDeleteActiveRow) return;
@@ -720,31 +779,15 @@ export default function EdicionView({
           <button type="button" disabled={!canEditActiveRow} onClick={addRowBelow}>Agregar fila</button>
           <button
             type="button"
+            ref={addRowsMenuButtonRef}
             className="budget-v2-split-button-arrow"
             disabled={!canEditActiveRow}
             aria-label="Mas opciones para agregar filas"
             aria-expanded={addRowsMenuOpen}
-            onClick={() => setAddRowsMenuOpen((open) => !open)}
+            onClick={toggleAddRowsMenu}
           >
             v
           </button>
-          {addRowsMenuOpen && canEditActiveRow && (
-            <form className="budget-v2-add-rows-menu" onSubmit={addBulkRows}>
-              <label htmlFor="budget-v2-bulk-row-count">Cantidad de filas</label>
-              <div>
-                <input
-                  id="budget-v2-bulk-row-count"
-                  type="number"
-                  min="1"
-                  max="100"
-                  step="1"
-                  value={bulkRowCount}
-                  onChange={(event) => setBulkRowCount(event.target.value)}
-                />
-                <button type="submit">Agregar</button>
-              </div>
-            </form>
-          )}
         </span>
       ),
     },
@@ -838,12 +881,7 @@ export default function EdicionView({
           />
         </CollapsibleSidePanel>
 
-        <div
-          className="budget-v2-grid-shell"
-          onPaste={handleGridPaste}
-          onMouseUp={() => setDragging(false)}
-          onMouseLeave={() => setDragging(false)}
-        >
+        <section className="budget-v2-edit-main">
           <div className="budget-v2-toolbar budget-v2-grid-toolbar">
             <div className="budget-v2-toolbar-spacer" />
             <div className="budget-v2-search" role="search">
@@ -872,93 +910,100 @@ export default function EdicionView({
           )}
           {error && <div className="budget-v2-edit-error">{error}</div>}
 
-          <div className="budget-v2-grid-header" style={{ gridTemplateColumns: gridTemplate }}>
-            <div className="budget-v2-grid-corner" />
-            {editColumns.map((column) => (
-              <div key={column.key} className="budget-v2-grid-th">
-                {column.label}
-              </div>
-            ))}
-          </div>
+          <div
+            className="budget-v2-grid-shell"
+            onPaste={handleGridPaste}
+            onMouseUp={() => setDragging(false)}
+            onMouseLeave={() => setDragging(false)}
+          >
+            <div className="budget-v2-grid-header" style={{ gridTemplateColumns: gridTemplate }}>
+              <div className="budget-v2-grid-corner" />
+              {editColumns.map((column) => (
+                <div key={column.key} className="budget-v2-grid-th">
+                  {column.label}
+                </div>
+              ))}
+            </div>
 
-          <div className="budget-v2-grid-body">
-            {displayRows.map((row, rowIndex) => (
-              <div
-                key={row.id}
-                data-budget-row-id={row.id}
-                className={`budget-v2-grid-row ${row.kind === "container" ? "budget-v2-grid-row-container" : ""} ${rowIndex >= selectedRowRange.start && rowIndex <= selectedRowRange.end ? "budget-v2-grid-row-selected" : ""}`}
-                style={{ gridTemplateColumns: gridTemplate }}
-              >
-                <button
-                  type="button"
-                  className="budget-v2-row-number"
-                  aria-label={`Seleccionar fila ${rowIndex + 1}`}
-                  onClick={(event) => selectRow(row, rowIndex, event.shiftKey)}
+            <div className="budget-v2-grid-body">
+              {displayRows.map((row, rowIndex) => (
+                <div
+                  key={row.id}
+                  data-budget-row-id={row.id}
+                  className={`budget-v2-grid-row ${row.kind === "container" ? "budget-v2-grid-row-container" : ""} ${rowIndex >= selectedRowRange.start && rowIndex <= selectedRowRange.end ? "budget-v2-grid-row-selected" : ""}`}
+                  style={{ gridTemplateColumns: gridTemplate }}
                 >
-                  {rowIndex + 1}
-                </button>
-                {editColumns.map((column, colIndex) => {
-                  const active = activeCell.rowId === row.id && activeCell.colKey === column.key;
-                  const selected = isCellSelected(rowIndex, colIndex);
-                  const editable = column.editable && row.kind === "line";
-                  const draftValue = drafts[row.id]?.[column.key];
-                  const value = displayCellValue(row, column.key, draftValue);
-                  const dirty = draftValue !== undefined;
+                  <button
+                    type="button"
+                    className="budget-v2-row-number"
+                    aria-label={`Seleccionar fila ${rowIndex + 1}`}
+                    onClick={(event) => selectRow(row, rowIndex, event.shiftKey)}
+                  >
+                    {rowIndex + 1}
+                  </button>
+                  {editColumns.map((column, colIndex) => {
+                    const active = activeCell.rowId === row.id && activeCell.colKey === column.key;
+                    const selected = isCellSelected(rowIndex, colIndex);
+                    const editable = column.editable && row.kind === "line";
+                    const draftValue = drafts[row.id]?.[column.key];
+                    const value = displayCellValue(row, column.key, draftValue);
+                    const dirty = draftValue !== undefined;
 
-                  return (
-                    <button
-                      key={column.key}
-                      type="button"
-                      className={`budget-v2-cell ${selected ? "budget-v2-cell-selected" : ""} ${active ? "budget-v2-cell-active" : ""} ${!editable ? "budget-v2-cell-readonly" : ""} ${dirty ? "budget-v2-cell-dirty" : ""}`}
-                      onMouseDown={() => startCellSelection(row, rowIndex, column, colIndex)}
-                      onMouseEnter={() => extendCellSelection(row, rowIndex, column, colIndex)}
-                      style={{
-                        textAlign: column.align,
-                        paddingLeft: column.key === "descripcion" ? `${12 + row.level * 18}px` : undefined,
-                        fontWeight: row.kind === "container" && column.key === "descripcion" ? 800 : undefined,
-                      }}
-                    >
-                      {active && editable ? (
-                        <input
-                          autoFocus
-                          className="budget-v2-cell-input"
-                          value={String(value ?? "")}
-                          onChange={(event) => updateDraft(row, column.key, event.target.value)}
-                          onClick={(event) => event.stopPropagation()}
-                          onMouseDown={(event) => event.stopPropagation()}
-                          onPaste={handleGridPaste}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") saveChanges();
-                            if (event.key === "Escape") setActiveCell({ rowId: row.id, colKey: column.key });
-                          }}
-                        />
-                      ) : (
-                        value
-                      )}
-                      {active && editable && activeSuggestions.length > 0 && (
-                        <div className="budget-v2-cell-suggestions">
-                          {activeSuggestions.map((suggestion) => (
-                            <div
-                              key={suggestion.key}
-                              onMouseDown={(event) => {
-                                event.preventDefault();
-                                event.stopPropagation();
-                                applySuggestion(row, column.key, suggestion);
-                              }}
-                            >
-                              <strong>{suggestion.label}</strong>
-                              <small>{suggestion.detail}</small>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
+                    return (
+                      <button
+                        key={column.key}
+                        type="button"
+                        className={`budget-v2-cell ${selected ? "budget-v2-cell-selected" : ""} ${active ? "budget-v2-cell-active" : ""} ${!editable ? "budget-v2-cell-readonly" : ""} ${dirty ? "budget-v2-cell-dirty" : ""}`}
+                        onMouseDown={() => startCellSelection(row, rowIndex, column, colIndex)}
+                        onMouseEnter={() => extendCellSelection(row, rowIndex, column, colIndex)}
+                        style={{
+                          textAlign: column.align,
+                          paddingLeft: column.key === "descripcion" ? `${Math.min(12 + row.level * 18, 132)}px` : undefined,
+                          fontWeight: row.kind === "container" && column.key === "descripcion" ? 800 : undefined,
+                        }}
+                      >
+                        {active && editable ? (
+                          <input
+                            autoFocus
+                            className="budget-v2-cell-input"
+                            value={String(value ?? "")}
+                            onChange={(event) => updateDraft(row, column.key, event.target.value)}
+                            onClick={(event) => event.stopPropagation()}
+                            onMouseDown={(event) => event.stopPropagation()}
+                            onPaste={handleGridPaste}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") saveChanges();
+                              if (event.key === "Escape") setActiveCell({ rowId: row.id, colKey: column.key });
+                            }}
+                          />
+                        ) : (
+                          value
+                        )}
+                        {active && editable && activeSuggestions.length > 0 && (
+                          <div className="budget-v2-cell-suggestions">
+                            {activeSuggestions.map((suggestion) => (
+                              <div
+                                key={suggestion.key}
+                                onMouseDown={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  applySuggestion(row, column.key, suggestion);
+                                }}
+                              >
+                                <strong>{suggestion.label}</strong>
+                                <small>{suggestion.detail}</small>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        </section>
       </div>
 
       {confirmConfig && (
@@ -980,6 +1025,28 @@ export default function EdicionView({
             {confirmConfig.detail && <span>{confirmConfig.detail}</span>}
           </div>
         </ModalShell>
+      )}
+      {addRowsMenuOpen && canEditActiveRow && createPortal(
+        <form
+          className="budget-v2-add-rows-menu"
+          style={{ top: `${addRowsMenuPosition.top}px`, left: `${addRowsMenuPosition.left}px` }}
+          onSubmit={addBulkRows}
+        >
+          <label htmlFor="budget-v2-bulk-row-count">Cantidad de filas</label>
+          <div>
+            <input
+              id="budget-v2-bulk-row-count"
+              type="number"
+              min="1"
+              max="100"
+              step="1"
+              value={bulkRowCount}
+              onChange={(event) => setBulkRowCount(event.target.value)}
+            />
+            <button type="submit">Agregar</button>
+          </div>
+        </form>,
+        document.body
       )}
     </>
   );
