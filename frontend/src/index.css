@@ -1247,9 +1247,17 @@ textarea {
 }
 
 .budget-v2-tree-item small {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
   color: #64748b;
   font-size: 9px;
   font-weight: 700;
+}
+
+.budget-v2-tree-item small span {
+  min-width: 0;
 }
 
 .budget-v2-linking-main {

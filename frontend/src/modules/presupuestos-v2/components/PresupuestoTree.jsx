@@ -50,43 +50,48 @@ export default function PresupuestoTree({
             <span>Presupuesto completo</span>
             <small>{mode === "edicion" ? "Ir al inicio" : "Ver todo"}</small>
           </button>
-          {filteredRows.map((row) => (
-            <button
-              key={row.id}
-              type="button"
-              className={`budget-v2-tree-item ${selectedTreeId === row.id ? "budget-v2-tree-active" : ""} ${markerSet.has(row.id) ? "budget-v2-tree-marked" : ""}`}
-              onClick={() => onSelect(row.id)}
-              style={{ paddingLeft: `${12 + row.level * 14}px` }}
-            >
-              {mode === "vinculacion" || mode === "edicion" || mode === "desglose" ? (
-                <span className="budget-v2-tree-label">
-                  <span
-                    className="budget-v2-tree-toggle"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onToggleCollapse?.(row.id);
-                    }}
-                  >
-                    {collapsedTreeIds?.has(row.id) ? "+" : "-"}
+          {filteredRows.map((row) => {
+            const detailText = mode === "analisis"
+              ? row.ptMeta
+              : mode === "edicion"
+                ? `${row.lines} rubro(s)`
+                : mode === "desglose"
+                  ? `${row.lines} rubro(s)`
+                  : `${row.linked}/${row.lines} vinculadas`;
+            const packageLabel = row.paquete?.estado === "liberado" ? "Liberado" : "Paquete";
+
+            return (
+              <button
+                key={row.id}
+                type="button"
+                className={`budget-v2-tree-item ${selectedTreeId === row.id ? "budget-v2-tree-active" : ""} ${markerSet.has(row.id) ? "budget-v2-tree-marked" : ""}`}
+                onClick={() => onSelect(row.id)}
+                style={{ paddingLeft: `${12 + row.level * 14}px` }}
+              >
+                {mode === "vinculacion" || mode === "edicion" || mode === "desglose" ? (
+                  <span className="budget-v2-tree-label">
+                    <span
+                      className="budget-v2-tree-toggle"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onToggleCollapse?.(row.id);
+                      }}
+                    >
+                      {collapsedTreeIds?.has(row.id) ? "+" : "-"}
+                    </span>
+                    <span>{row.descripcion}</span>
+                    <i className={`budget-v2-tree-dot ${treeStatusClass(row)}`} />
                   </span>
+                ) : (
                   <span>{row.descripcion}</span>
-                  {row.paquete && <em className="budget-v2-tree-package">{row.paquete.estado === "liberado" ? "Liberado" : "Paquete"}</em>}
-                  <i className={`budget-v2-tree-dot ${treeStatusClass(row)}`} />
-                </span>
-              ) : (
-                <span>{row.descripcion}</span>
-              )}
-              <small>
-                {mode === "analisis"
-                  ? row.ptMeta
-                  : mode === "edicion"
-                    ? `${row.lines} rubro(s)`
-                    : mode === "desglose"
-                      ? `${row.lines} rubro(s)`
-                      : `${row.linked}/${row.lines} vinculadas`}
-              </small>
-            </button>
-          ))}
+                )}
+                <small>
+                  {row.paquete && <em className="budget-v2-tree-package">{packageLabel}</em>}
+                  <span>{detailText}</span>
+                </small>
+              </button>
+            );
+          })}
           {treeSearch.trim() && !filteredRows.length && (
             <div className="budget-v2-tree-empty">Sin coincidencias en el arbol.</div>
           )}
