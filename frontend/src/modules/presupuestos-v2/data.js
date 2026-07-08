@@ -4,6 +4,7 @@ export const API = "http://127.0.0.1:8000";
 
 export const statusMeta = {
   vinculado: { label: "Vinculado", className: "budget-v2-status-linked" },
+  validado: { label: "Validado", className: "budget-v2-status-validated" },
   pendiente: { label: "Pendiente", className: "budget-v2-status-pending" },
   sin_apu: { label: "Subcontratado", className: "budget-v2-status-noapu" },
   revisar: { label: "Revisar", className: "budget-v2-status-review" },
@@ -76,8 +77,15 @@ function nodeLevel(node) {
 function lineStatus(node, apuCost) {
   if (node.observaciones === "SIN_APU") return "sin_apu";
   if (!node.apu_id) return "pendiente";
+  if (node.estado_revision_apu === "Validado") return "validado";
+  if (node.estado_revision_apu === "Revisar") return "revisar";
+  if (node.estado_revision_apu === "Vinculado") return "vinculado";
   if (node.requiere_revision_apu || apuCost?.control_costo === "revisar_costo") return "revisar";
   return "vinculado";
+}
+
+function isLinkedStatus(status) {
+  return status === "vinculado" || status === "validado" || status === "revisar";
 }
 
 function buildRows(nodes, costsByApu, apusById, paquetes = []) {
@@ -162,7 +170,7 @@ function buildRows(nodes, costsByApu, apusById, paquetes = []) {
     const diff = refComparable > 0 ? metaComparable - refComparable : null;
 
     row.lines = rubros.length;
-    row.linked = rubros.filter((rubro) => rubro.estado === "vinculado" || rubro.estado === "revisar").length;
+    row.linked = rubros.filter((rubro) => isLinkedStatus(rubro.estado)).length;
     row.pending = rubros.filter((rubro) => rubro.estado === "pendiente").length;
     row.sinApu = rubros.filter((rubro) => rubro.estado === "sin_apu").length;
     row.revisar = rubros.filter((rubro) => rubro.estado === "revisar").length;

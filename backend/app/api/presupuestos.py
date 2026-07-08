@@ -13,6 +13,7 @@ Rutas:
 """
 import io
 import json
+import hashlib
 import math
 import re
 import unicodedata
@@ -27,7 +28,14 @@ from sqlalchemy.orm import Session, joinedload
 
 from app import backup
 from app.db import get_db
-from app.models.presupuesto import Proyecto, NodoPresupuesto, ActualizacionPresupuestoLote, PaquetePresupuesto
+from app.models.presupuesto import (
+    Proyecto,
+    NodoPresupuesto,
+    ActualizacionPresupuestoLote,
+    PaquetePresupuesto,
+    NodoAPURevision,
+    NodoAPURevisionItem,
+)
 from app.models.apu import APU, APUItem
 from app.models.recurso import Recurso
 from app.api.apus import calcular_costo_apu, siguiente_codigo_apu
@@ -287,14 +295,164 @@ def _items_exportacion_por_jerarquia(nodos: list[NodoPresupuesto]) -> dict[int, 
     return items
 
 
-def _estado_exportacion(nodo: NodoPresupuesto, costo_apu: Optional[dict]) -> str:
+def _estado_exportacion(nodo: NodoPresupuesto, costo_apu: Optional[dict], db: Optional[Session] = None) -> str:
+    return _estado_revision_apu(nodo, costo_apu, db)
+
+
+def _motivos_revision_apu(nodo: NodoPresupuesto, costo_apu: Optional[dict]) -> list[dict[str, str]]:
+    motivos: list[dict[str, str]] = []
+    if nodo.requiere_revision_apu:
+        motivos.append(
+            {
+                "codigo": "rubro_editado",
+                "descripcion": "El rubro cambio despues de vincular el APU.",
+                "detalle": [
+                    "La descripcion o la unidad del rubro fue editada despues de tener un APU vinculado.",
+                    "La app no puede asumir automaticamente que el APU sigue siendo compatible con el rubro.",
+                    "Al marcarlo como revisado, confirmas que para este rubro la descripcion, unidad y APU vinculado siguen siendo aceptables.",
+                ],
+            }
+        )
+    if costo_apu and costo_apu.get("control_costo") == "revisar_costo":
+        observacion = (getattr(nodo.apu, "observacion", None) or "").strip()
+        detalle = [
+            "El APU vinculado esta marcado para revisar costo.",
+            "Esto normalmente significa que el precio calculado del APU no coincide con el valor de control/maestro, o que la app detecto una diferencia que no debe aceptarse automaticamente.",
+            "No significa necesariamente que el rubro este mal ni que no tenga precio.",
+            "Al marcarlo como revisado, validas solo este rubro; no cambias ni apruebas el APU para otros rubros.",
+        ]
+        if observacion:
+            detalle.append(f"Observacion registrada en el APU: {observacion}")
+        motivos.append(
+            {
+                "codigo": "costo_apu_revisar",
+                "descripcion": "El APU vinculado tiene una alerta de costo.",
+                "detalle": detalle,
+            }
+        )
+    return motivos
+
+
+def _firma_revision_apu(nodo: NodoPresupuesto, motivos: list[dict[str, str]]) -> str:
+    payload = {
+        "nodo_id": nodo.id,
+        "apu_id": nodo.apu_id,
+        "descripcion": nodo.descripcion or "",
+        "unidad": nodo.unidad or "",
+        "motivos": sorted(
+            [{"codigo": motivo["codigo"]} for motivo in motivos],
+            key=lambda item: item["codigo"],
+        ),
+    }
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _revision_validada_actual(
+    db: Session,
+    nodo: NodoPresupuesto,
+    motivos: list[dict[str, str]],
+) -> Optional[NodoAPURevision]:
+    if not motivos:
+        return None
+    firma = _firma_revision_apu(nodo, motivos)
+    return (
+        db.query(NodoAPURevision)
+        .filter(
+            NodoAPURevision.nodo_id == nodo.id,
+            NodoAPURevision.estado == "validado",
+            NodoAPURevision.firma_revision == firma,
+            NodoAPURevision.snapshot_descripcion == (nodo.descripcion or ""),
+            NodoAPURevision.snapshot_unidad == (nodo.unidad or ""),
+            NodoAPURevision.snapshot_apu_id == nodo.apu_id,
+        )
+        .order_by(NodoAPURevision.fecha_creacion.desc(), NodoAPURevision.id.desc())
+        .first()
+    )
+
+
+def _estado_revision_apu(
+    nodo: NodoPresupuesto,
+    costo_apu: Optional[dict],
+    db: Optional[Session] = None,
+) -> str:
     if nodo.observaciones == "SIN_APU":
         return "Subcontratado"
     if not nodo.apu_id:
         return "Pendiente"
-    if nodo.requiere_revision_apu or costo_apu and costo_apu.get("control_costo") == "revisar_costo":
+    motivos = _motivos_revision_apu(nodo, costo_apu)
+    if motivos:
+        if db and _revision_validada_actual(db, nodo, motivos):
+            return "Validado"
         return "Revisar"
     return "Vinculado"
+
+
+def _costo_apu_con_control(apu: Optional[APU]) -> Optional[dict]:
+    if not apu:
+        return None
+    costo = calcular_costo_apu(apu)
+    costo["control_costo"] = (
+        "revisar_costo"
+        if "COSTO_NO_COINCIDE_CON_MAESTRO" in (apu.observacion or "")
+        else "ok"
+    )
+    return costo
+
+
+def _revision_apu_out(nodo: NodoPresupuesto, db: Session, costo_apu: Optional[dict] = None) -> RevisionAPUOut:
+    costo = costo_apu if costo_apu is not None else _costo_apu_con_control(nodo.apu)
+    motivos = _motivos_revision_apu(nodo, costo)
+    revision_actual = _revision_validada_actual(db, nodo, motivos) if motivos else None
+    estado = _estado_revision_apu(nodo, costo, db)
+    items_actuales: dict[str, RevisionAPUHistorialItemOut] = {}
+    if revision_actual:
+        items_actuales = {
+            item.codigo_motivo: RevisionAPUHistorialItemOut(
+                codigo_motivo=item.codigo_motivo,
+                descripcion_motivo=item.descripcion_motivo,
+                aprobado=bool(item.aprobado),
+                comentario=item.comentario,
+            )
+            for item in revision_actual.items
+        }
+
+    historial = (
+        db.query(NodoAPURevision)
+        .filter(NodoAPURevision.nodo_id == nodo.id)
+        .order_by(NodoAPURevision.fecha_creacion.desc(), NodoAPURevision.id.desc())
+        .all()
+    )
+    return RevisionAPUOut(
+        nodo_id=nodo.id,
+        estado=estado,
+        motivos_actuales=[
+            RevisionAPUMotivoOut(
+                codigo=motivo["codigo"],
+                descripcion=motivo["descripcion"],
+                detalle=motivo.get("detalle") or [],
+                aprobado=items_actuales.get(motivo["codigo"]).aprobado if motivo["codigo"] in items_actuales else False,
+                comentario=items_actuales.get(motivo["codigo"]).comentario if motivo["codigo"] in items_actuales else None,
+            )
+            for motivo in motivos
+        ],
+        historial=[
+            RevisionAPUHistorialOut(
+                id=revision.id,
+                estado=revision.estado,
+                items=[
+                    RevisionAPUHistorialItemOut(
+                        codigo_motivo=item.codigo_motivo,
+                        descripcion_motivo=item.descripcion_motivo,
+                        aprobado=bool(item.aprobado),
+                        comentario=item.comentario,
+                    )
+                    for item in revision.items
+                ],
+            )
+            for revision in historial
+        ],
+    )
 
 
 VISTAS_EXPORTACION_ESTADO = {
@@ -302,10 +460,11 @@ VISTAS_EXPORTACION_ESTADO = {
     "pendientes": "Pendiente",
     "subcontratados": "Subcontratado",
     "revisar": "Revisar",
+    "validados": "Validado",
 }
 
 
-def _filtrar_nodos_por_vista_exportacion(nodos: list[NodoPresupuesto], vista_exportacion: Optional[str]) -> list[NodoPresupuesto]:
+def _filtrar_nodos_por_vista_exportacion(nodos: list[NodoPresupuesto], vista_exportacion: Optional[str], db: Session) -> list[NodoPresupuesto]:
     vista = (vista_exportacion or "todo").strip().lower()
     if vista in ("", "todo"):
         return nodos
@@ -336,7 +495,12 @@ def _filtrar_nodos_por_vista_exportacion(nodos: list[NodoPresupuesto], vista_exp
                 )
                 costos_por_apu[nodo.apu.id] = costo
             costo_apu = costos_por_apu[nodo.apu.id]
-        if _estado_exportacion(nodo, costo_apu) != estado_objetivo:
+        estado = _estado_exportacion(nodo, costo_apu, db)
+        if estado_objetivo == "Vinculado":
+            coincide = estado in ("Vinculado", "Validado")
+        else:
+            coincide = estado == estado_objetivo
+        if not coincide:
             continue
         actual: Optional[NodoPresupuesto] = nodo
         while actual is not None:
@@ -346,7 +510,7 @@ def _filtrar_nodos_por_vista_exportacion(nodos: list[NodoPresupuesto], vista_exp
     return [n for n in nodos if n.id in ids_incluir]
 
 
-def _crear_workbook_presupuesto_operativo(proyecto: Proyecto, nodos: list[NodoPresupuesto]):
+def _crear_workbook_presupuesto_operativo(proyecto: Proyecto, nodos: list[NodoPresupuesto], db: Optional[Session] = None):
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
@@ -373,7 +537,7 @@ def _crear_workbook_presupuesto_operativo(proyecto: Proyecto, nodos: list[NodoPr
         for n in nodos_activos
     }
     rows_data = []
-    conteos = {"estructura": 0, "rubros": 0, "Vinculado": 0, "Pendiente": 0, "Subcontratado": 0, "Revisar": 0}
+    conteos = {"estructura": 0, "rubros": 0, "Vinculado": 0, "Validado": 0, "Pendiente": 0, "Subcontratado": 0, "Revisar": 0}
 
     for nodo in ordenados:
         es_rubro = _es_rubro_operativo_desde_hijos(nodo, hijos_por_padre)
@@ -396,7 +560,7 @@ def _crear_workbook_presupuesto_operativo(proyecto: Proyecto, nodos: list[NodoPr
             pu_apu = costo_apu["precio_unitario"]
             total_apu = _total_linea(nodo.metrado, pu_apu)
 
-        estado = _estado_exportacion(nodo, costo_apu) if es_rubro else ""
+        estado = _estado_exportacion(nodo, costo_apu, db) if es_rubro else ""
         if es_rubro:
             conteos["rubros"] += 1
             conteos[estado] += 1
@@ -507,7 +671,8 @@ def _crear_workbook_presupuesto_operativo(proyecto: Proyecto, nodos: list[NodoPr
     resumen.append(["Fecha generacion", datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")])
     resumen.append(["Filas estructura", conteos["estructura"]])
     resumen.append(["Rubros operativos", conteos["rubros"]])
-    resumen.append(["Vinculados", conteos["Vinculado"]])
+    resumen.append(["Vinculados", conteos["Vinculado"] + conteos["Validado"]])
+    resumen.append(["Validados", conteos["Validado"]])
     resumen.append(["Pendientes", conteos["Pendiente"]])
     resumen.append(["Subcontratados", conteos["Subcontratado"]])
     resumen.append(["Revisar", conteos["Revisar"]])
@@ -987,9 +1152,49 @@ class NodoOut(BaseModel):
     fecha_actualizacion_fuente: Optional[datetime] = None
     fecha_edicion_manual: Optional[datetime] = None
     advertencia_edicion_apu: Optional[str] = None
+    estado_revision_apu: Optional[str] = None
+    motivos_revision_apu: list[dict[str, str]] = Field(default_factory=list)
 
     class Config:
         from_attributes = True
+
+
+class RevisionAPUMotivoOut(BaseModel):
+    codigo: str
+    descripcion: str
+    detalle: list[str] = Field(default_factory=list)
+    aprobado: bool = False
+    comentario: Optional[str] = None
+
+
+class RevisionAPUHistorialItemOut(BaseModel):
+    codigo_motivo: str
+    descripcion_motivo: str
+    aprobado: bool
+    comentario: Optional[str] = None
+
+
+class RevisionAPUHistorialOut(BaseModel):
+    id: int
+    estado: str
+    items: list[RevisionAPUHistorialItemOut]
+
+
+class RevisionAPUOut(BaseModel):
+    nodo_id: int
+    estado: str
+    motivos_actuales: list[RevisionAPUMotivoOut]
+    historial: list[RevisionAPUHistorialOut]
+
+
+class RevisionAPUItemIn(BaseModel):
+    codigo_motivo: str
+    aprobado: bool
+    comentario: Optional[str] = None
+
+
+class RevisionAPURevisadoIn(BaseModel):
+    items: list[RevisionAPUItemIn]
 
 
 def _nodo_out(nodo: NodoPresupuesto, hijos_por_padre: Optional[dict[int, int]] = None) -> NodoOut:
@@ -1573,6 +1778,7 @@ def listar_nodos(proyecto_id: int, db: Session = Depends(get_db)):
 
     nodos = (
         db.query(NodoPresupuesto)
+        .options(joinedload(NodoPresupuesto.apu).joinedload(APU.items).joinedload(APUItem.recurso))
         .filter(NodoPresupuesto.proyecto_id == proyecto_id)
         .order_by(NodoPresupuesto.orden)
         .all()
@@ -1583,7 +1789,18 @@ def listar_nodos(proyecto_id: int, db: Session = Depends(get_db)):
         .group_by(NodoPresupuesto.padre_id)
         .all()
     )
-    return [_nodo_out(n, hijos_por_padre) for n in nodos]
+    costos_por_apu: dict[int, dict] = {}
+    salida = []
+    for nodo in nodos:
+        item = _nodo_out(nodo, hijos_por_padre)
+        if item.es_rubro_operativo and nodo.apu:
+            if nodo.apu.id not in costos_por_apu:
+                costos_por_apu[nodo.apu.id] = _costo_apu_con_control(nodo.apu) or {}
+            costo_apu = costos_por_apu[nodo.apu.id]
+            item.motivos_revision_apu = _motivos_revision_apu(nodo, costo_apu)
+            item.estado_revision_apu = _estado_revision_apu(nodo, costo_apu, db)
+        salida.append(item)
+    return salida
 
 
 @router.get("/proyectos/{proyecto_id}/exportar-operativo.xlsx")
@@ -1614,8 +1831,8 @@ def exportar_presupuesto_operativo(
             hijos_por_padre.setdefault(nodo.padre_id, []).append(nodo)
         ids_exportar = {root_nodo_id, *_descendientes_ids(root_nodo_id, hijos_por_padre)}
         nodos = [n for n in nodos if n.id in ids_exportar]
-    nodos = _filtrar_nodos_por_vista_exportacion(nodos, vista_exportacion)
-    archivo = _crear_workbook_presupuesto_operativo(proyecto, nodos)
+    nodos = _filtrar_nodos_por_vista_exportacion(nodos, vista_exportacion, db)
+    archivo = _crear_workbook_presupuesto_operativo(proyecto, nodos, db)
     filename = _nombre_archivo_excel(proyecto)
     return StreamingResponse(
         archivo,
@@ -2481,6 +2698,88 @@ def vincular_apu(
     db.commit()
     db.refresh(nodo)
     return _nodo_out(nodo)
+
+
+@router.get("/nodos/{nodo_id}/revision-apu", response_model=RevisionAPUOut)
+def obtener_revision_apu(nodo_id: int, db: Session = Depends(get_db)):
+    nodo = (
+        db.query(NodoPresupuesto)
+        .options(joinedload(NodoPresupuesto.apu).joinedload(APU.items).joinedload(APUItem.recurso))
+        .filter(NodoPresupuesto.id == nodo_id)
+        .first()
+    )
+    if not nodo:
+        raise HTTPException(status_code=404, detail="Nodo no encontrado")
+    if not _es_rubro_operativo(db, nodo):
+        raise HTTPException(status_code=400, detail="Solo se puede revisar un rubro operativo")
+    if not nodo.apu_id:
+        raise HTTPException(status_code=400, detail="El rubro no tiene APU vinculado")
+    return _revision_apu_out(nodo, db)
+
+
+@router.post("/nodos/{nodo_id}/revision-apu/revisado", response_model=RevisionAPUOut)
+def marcar_revision_apu_revisada(
+    nodo_id: int,
+    data: RevisionAPURevisadoIn,
+    db: Session = Depends(get_db),
+):
+    nodo = (
+        db.query(NodoPresupuesto)
+        .options(joinedload(NodoPresupuesto.apu).joinedload(APU.items).joinedload(APUItem.recurso))
+        .filter(NodoPresupuesto.id == nodo_id)
+        .first()
+    )
+    if not nodo:
+        raise HTTPException(status_code=404, detail="Nodo no encontrado")
+    if not _es_rubro_operativo(db, nodo):
+        raise HTTPException(status_code=400, detail="Solo se puede revisar un rubro operativo")
+    if not nodo.apu_id:
+        raise HTTPException(status_code=400, detail="El rubro no tiene APU vinculado")
+
+    costo_apu = _costo_apu_con_control(nodo.apu)
+    motivos = _motivos_revision_apu(nodo, costo_apu)
+    if not motivos:
+        raise HTTPException(status_code=400, detail="El rubro no tiene motivos de revision pendientes")
+
+    motivos_por_codigo = {motivo["codigo"]: motivo for motivo in motivos}
+    items_por_codigo = {item.codigo_motivo: item for item in data.items}
+    faltantes = [codigo for codigo in motivos_por_codigo if codigo not in items_por_codigo]
+    extras = [codigo for codigo in items_por_codigo if codigo not in motivos_por_codigo]
+    no_aprobados = [item.codigo_motivo for item in data.items if item.codigo_motivo in motivos_por_codigo and not item.aprobado]
+    if faltantes or extras or no_aprobados:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "mensaje": "Para marcar como revisado debes aprobar todos los motivos actuales.",
+                "faltantes": faltantes,
+                "extras": extras,
+                "no_aprobados": no_aprobados,
+            },
+        )
+
+    firma = _firma_revision_apu(nodo, motivos)
+    revision = NodoAPURevision(
+        nodo_id=nodo.id,
+        apu_id=nodo.apu_id,
+        estado="validado",
+        firma_revision=firma,
+        snapshot_descripcion=nodo.descripcion or "",
+        snapshot_unidad=nodo.unidad or "",
+        snapshot_apu_id=nodo.apu_id,
+    )
+    revision.items = [
+        NodoAPURevisionItem(
+            codigo_motivo=motivo["codigo"],
+            descripcion_motivo=motivo["descripcion"],
+            aprobado=True,
+            comentario=(items_por_codigo[motivo["codigo"]].comentario or "").strip() or None,
+        )
+        for motivo in motivos
+    ]
+    db.add(revision)
+    db.commit()
+    db.refresh(nodo)
+    return _revision_apu_out(nodo, db, costo_apu)
 
 
 @router.patch("/nodos/{nodo_id}/desvincular-apu", response_model=NodoOut)

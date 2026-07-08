@@ -117,6 +117,14 @@ export default function VinculacionView({
   const [actionError, setActionError] = useState("");
   const [apuImpacto, setApuImpacto] = useState(null);
   const [apuEditorOverride, setApuEditorOverride] = useState(null);
+  const [revisionOpen, setRevisionOpen] = useState(false);
+  const [revisionRow, setRevisionRow] = useState(null);
+  const [revisionLoading, setRevisionLoading] = useState(false);
+  const [revisionData, setRevisionData] = useState(null);
+  const [revisionItems, setRevisionItems] = useState({});
+  const [revisionWarning, setRevisionWarning] = useState("");
+  const [revisionHistoryOpen, setRevisionHistoryOpen] = useState(false);
+  const [revisionDetail, setRevisionDetail] = useState(null);
   const [showTree, setShowTree] = useState(true);
   const [showApuPanel, setShowApuPanel] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -126,6 +134,7 @@ export default function VinculacionView({
     const scopedIds = descendantsOf(rows, selectedTreeId);
     const scopedRows = rows.filter((row) => scopedIds.has(row.id));
     if (vincFilter === "todos") return scopedRows;
+    if (vincFilter === "vinculado") return scopedRows.filter((row) => row.kind === "container" || row.estado === "vinculado" || row.estado === "validado");
     return scopedRows.filter((row) => row.kind === "container" || row.estado === vincFilter);
   }, [rows, selectedTreeId, vincFilter]);
 
@@ -233,6 +242,13 @@ export default function VinculacionView({
     setVarianteSourceId("");
     setApuImpacto(null);
     setApuEditorOverride(null);
+    setRevisionOpen(false);
+    setRevisionRow(null);
+    setRevisionData(null);
+    setRevisionItems({});
+    setRevisionWarning("");
+    setRevisionHistoryOpen(false);
+    setRevisionDetail(null);
     setActionError("");
     setActionStatus("");
   }, [selectedRowId]);
@@ -363,6 +379,84 @@ export default function VinculacionView({
     setApuSeleccionado(null);
     setActionError("");
     setModalVincularOpen(true);
+  };
+
+  const abrirRevisionApu = async (row) => {
+    if (!row?.sourceId || row.estado !== "revisar") return;
+    setSelectedRowId(row.id);
+    setRevisionRow(row);
+    setRevisionOpen(true);
+    setRevisionLoading(true);
+    setRevisionData(null);
+    setRevisionItems({});
+    setRevisionWarning("");
+    setRevisionHistoryOpen(false);
+    setRevisionDetail(null);
+    try {
+      const response = await fetch(`${API}/presupuestos/nodos/${row.sourceId}/revision-apu`);
+      const detail = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(detail?.detail || "No se pudo cargar la revision.");
+      const initialItems = {};
+      (detail.motivos_actuales || []).forEach((motivo) => {
+        initialItems[motivo.codigo] = {
+          aprobado: Boolean(motivo.aprobado),
+          comentario: motivo.comentario || "",
+        };
+      });
+      setRevisionData(detail);
+      setRevisionItems(initialItems);
+    } catch (err) {
+      setRevisionWarning(err.message || "No se pudo cargar la revision.");
+    } finally {
+      setRevisionLoading(false);
+    }
+  };
+
+  const actualizarRevisionItem = (codigo, patch) => {
+    setRevisionItems((current) => ({
+      ...current,
+      [codigo]: { ...(current[codigo] || { aprobado: false, comentario: "" }), ...patch },
+    }));
+    setRevisionWarning("");
+  };
+
+  const guardarRevisionApu = async () => {
+    const motivos = revisionData?.motivos_actuales || [];
+    const incompletos = motivos.filter((motivo) => !revisionItems[motivo.codigo]?.aprobado);
+    if (incompletos.length) {
+      setRevisionWarning("Aprueba todas las observaciones antes de marcar como revisado.");
+      return;
+    }
+    setRevisionLoading(true);
+    setRevisionWarning("");
+    try {
+      const response = await fetch(`${API}/presupuestos/nodos/${revisionRow?.sourceId}/revision-apu/revisado`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: motivos.map((motivo) => ({
+            codigo_motivo: motivo.codigo,
+            aprobado: true,
+            comentario: revisionItems[motivo.codigo]?.comentario || "",
+          })),
+        }),
+      });
+      const detail = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message = typeof detail?.detail === "string" ? detail.detail : detail?.detail?.mensaje;
+        throw new Error(message || "No se pudo guardar la revision.");
+      }
+      setActionStatus("Rubro marcado como validado.");
+      setRevisionOpen(false);
+      setRevisionRow(null);
+      setRevisionData(null);
+      setRevisionItems({});
+      onDataChange?.();
+    } catch (err) {
+      setRevisionWarning(err.message || "No se pudo guardar la revision.");
+    } finally {
+      setRevisionLoading(false);
+    }
   };
 
   const actualizarEtiquetasApu = async (etiquetas) => {
@@ -632,7 +726,29 @@ export default function VinculacionView({
                   </span>
                   <span>{isContainer ? "" : (row.puMeta || "-")}</span>
                   <span>{row.ptMeta || "-"}</span>
-                  <span>{!isContainer && <em className={meta.className}>{meta.label}</em>}</span>
+                  <span>
+                    {!isContainer && (
+                      <em
+                        className={`${meta.className || ""} ${row.estado === "revisar" ? "budget-v2-status-clickable" : ""}`}
+                        role={row.estado === "revisar" ? "button" : undefined}
+                        tabIndex={row.estado === "revisar" ? 0 : undefined}
+                        onClick={(event) => {
+                          if (row.estado !== "revisar") return;
+                          event.stopPropagation();
+                          abrirRevisionApu(row);
+                        }}
+                        onKeyDown={(event) => {
+                          if (row.estado !== "revisar") return;
+                          if (event.key !== "Enter" && event.key !== " ") return;
+                          event.preventDefault();
+                          event.stopPropagation();
+                          abrirRevisionApu(row);
+                        }}
+                      >
+                        {meta.label}
+                      </em>
+                    )}
+                  </span>
                 </div>
               );
             })}
@@ -649,6 +765,136 @@ export default function VinculacionView({
           onUpdateApuTags={actualizarEtiquetasApu}
         />
       </CollapsibleSidePanel>
+
+      {revisionOpen && (
+        <ModalShell
+          title="Revisar rubro"
+          size="lg"
+          onClose={() => {
+            setRevisionOpen(false);
+            setRevisionRow(null);
+            setRevisionData(null);
+            setRevisionItems({});
+            setRevisionWarning("");
+            setRevisionDetail(null);
+          }}
+          footer={
+            <>
+              <ActionButton onClick={() => {
+                setRevisionOpen(false);
+                setRevisionRow(null);
+                setRevisionData(null);
+                setRevisionItems({});
+                setRevisionWarning("");
+                setRevisionDetail(null);
+              }}>
+                Cancelar
+              </ActionButton>
+              <ActionButton variant="primary" onClick={guardarRevisionApu} disabled={revisionLoading || !(revisionData?.motivos_actuales || []).length}>
+                Revisado
+              </ActionButton>
+            </>
+          }
+        >
+          <div className="budget-v2-review-modal">
+            <div className="budget-v2-review-head">
+              <span>Rubro</span>
+              <strong>{revisionRow?.descripcion}</strong>
+              <small>{revisionRow?.apu ? `${revisionRow.apu} | ${revisionRow.apuNombre}` : "Sin APU vinculado"}</small>
+            </div>
+
+            {revisionLoading && <div className="budget-v2-link-modal-empty">Cargando revision...</div>}
+            {revisionWarning && <ErrorBanner>{revisionWarning}</ErrorBanner>}
+
+            {!revisionLoading && revisionData && (
+              <>
+                <div className="budget-v2-review-list">
+                  {(revisionData.motivos_actuales || []).map((motivo) => {
+                    const item = revisionItems[motivo.codigo] || { aprobado: false, comentario: "" };
+                    return (
+                      <label key={motivo.codigo} className="budget-v2-review-item">
+                        <span className="budget-v2-review-check">
+                          <input
+                            type="checkbox"
+                            checked={item.aprobado}
+                            onChange={(event) => actualizarRevisionItem(motivo.codigo, { aprobado: event.target.checked })}
+                          />
+                          <span>
+                            <strong>{motivo.descripcion}</strong>
+                            {(motivo.detalle || []).length > 0 && (
+                              <button
+                                type="button"
+                                className="budget-v2-review-detail-link"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  setRevisionDetail(motivo);
+                                }}
+                              >
+                                Ver mas detalle
+                              </button>
+                            )}
+                          </span>
+                        </span>
+                        <textarea
+                          value={item.comentario}
+                          rows={2}
+                          placeholder="Comentario opcional"
+                          onChange={(event) => actualizarRevisionItem(motivo.codigo, { comentario: event.target.value })}
+                        />
+                      </label>
+                    );
+                  })}
+                  {!(revisionData.motivos_actuales || []).length && (
+                    <div className="budget-v2-link-modal-empty">Este rubro no tiene observaciones pendientes.</div>
+                  )}
+                </div>
+
+                <div className="budget-v2-review-history">
+                  <button type="button" onClick={() => setRevisionHistoryOpen(value => !value)}>
+                    <span>{revisionHistoryOpen ? "-" : "+"}</span>
+                    Historial de revisiones ({(revisionData.historial || []).length})
+                  </button>
+                  {revisionHistoryOpen && (
+                    <div className="budget-v2-review-history-list">
+                      {(revisionData.historial || []).map((revision) => (
+                        <div key={revision.id} className="budget-v2-review-history-card">
+                          <strong>{revision.estado === "validado" ? "Validado" : revision.estado}</strong>
+                          {(revision.items || []).map((item) => (
+                            <p key={`${revision.id}-${item.codigo_motivo}`}>
+                              <span>{item.aprobado ? "Aprobado" : "Pendiente"}</span>
+                              {item.descripcion_motivo}
+                              {item.comentario && <small>{item.comentario}</small>}
+                            </p>
+                          ))}
+                        </div>
+                      ))}
+                      {!(revisionData.historial || []).length && (
+                        <div className="budget-v2-link-modal-empty">Sin revisiones anteriores.</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+          {revisionDetail && (
+            <div className="budget-v2-review-detail-overlay" role="dialog" aria-modal="true">
+              <div className="budget-v2-review-detail-card">
+                <div className="budget-v2-review-detail-head">
+                  <strong>{revisionDetail.descripcion}</strong>
+                  <button type="button" onClick={() => setRevisionDetail(null)} aria-label="Cerrar detalle">x</button>
+                </div>
+                <div className="budget-v2-review-detail-body">
+                  {(revisionDetail.detalle || []).map((linea, index) => (
+                    <p key={`${revisionDetail.codigo}-${index}`}>{linea}</p>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </ModalShell>
+      )}
 
       {modalVincularOpen && (
         <ModalShell

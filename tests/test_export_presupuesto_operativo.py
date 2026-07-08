@@ -21,10 +21,14 @@ from app.api.presupuestos import (
     CambiarVarianteAPURequest,
     CrearVarianteAPURequest,
     NodoBulkCreate,
+    RevisionAPUItemIn,
+    RevisionAPURevisadoIn,
     cambiar_variante_apu,
     crear_rubros_debajo,
     crear_variante_apu,
     exportar_presupuesto_operativo,
+    marcar_revision_apu_revisada,
+    obtener_revision_apu,
 )
 
 
@@ -156,6 +160,135 @@ class ExportPresupuestoOperativoTest(unittest.TestCase):
         with self.assertRaises(HTTPException) as ctx:
             exportar_presupuesto_operativo(999, self.db)
         self.assertEqual(ctx.exception.status_code, 404)
+
+    def test_revision_apu_valida_solo_el_rubro_revisado(self):
+        proyecto = Proyecto(nombre="Proyecto Revision", codigo="REV-01")
+        recurso = Recurso(
+            codigo="MAT-REV",
+            descripcion="Material revision",
+            categoria="material",
+            unidad="u",
+            precio_unitario=1.0,
+        )
+        apu = APU(codigo="APU-REV", nombre="APU revision", unidad="m2", rendimiento=1.0)
+        apu.items.append(APUItem(recurso=recurso, categoria="material", cantidad=1.0, orden=1))
+        self.db.add_all([proyecto, recurso, apu])
+        self.db.flush()
+
+        rubro_revisado = NodoPresupuesto(
+            proyecto_id=proyecto.id,
+            tipo="RUBRO",
+            nivel=1,
+            item="1.01",
+            descripcion="Rubro a revisar",
+            orden=1,
+            unidad="m2",
+            metrado=1.0,
+            precio_unitario_ref=1.0,
+            apu_id=apu.id,
+            activo_como_rubro=True,
+            tipo_rubro="VINCULADO",
+            estado_actualizacion="activo",
+            requiere_revision_apu=True,
+        )
+        rubro_mismo_apu = NodoPresupuesto(
+            proyecto_id=proyecto.id,
+            tipo="RUBRO",
+            nivel=1,
+            item="1.02",
+            descripcion="Rubro mismo APU",
+            orden=2,
+            unidad="m2",
+            metrado=1.0,
+            precio_unitario_ref=1.0,
+            apu_id=apu.id,
+            activo_como_rubro=True,
+            tipo_rubro="VINCULADO",
+            estado_actualizacion="activo",
+            requiere_revision_apu=True,
+        )
+        self.db.add_all([rubro_revisado, rubro_mismo_apu])
+        self.db.commit()
+
+        revision = obtener_revision_apu(rubro_revisado.id, self.db)
+        self.assertEqual(revision.estado, "Revisar")
+        self.assertEqual([motivo.codigo for motivo in revision.motivos_actuales], ["rubro_editado"])
+
+        marcada = marcar_revision_apu_revisada(
+            rubro_revisado.id,
+            RevisionAPURevisadoIn(
+                items=[
+                    RevisionAPUItemIn(
+                        codigo_motivo="rubro_editado",
+                        aprobado=True,
+                        comentario="Descripcion y unidad compatibles.",
+                    )
+                ]
+            ),
+            self.db,
+        )
+        self.assertEqual(marcada.estado, "Validado")
+        self.assertEqual(marcada.motivos_actuales[0].comentario, "Descripcion y unidad compatibles.")
+
+        self.assertEqual(obtener_revision_apu(rubro_revisado.id, self.db).estado, "Validado")
+        self.assertEqual(obtener_revision_apu(rubro_mismo_apu.id, self.db).estado, "Revisar")
+
+        rubro_revisado.descripcion = "Rubro cambiado nuevamente"
+        self.db.commit()
+        self.assertEqual(obtener_revision_apu(rubro_revisado.id, self.db).estado, "Revisar")
+
+    def test_exporta_validado_como_estado_y_lo_cuenta_vinculado(self):
+        proyecto = Proyecto(nombre="Proyecto Validado", codigo="VAL-01")
+        recurso = Recurso(
+            codigo="MAT-VAL",
+            descripcion="Material validado",
+            categoria="material",
+            unidad="u",
+            precio_unitario=1.0,
+        )
+        apu = APU(codigo="APU-VAL", nombre="APU validado", unidad="m2", rendimiento=1.0)
+        apu.items.append(APUItem(recurso=recurso, categoria="material", cantidad=1.0, orden=1))
+        self.db.add_all([proyecto, recurso, apu])
+        self.db.flush()
+
+        rubro = NodoPresupuesto(
+            proyecto_id=proyecto.id,
+            tipo="RUBRO",
+            nivel=1,
+            item="1.01",
+            descripcion="Rubro validado",
+            orden=1,
+            unidad="m2",
+            metrado=2.0,
+            precio_unitario_ref=1.0,
+            apu_id=apu.id,
+            activo_como_rubro=True,
+            tipo_rubro="VINCULADO",
+            estado_actualizacion="activo",
+            requiere_revision_apu=True,
+        )
+        self.db.add(rubro)
+        self.db.commit()
+        marcar_revision_apu_revisada(
+            rubro.id,
+            RevisionAPURevisadoIn(items=[RevisionAPUItemIn(codigo_motivo="rubro_editado", aprobado=True)]),
+            self.db,
+        )
+
+        response = exportar_presupuesto_operativo(proyecto.id, self.db)
+        content = asyncio.run(_read_response(response))
+
+        import openpyxl
+
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+        ws = wb["Presupuesto operativo"]
+        values_by_description = {row[3]: row for row in ws.iter_rows(min_row=2, values_only=True)}
+        self.assertEqual(values_by_description["Rubro validado"][14], "Validado")
+
+        resumen = {row[0]: row[1] for row in wb["Resumen"].iter_rows(min_row=1, values_only=True)}
+        self.assertEqual(resumen["Vinculados"], 1)
+        self.assertEqual(resumen["Validados"], 1)
+        self.assertEqual(resumen["Revisar"], 0)
 
     def test_crear_rubros_debajo_inserta_varias_filas_mismo_nivel(self):
         proyecto = Proyecto(nombre="Proyecto Filas", codigo="PF-01")

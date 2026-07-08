@@ -178,7 +178,7 @@ export default function PresupuestosV2Shell() {
       const lines = packageRows.filter((row) => row.kind === "line");
       const totalRef = lines.reduce((sum, row) => sum + Number(row.raw?.totalRef || 0), 0);
       const totalMeta = lines.reduce((sum, row) => sum + Number(row.raw?.totalMeta || 0), 0);
-      const linked = lines.filter((row) => row.estado === "vinculado" || row.estado === "revisar").length;
+      const linked = lines.filter((row) => row.estado === "vinculado" || row.estado === "validado" || row.estado === "revisar").length;
       const pending = lines.filter((row) => row.estado === "pendiente").length;
       const sinApu = lines.filter((row) => row.estado === "sin_apu").length;
       const revisar = lines.filter((row) => row.estado === "revisar").length;

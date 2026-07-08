@@ -130,4 +130,38 @@ class PaquetePresupuesto(Base):
     )
     nodo = relationship("NodoPresupuesto", foreign_keys=[nodo_id], lazy="select")
 
-    
+
+class NodoAPURevision(Base):
+    __tablename__ = "nodo_apu_revisiones"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nodo_id = Column(Integer, ForeignKey("nodos_presupuesto.id", ondelete="CASCADE"), nullable=False, index=True)
+    apu_id = Column(Integer, ForeignKey("apus.id", ondelete="SET NULL"), nullable=True, index=True)
+    estado = Column(String(20), default="validado", nullable=False)
+    firma_revision = Column(String(64), nullable=False, index=True)
+    snapshot_descripcion = Column(String(500), nullable=True)
+    snapshot_unidad = Column(String(20), nullable=True)
+    snapshot_apu_id = Column(Integer, nullable=True)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    nodo = relationship("NodoPresupuesto", foreign_keys=[nodo_id], lazy="select")
+    apu = relationship("APU", foreign_keys=[apu_id], lazy="select")
+    items = relationship(
+        "NodoAPURevisionItem",
+        back_populates="revision",
+        cascade="all, delete-orphan",
+        lazy="select",
+    )
+
+
+class NodoAPURevisionItem(Base):
+    __tablename__ = "nodo_apu_revision_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    revision_id = Column(Integer, ForeignKey("nodo_apu_revisiones.id", ondelete="CASCADE"), nullable=False, index=True)
+    codigo_motivo = Column(String(80), nullable=False)
+    descripcion_motivo = Column(Text, nullable=False)
+    aprobado = Column(Boolean, default=True, nullable=False)
+    comentario = Column(Text, nullable=True)
+
+    revision = relationship("NodoAPURevision", back_populates="items", foreign_keys=[revision_id])

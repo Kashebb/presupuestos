@@ -2223,6 +2223,11 @@ textarea {
   color: #166534;
 }
 
+.budget-v2-status-validated {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
 .budget-v2-status-pending {
   background: #fef9c3;
   color: #854d0e;
@@ -2236,6 +2241,224 @@ textarea {
 .budget-v2-status-review {
   background: #ffedd5;
   color: #9a3412;
+}
+
+.budget-v2-status-clickable {
+  cursor: pointer;
+  border: 1px solid currentColor;
+}
+
+.budget-v2-status-clickable:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.budget-v2-review-modal {
+  display: grid;
+  gap: 14px;
+}
+
+.budget-v2-review-head {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+
+.budget-v2-review-head span,
+.budget-v2-review-head small {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.budget-v2-review-head strong {
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.budget-v2-review-list {
+  display: grid;
+  gap: 10px;
+  max-height: min(42vh, 360px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.budget-v2-review-item {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.budget-v2-review-check {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 8px;
+  align-items: start;
+}
+
+.budget-v2-review-check input {
+  margin-top: 2px;
+}
+
+.budget-v2-review-check strong {
+  color: #0f172a;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.budget-v2-review-detail-link {
+  display: inline-flex;
+  margin-top: 6px;
+  border: 0;
+  background: transparent;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0;
+  cursor: pointer;
+}
+
+.budget-v2-review-item textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 64px;
+  border: 1px solid #dbe3ef;
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 13px;
+  color: #172033;
+}
+
+.budget-v2-review-history {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 10px;
+}
+
+.budget-v2-review-history > button {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: #0f172a;
+  font-weight: 700;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+.budget-v2-review-history-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.budget-v2-review-history-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f8fafc;
+}
+
+.budget-v2-review-history-card strong {
+  display: block;
+  color: #1d4ed8;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.budget-v2-review-history-card p {
+  margin: 0 0 6px;
+  display: grid;
+  gap: 3px;
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.budget-v2-review-history-card span {
+  color: #166534;
+  font-weight: 700;
+}
+
+.budget-v2-review-history-card small {
+  color: #64748b;
+}
+
+.budget-v2-review-detail-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.32);
+}
+
+.budget-v2-review-detail-card {
+  width: min(560px, 100%);
+  max-height: min(72vh, 520px);
+  overflow: auto;
+  border-radius: 10px;
+  border: 1px solid #dbe3ef;
+  background: #ffffff;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+}
+
+.budget-v2-review-detail-head {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.budget-v2-review-detail-head strong {
+  color: #0f172a;
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.budget-v2-review-detail-head button {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #334155;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.budget-v2-review-detail-body {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+}
+
+.budget-v2-review-detail-body p {
+  margin: 0;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.budget-v2-review-detail-body p + p {
+  padding-top: 10px;
+  border-top: 1px solid #edf2f7;
 }
 
 .budget-v2-panel-empty,
