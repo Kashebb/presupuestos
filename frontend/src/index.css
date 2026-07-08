@@ -1539,7 +1539,8 @@ textarea {
 }
 
 .budget-v2-apu-result-section {
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   border-radius: var(--radius-md);
 }
 
@@ -1570,6 +1571,7 @@ textarea {
 
 .budget-v2-apu-result-section table {
   width: 100%;
+  min-width: 680px;
   border-collapse: collapse;
   font-size: 12px;
 }
@@ -2439,6 +2441,7 @@ textarea {
 }
 
 .budget-v2-apu-editor-modal {
+  min-width: 0;
   max-height: calc(88vh - 92px);
   overflow: auto;
   margin: -6px -8px 0;

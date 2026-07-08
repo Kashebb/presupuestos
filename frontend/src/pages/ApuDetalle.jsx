@@ -1075,15 +1075,16 @@ export default function ApuDetalle({ apu: apuInicial, projectId = null, onVolver
 
             {/* Tabla (oculta si está contraída) */}
             {!contraida && (
-              <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+              <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", minWidth: "880px", borderCollapse: "collapse", tableLayout: "fixed" }}>
                 <colgroup>
-                  <col style={{ width: "36%" }} />
+                  <col style={{ width: "34%" }} />
                   <col style={{ width: "11%" }} />
                   <col style={{ width: "11%" }} />
                   <col style={{ width: "11%" }} />
                   <col style={{ width: "8%" }} />
-                  <col style={{ width: "16%" }} />
-                  <col style={{ width: "7%" }} />
+                  <col style={{ width: "14%" }} />
+                  <col style={{ width: "11%" }} />
                 </colgroup>
                 <thead>
                   <tr>
@@ -1189,15 +1190,17 @@ export default function ApuDetalle({ apu: apuInicial, projectId = null, onVolver
                         )}
 
                         {/* Eliminar */}
-                        <td style={{ ...tdR, padding: "9px 6px", whiteSpace: "nowrap" }}>
+                        <td style={{ ...tdR, padding: "9px 8px", whiteSpace: "nowrap" }}>
                           {recurso && (
                             <button type="button" onClick={() => iniciarEditarRecurso(recurso)}
-                              style={{ background: "none", border: "1px solid #bbf7d0", borderRadius: "5px", cursor: "pointer", color: "#166534", fontSize: "0.72rem", fontWeight: 700, padding: "3px 6px", marginRight: "4px" }}>
+                              style={{ background: "none", border: "1px solid #bbf7d0", borderRadius: "5px", cursor: "pointer", color: "#166534", fontSize: "0.72rem", fontWeight: 700, padding: "3px 6px", marginRight: "6px" }}>
                               Editar
                             </button>
                           )}
                           <button onClick={() => eliminarItem(globalIdx)}
-                            style={{ background: "none", border: "none", cursor: "pointer", color: "#d1d5db", fontSize: "1rem" }}
+                            aria-label="Eliminar recurso"
+                            title="Eliminar recurso"
+                            style={{ background: "none", border: "none", cursor: "pointer", color: "#d1d5db", fontSize: "1rem", padding: "2px 4px" }}
                             onMouseEnter={e => e.currentTarget.style.color = "#ef4444"}
                             onMouseLeave={e => e.currentTarget.style.color = "#d1d5db"}>✕</button>
                         </td>
@@ -1374,6 +1377,7 @@ export default function ApuDetalle({ apu: apuInicial, projectId = null, onVolver
                   )}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
         );
