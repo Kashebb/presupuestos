@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useState } from "react";
-import { ActionButton, PageHeader, SectionHeader } from "../components/ui";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { ActionButton, ModalShell, PageHeader, SectionHeader } from "../components/ui";
 
 const API = "http://127.0.0.1:8000";
 
@@ -133,6 +133,14 @@ export default function ApuDetalle({ apu: apuInicial, projectId = null, onVolver
   const [recursoEditandoId, setRecursoEditandoId] = useState(null);
   const [recursoDraft, setRecursoDraft] = useState(null);
   const [recursoGuardando, setRecursoGuardando] = useState(false);
+  const [modalPlantillasOpen, setModalPlantillasOpen] = useState(false);
+  const [plantillas, setPlantillas] = useState([]);
+  const [plantillaSearch, setPlantillaSearch] = useState("");
+  const [plantillaLoading, setPlantillaLoading] = useState(false);
+  const [plantillaActionId, setPlantillaActionId] = useState(null);
+  const [usarRendimientoPlantilla, setUsarRendimientoPlantilla] = useState(false);
+  const [nuevaPlantillaNombre, setNuevaPlantillaNombre] = useState("");
+  const [nuevaPlantillaTipo, setNuevaPlantillaTipo] = useState("mixta");
 
   useEffect(() => {
     const cargar = async () => {
@@ -269,6 +277,103 @@ export default function ApuDetalle({ apu: apuInicial, projectId = null, onVolver
 
   const guardarEstado = async (nuevoEstado) => {
     await guardarApu(items, { estado: nuevoEstado });
+  };
+
+  const cargarPlantillas = async () => {
+    setPlantillaLoading(true);
+    try {
+      const res = await fetch(`${API}/apus/plantillas?estado=activas`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail || "No se pudieron cargar las plantillas.");
+      setPlantillas(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(err.message || "No se pudieron cargar las plantillas.");
+    } finally {
+      setPlantillaLoading(false);
+    }
+  };
+
+  const abrirPlantillas = () => {
+    setModalPlantillasOpen(true);
+    setPlantillaSearch(apu.nombre || "");
+    setUsarRendimientoPlantilla(false);
+    setError("");
+    cargarPlantillas();
+  };
+
+  const plantillasFiltradas = useMemo(() => {
+    const tokens = normalizarBusqueda(plantillaSearch).split(/\s+/).filter(Boolean);
+    return plantillas
+      .map((plantilla) => {
+        const texto = normalizarBusqueda([
+          plantilla.nombre,
+          plantilla.descripcion,
+          plantilla.tipo,
+          ...(plantilla.etiquetas || []),
+        ].filter(Boolean).join(" "));
+        const score = tokens.reduce((total, token) => total + (texto.includes(token) ? 1 : 0), 0);
+        return { plantilla, score };
+      })
+      .filter(({ score }) => !tokens.length || score > 0)
+      .sort((a, b) => b.score - a.score || String(a.plantilla.nombre || "").localeCompare(String(b.plantilla.nombre || "")))
+      .slice(0, 40);
+  }, [plantillaSearch, plantillas]);
+
+  const aplicarPlantilla = async (plantilla) => {
+    setPlantillaActionId(plantilla.id);
+    setError("");
+    try {
+      const res = await fetch(`${API}/apus/${apu.id}/plantillas/${plantilla.id}/aplicar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modo: "agregar", usar_rendimiento: usarRendimientoPlantilla }),
+      });
+      const detail = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(detail?.detail || "No se pudo aplicar la plantilla.");
+      setApu(detail);
+      setNombreEdit(detail.nombre || "");
+      setRendimientoEdit(detail.rendimiento);
+      setItems(detail.items || []);
+      const costo = await fetch(`${API}/apus/${apu.id}/costo`).then(r => r.ok ? r.json() : null).catch(() => null);
+      setCostoOficial(costo);
+    } catch (err) {
+      setError(err.message || "No se pudo aplicar la plantilla.");
+    } finally {
+      setPlantillaActionId(null);
+    }
+  };
+
+  const guardarComoPlantilla = async () => {
+    const nombre = nuevaPlantillaNombre.trim();
+    if (!nombre) {
+      setError("El nombre de la plantilla es obligatorio.");
+      return;
+    }
+    setPlantillaActionId("crear");
+    setError("");
+    try {
+      const res = await fetch(`${API}/apus/plantillas/desde-apu`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          apu_id: apu.id,
+          nombre,
+          tipo: nuevaPlantillaTipo,
+          etiquetas: [],
+          usar_rendimiento_actual: true,
+        }),
+      });
+      const detail = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(detail?.detail || "No se pudo guardar la plantilla.");
+      setNuevaPlantillaNombre("");
+      setNuevaPlantillaTipo("mixta");
+      setPlantillaSearch(detail.nombre || "");
+      await cargarPlantillas();
+    } catch (err) {
+      setError(err.message || "No se pudo guardar la plantilla.");
+    } finally {
+      setPlantillaActionId(null);
+    }
   };
 
   // â”€â”€ Agregar ítem â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -681,8 +786,107 @@ export default function ApuDetalle({ apu: apuInicial, projectId = null, onVolver
       <PageHeader
         title={nombreEdit || apu.nombre}
         subtitle="Detalle tecnico y composicion del APU."
-        actions={<ActionButton onClick={guardarYVolver}>{volverLabel}</ActionButton>}
+        actions={
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <ActionButton onClick={abrirPlantillas}>Plantillas</ActionButton>
+            <ActionButton onClick={guardarYVolver}>{volverLabel}</ActionButton>
+          </div>
+        }
       />
+
+      {modalPlantillasOpen && (
+        <ModalShell
+          title="Plantillas APU"
+          size="lg"
+          onClose={() => {
+            setModalPlantillasOpen(false);
+            setError("");
+          }}
+          footer={<ActionButton onClick={() => setModalPlantillasOpen(false)}>Cerrar</ActionButton>}
+        >
+          <div style={{ display: "grid", gap: "14px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(220px, 1fr) 160px auto", gap: "8px", alignItems: "end" }}>
+              <label style={{ display: "grid", gap: "4px", color: "#64748b", fontSize: "0.72rem", fontWeight: 700 }}>
+                Guardar APU actual como plantilla
+                <input
+                  value={nuevaPlantillaNombre}
+                  onChange={e => setNuevaPlantillaNombre(e.target.value)}
+                  placeholder="Nombre de plantilla"
+                  style={{ border: "1px solid #cbd5e1", borderRadius: "6px", padding: "7px 9px", fontSize: "0.84rem" }}
+                />
+              </label>
+              <label style={{ display: "grid", gap: "4px", color: "#64748b", fontSize: "0.72rem", fontWeight: 700 }}>
+                Tipo
+                <select
+                  value={nuevaPlantillaTipo}
+                  onChange={e => setNuevaPlantillaTipo(e.target.value)}
+                  style={{ border: "1px solid #cbd5e1", borderRadius: "6px", padding: "7px 9px", fontSize: "0.84rem", background: "#fff" }}
+                >
+                  <option value="mixta">Mixta</option>
+                  <option value="mano_de_obra">Mano de obra</option>
+                  <option value="material">Materiales</option>
+                  <option value="equipo">Equipos</option>
+                  <option value="transporte">Transporte</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={guardarComoPlantilla}
+                disabled={plantillaActionId === "crear"}
+                style={{ border: "1px solid #166534", borderRadius: "6px", background: "#166534", color: "#fff", cursor: "pointer", padding: "8px 12px", fontSize: "0.82rem", fontWeight: 700 }}
+              >
+                {plantillaActionId === "crear" ? "Guardando..." : "Guardar plantilla"}
+              </button>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(220px, 1fr) auto", gap: "8px", alignItems: "center" }}>
+              <input
+                value={plantillaSearch}
+                onChange={e => setPlantillaSearch(e.target.value)}
+                placeholder="Buscar plantilla por nombre o tipo..."
+                style={{ border: "1px solid #cbd5e1", borderRadius: "6px", padding: "8px 10px", fontSize: "0.86rem" }}
+              />
+              <label style={{ display: "flex", alignItems: "center", gap: "6px", color: "#475569", fontSize: "0.78rem", fontWeight: 700 }}>
+                <input
+                  type="checkbox"
+                  checked={usarRendimientoPlantilla}
+                  onChange={e => setUsarRendimientoPlantilla(e.target.checked)}
+                />
+                Usar rendimiento sugerido
+              </label>
+            </div>
+
+            <div style={{ maxHeight: "360px", overflow: "auto", border: "1px solid #e5e7eb", borderRadius: "8px" }}>
+              {plantillaLoading && <div style={{ padding: "14px", color: "#64748b", fontSize: "0.84rem" }}>Cargando plantillas...</div>}
+              {!plantillaLoading && plantillasFiltradas.length === 0 && (
+                <div style={{ padding: "14px", color: "#64748b", fontSize: "0.84rem" }}>No hay plantillas con ese filtro.</div>
+              )}
+              {!plantillaLoading && plantillasFiltradas.map(({ plantilla }) => (
+                <div
+                  key={plantilla.id}
+                  style={{ display: "grid", gridTemplateColumns: "minmax(220px, 1fr) 110px 90px auto", gap: "10px", alignItems: "center", padding: "10px 12px", borderBottom: "1px solid #f1f5f9" }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <strong style={{ display: "block", color: "#111827", fontSize: "0.88rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{plantilla.nombre}</strong>
+                    <small style={{ color: "#64748b" }}>{plantilla.descripcion || "Sin descripcion"}</small>
+                  </div>
+                  <span style={{ color: "#475569", fontSize: "0.78rem", fontWeight: 700 }}>{plantilla.tipo || "mixta"}</span>
+                  <span style={{ color: "#475569", fontSize: "0.78rem" }}>{(plantilla.items || []).length} recursos</span>
+                  <button
+                    type="button"
+                    onClick={() => aplicarPlantilla(plantilla)}
+                    disabled={plantillaActionId === plantilla.id}
+                    style={{ border: "1px solid #166534", borderRadius: "6px", background: "#fff", color: "#166534", cursor: "pointer", padding: "6px 9px", fontSize: "0.78rem", fontWeight: 700 }}
+                  >
+                    {plantillaActionId === plantilla.id ? "Agregando..." : "Agregar"}
+                  </button>
+                </div>
+              ))}
+            </div>
+            {error && <div style={{ color: "#b91c1c", fontSize: "0.78rem", fontWeight: 700 }}>{error}</div>}
+          </div>
+        </ModalShell>
+      )}
 
       <div style={{ ...card, display: "grid", gridTemplateColumns: "repeat(5, minmax(120px, 1fr))", gap: "8px", padding: "10px 12px", marginBottom: "12px" }}>
         {[

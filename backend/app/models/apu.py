@@ -55,3 +55,50 @@ class APUItem(Base):
 
     apu = relationship("APU", back_populates="items")
     recurso = relationship("Recurso")
+
+
+class APUPlantilla(Base):
+    __tablename__ = "apu_plantillas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String, nullable=False, index=True)
+    descripcion = Column(String, nullable=True)
+    tipo = Column(String, default="mixta", nullable=False)
+    etiquetas = Column(JSON, nullable=False, default=list)
+    rendimiento_sugerido = Column(Float, nullable=True)
+    activo = Column(Boolean, default=True, nullable=False)
+    origen_apu_id = Column(Integer, ForeignKey("apus.id", ondelete="SET NULL"), nullable=True)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+    fecha_actualizacion = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    items = relationship("APUPlantillaItem", back_populates="plantilla", cascade="all, delete-orphan")
+    origen_apu = relationship("APU", foreign_keys=[origen_apu_id], lazy="select")
+
+
+class APUPlantillaItem(Base):
+    __tablename__ = "apu_plantilla_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    plantilla_id = Column(Integer, ForeignKey("apu_plantillas.id", ondelete="CASCADE"), nullable=False)
+    recurso_id = Column(Integer, ForeignKey("recursos.id", ondelete="SET NULL"), nullable=True)
+    categoria = Column(String, nullable=False)
+    cantidad = Column(Float, nullable=False, default=1.0)
+    orden = Column(Integer, default=0)
+
+    plantilla = relationship("APUPlantilla", back_populates="items")
+    recurso = relationship("Recurso")
+
+
+class APUPlantillaUso(Base):
+    __tablename__ = "apu_plantilla_usos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    apu_id = Column(Integer, ForeignKey("apus.id", ondelete="CASCADE"), nullable=False)
+    plantilla_id = Column(Integer, ForeignKey("apu_plantillas.id", ondelete="SET NULL"), nullable=True)
+    modo = Column(String, default="agregar", nullable=False)
+    usar_rendimiento = Column(Boolean, default=False, nullable=False)
+    snapshot_json = Column(JSON, nullable=False, default=dict)
+    fecha_uso = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    apu = relationship("APU", foreign_keys=[apu_id], lazy="select")
+    plantilla = relationship("APUPlantilla", foreign_keys=[plantilla_id], lazy="select")
