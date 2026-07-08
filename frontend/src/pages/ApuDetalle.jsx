@@ -110,6 +110,7 @@ const InfoIcon = ({ tooltip }) => (
 
 export default function ApuDetalle({ apu: apuInicial, projectId = null, onVolver, volverLabel = "Volver a APUs" }) {
   const [apu, setApu]                       = useState(apuInicial);
+  const [nombreEdit, setNombreEdit]         = useState(apuInicial.nombre || "");
   const [rendimientoEdit, setRendimientoEdit] = useState(apuInicial.rendimiento);
   const [items, setItems]                   = useState([]);
   const [recursos, setRecursos]             = useState([]);
@@ -143,6 +144,7 @@ export default function ApuDetalle({ apu: apuInicial, projectId = null, onVolver
       const dataApu = await resApu.json();
       const dataRec = await resRec.json();
       setApu(dataApu);
+      setNombreEdit(dataApu.nombre || "");
       setRendimientoEdit(dataApu.rendimiento);
       setItems(dataApu.items || []);
       setRecursos(Array.isArray(dataRec) ? dataRec : []);
@@ -209,19 +211,48 @@ export default function ApuDetalle({ apu: apuInicial, projectId = null, onVolver
 
   // â”€â”€ Persistencia â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  const guardarItems = async (nuevosItems, rendimientoActual) => {
-    const r = round4(rendimientoActual ?? apu.rendimiento);
-    await fetch(`${API}/apus/${apu.id}`, {
+  const payloadApu = (nuevosItems = items, overrides = {}) => ({
+    nombre: overrides.nombre ?? (nombreEdit.trim() || apu.nombre),
+    unidad: overrides.unidad ?? apu.unidad,
+    rendimiento: round4(overrides.rendimiento ?? apu.rendimiento),
+    estado: overrides.estado ?? apu.estado,
+    categoria: overrides.categoria ?? apu.categoria,
+    subcategoria: overrides.subcategoria ?? apu.subcategoria,
+    descripcion: overrides.descripcion ?? apu.descripcion,
+    observacion: overrides.observacion ?? apu.observacion,
+    etiquetas: Array.isArray(apu.etiquetas) ? apu.etiquetas : [],
+    es_variante: Boolean(apu.es_variante),
+    apu_base_id: apu.apu_base_id ?? null,
+    proyecto_id: apu.proyecto_id ?? null,
+    variante_nombre: overrides.variante_nombre ?? apu.variante_nombre ?? null,
+    copiado_desde_apu_id: apu.copiado_desde_apu_id ?? null,
+    version: apu.version ?? 1,
+    items: nuevosItems.filter(i => !i.es_herramienta_menor).map((i, idx) => ({
+      recurso_id: i.recurso_id,
+      categoria: i.categoria,
+      cantidad: round4(i.cantidad),
+      orden: idx,
+      es_herramienta_menor: false,
+    })),
+  });
+
+  const guardarApu = async (nuevosItems = items, overrides = {}) => {
+    const response = await fetch(`${API}/apus/${apu.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        nombre: apu.nombre, unidad: apu.unidad, rendimiento: r, estado: apu.estado,
-        items: nuevosItems.filter(i => !i.es_herramienta_menor).map((i, idx) => ({
-          recurso_id: i.recurso_id, categoria: i.categoria,
-          cantidad: round4(i.cantidad), orden: idx, es_herramienta_menor: false,
-        }))
-      })
+      body: JSON.stringify(payloadApu(nuevosItems, overrides)),
     });
+    const detail = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(detail?.detail || "No se pudo guardar el APU.");
+    setApu(detail);
+    setNombreEdit(detail.nombre || "");
+    setRendimientoEdit(detail.rendimiento);
+    return detail;
+  };
+
+  const guardarItems = async (nuevosItems, rendimientoActual) => {
+    const r = round4(rendimientoActual ?? apu.rendimiento);
+    await guardarApu(nuevosItems, { rendimiento: r });
     const costo = await fetch(`${API}/apus/${apu.id}/costo`).then(r => r.ok ? r.json() : null).catch(() => null);
     setCostoOficial(costo);
   };
@@ -237,29 +268,7 @@ export default function ApuDetalle({ apu: apuInicial, projectId = null, onVolver
   };
 
   const guardarEstado = async (nuevoEstado) => {
-    const apuActualizado = { ...apu, estado: nuevoEstado };
-    setApu(apuActualizado);
-    await fetch(`${API}/apus/${apu.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        nombre: apu.nombre,
-        unidad: apu.unidad,
-        rendimiento: round4(apu.rendimiento),
-        estado: nuevoEstado,
-        categoria: apu.categoria,
-        subcategoria: apu.subcategoria,
-        descripcion: apu.descripcion,
-        observacion: apu.observacion,
-        items: items.filter(i => !i.es_herramienta_menor).map((i, idx) => ({
-          recurso_id: i.recurso_id,
-          categoria: i.categoria,
-          cantidad: round4(i.cantidad),
-          orden: idx,
-          es_herramienta_menor: false,
-        })),
-      })
-    });
+    await guardarApu(items, { estado: nuevoEstado });
   };
 
   // â”€â”€ Agregar ítem â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -586,10 +595,26 @@ export default function ApuDetalle({ apu: apuInicial, projectId = null, onVolver
     await guardarRendimientoBase(base);
   };
 
+  const confirmarNombreApu = async () => {
+    const nombre = nombreEdit.trim();
+    if (!nombre) {
+      setError("El nombre del APU es obligatorio.");
+      setNombreEdit(apu.nombre || "");
+      return false;
+    }
+    if (nombre === apu.nombre) return true;
+    setError("");
+    const actualizado = await guardarApu(items, { nombre, descripcion: apu.descripcion || nombre });
+    setApu({ ...actualizado, nombre });
+    return true;
+  };
+
   const guardarYVolver = async () => {
     if (editandoCantidad !== null) {
       await confirmarEditCantidad(editandoCantidad);
     }
+    const nombreValido = await confirmarNombreApu();
+    if (!nombreValido) return;
     await confirmarRendimientoCampo(rendimientoValue);
     await onVolver?.();
   };
@@ -654,7 +679,7 @@ export default function ApuDetalle({ apu: apuInicial, projectId = null, onVolver
   return (
     <div className="page-wrap">
       <PageHeader
-        title={apu.nombre}
+        title={nombreEdit || apu.nombre}
         subtitle="Detalle tecnico y composicion del APU."
         actions={<ActionButton onClick={guardarYVolver}>{volverLabel}</ActionButton>}
       />
@@ -689,7 +714,22 @@ export default function ApuDetalle({ apu: apuInicial, projectId = null, onVolver
             </select>
           </div>
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "32px" }}>
+        <div style={{ display: "grid", gap: "12px" }}>
+          <label style={{ display: "grid", gap: "5px" }}>
+            <span style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "#9ca3af", fontWeight: 700 }}>Nombre del APU</span>
+            <input
+              type="text"
+              value={nombreEdit}
+              onChange={e => setNombreEdit(e.target.value)}
+              onBlur={confirmarNombreApu}
+              onKeyDown={e => {
+                if (e.key === "Enter") confirmarNombreApu();
+                if (e.key === "Escape") setNombreEdit(apu.nombre || "");
+              }}
+              style={{ border: "1px solid #cbd5e1", borderRadius: "6px", padding: "8px 10px", fontSize: "0.95rem", color: "#111827", fontWeight: 650, outline: "none" }}
+            />
+          </label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "32px" }}>
           {[["Codigo", apu.codigo || "-"], ["Unidad", apu.unidad], ["Categoria", apu.categoria || "-"]].map(([lbl, val]) => (
             <div key={lbl}>
               <div style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.05em", color: "#9ca3af", marginBottom: "4px" }}>{lbl}</div>
@@ -805,6 +845,7 @@ export default function ApuDetalle({ apu: apuInicial, projectId = null, onVolver
                 Configuracion: {laboral.horasDia} h/dia · {laboral.diasSemana} dias/semana · {laboral.semanasMes} semanas/mes
               </div>
             </div>
+          </div>
           </div>
         </div>
       </div>

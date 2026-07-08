@@ -91,6 +91,7 @@ function buildRows(nodes, costsByApu, apusById, paquetes = []) {
     const cost = node.apu_id ? costsByApu.get(node.apu_id) : null;
     const apu = node.apu_id ? apusById.get(node.apu_id) : null;
     const baseApu = apu?.es_variante ? apusById.get(apu.apu_base_id) : apu;
+    const apuAjustado = Boolean(apu?.es_variante);
     const puRef = Number(node.precio_unitario_ref);
     const metrado = Number(node.metrado);
     const puMeta = cost?.precio_unitario;
@@ -127,11 +128,11 @@ function buildRows(nodes, costsByApu, apusById, paquetes = []) {
       observacion: node.observaciones || "",
       estado: line ? lineStatus(node, cost) : undefined,
       apu: baseApu?.codigo || apu?.codigo || cost?.codigo || "",
-      apuNombre: baseApu?.nombre || apu?.nombre || "",
+      apuNombre: apu?.nombre || baseApu?.nombre || "",
       apuBaseId: baseApu?.id || null,
       apuEfectivoId: apu?.id || null,
       paquete,
-      varianteApu: apu?.es_variante ? (apu.variante_nombre || "Variante") : (apu ? "Base" : ""),
+      varianteApu: apuAjustado ? (apu.variante_nombre || apu.nombre || "APU ajustado") : (apu ? "Base maestra" : ""),
       rendimiento: apu?.rendimiento,
       desglose: fmtBreakdown(breakdownRaw),
       raw: { node, cost, apu, baseApu, puRef, puMeta, totalRef, totalMeta, diff, breakdown: breakdownRaw },

@@ -43,7 +43,15 @@ function tokenizar(texto) {
 }
 
 function apuSearchText(apu) {
-  return normalizarTexto(`${apu?.codigo || ""} ${apu?.nombre || ""} ${apu?.categoria || ""} ${apu?.subcategoria || ""} ${apu?.unidad || ""}`);
+  return normalizarTexto(`${apu?.codigo || ""} ${apu?.nombre || ""} ${apu?.variante_nombre || ""} ${apu?.categoria || ""} ${apu?.subcategoria || ""} ${apu?.unidad || ""}`);
+}
+
+function esApuAjustadoDelProyecto(apu, selectedProjectId) {
+  return Boolean(apu?.es_variante && String(apu.proyecto_id) === String(selectedProjectId));
+}
+
+function etiquetaTipoApu(apu, selectedProjectId) {
+  return esApuAjustadoDelProyecto(apu, selectedProjectId) ? "APU ajustado" : "Base maestra";
 }
 
 function apuSuggestionScore(row, apu, query) {
@@ -175,7 +183,7 @@ export default function VinculacionView({
     const queryTokens = tokenizar(query);
     return apus
       .filter((apu) => apu.estado !== "inactivo")
-      .filter((apu) => !apu.es_variante)
+      .filter((apu) => !apu.es_variante || esApuAjustadoDelProyecto(apu, selectedProjectId))
       .filter((apu) => {
         if (!queryTokens.length) return true;
         const text = apuSearchText(apu);
@@ -183,9 +191,13 @@ export default function VinculacionView({
       })
       .map((apu) => ({ apu, score: apuSuggestionScore(selectedRow, apu, query) }))
       .filter(({ score }) => queryTokens.length || score > 0)
-      .sort((a, b) => b.score - a.score || String(a.apu.nombre || "").localeCompare(String(b.apu.nombre || "")))
+      .sort((a, b) => {
+        const tipoA = esApuAjustadoDelProyecto(a.apu, selectedProjectId) ? 1 : 0;
+        const tipoB = esApuAjustadoDelProyecto(b.apu, selectedProjectId) ? 1 : 0;
+        return tipoB - tipoA || b.score - a.score || String(a.apu.nombre || "").localeCompare(String(b.apu.nombre || ""));
+      })
       .slice(0, 80);
-  }, [apuSearch, apus, selectedRow]);
+  }, [apuSearch, apus, selectedProjectId, selectedRow]);
 
   const apusClasificados = useMemo(() => {
     const resultado = { compatibles: [], incompatibles: [] };
@@ -320,7 +332,7 @@ export default function VinculacionView({
       });
       if (!response.ok) {
         const detail = await response.json().catch(() => null);
-        throw new Error(detail?.detail || "No se pudo cambiar la variante.");
+        throw new Error(detail?.detail || "No se pudo cambiar el APU ajustado.");
       }
     });
   };
@@ -337,7 +349,7 @@ export default function VinculacionView({
     });
     if (!response.ok) {
       const detail = await response.json().catch(() => null);
-      throw new Error(detail?.detail || "No se pudo crear la variante.");
+      throw new Error(detail?.detail || "No se pudo crear el APU ajustado.");
     }
     setModalVarianteOpen(false);
     setVarianteRow(null);
@@ -415,7 +427,7 @@ export default function VinculacionView({
     if (!selectedRow?.raw?.node?.apu_id) return;
     setModalImpactoApuOpen(false);
     setVarianteRow(selectedRow);
-    setVarianteNombre(selectedRow.paquete?.nombre || selectedRow.descripcion || "");
+    setVarianteNombre("");
     setVarianteSourceId(String(selectedRow.apuEfectivoId || selectedRow.raw.node.apu_id));
     setActionError("");
     setModalVarianteOpen(true);
@@ -570,7 +582,7 @@ export default function VinculacionView({
         <div className="budget-v2-link-table">
           <div className="budget-v2-link-head">
             <span>Descripcion / estructura</span>
-            <span>Variante APU</span>
+            <span>APU ajustado</span>
             <span>P.U. Meta</span>
             <span>P.T. Meta</span>
             <span>Estado</span>
@@ -608,13 +620,13 @@ export default function VinculacionView({
                           cambiarVarianteApu(row, event.target.value);
                         }}
                       >
-                        <option value="base">Base</option>
+                        <option value="base">Base maestra</option>
                         {variantes.map((variante) => (
                           <option key={variante.id} value={String(variante.id)}>
-                            {variante.variante_nombre || "Variante"} - {variante.usos} usos
+                            {variante.variante_nombre || variante.nombre || "APU ajustado"} - {variante.usos} usos
                           </option>
                         ))}
-                        <option value="__new__">+ Generar nueva variante</option>
+                        <option value="__new__">+ Crear APU ajustado</option>
                       </select>
                     )}
                   </span>
@@ -739,7 +751,7 @@ export default function VinculacionView({
                           <tr key={apu.id} className={apuSeleccionado?.id === apu.id ? "budget-v2-apu-row-selected" : ""}>
                             <td>
                               <strong>{apu.nombre}</strong>
-                              <small>{apu.codigo || "-"}</small>
+                              <small>{apu.codigo || "-"} | {etiquetaTipoApu(apu, selectedProjectId)}</small>
                             </td>
                             <td>{apu.unidad || "-"}</td>
                             <td>{fmtMoney(costsByApu[apu.id]?.precio_unitario)}</td>
@@ -776,7 +788,7 @@ export default function VinculacionView({
                           <tr key={apu.id}>
                             <td>
                               <strong>{apu.nombre}</strong>
-                              <small>{apu.codigo || "-"}</small>
+                              <small>{apu.codigo || "-"} | {etiquetaTipoApu(apu, selectedProjectId)}</small>
                             </td>
                             <td>{apu.unidad || "-"}</td>
                             <td>{fmtMoney(costsByApu[apu.id]?.precio_unitario)}</td>
@@ -841,7 +853,7 @@ export default function VinculacionView({
 
       {modalVarianteOpen && varianteRow && (
         <ModalShell
-          title="Generar variante APU"
+          title="Crear APU ajustado"
           size="md"
           onClose={() => {
             setModalVarianteOpen(false);
@@ -862,15 +874,15 @@ export default function VinculacionView({
           <div className="budget-v2-create-apu-modal">
             <div className="budget-v2-create-apu-intro">
               <strong>{varianteRow.apuNombre}</strong>
-              <span>La variante quedara disponible para rubros del mismo proyecto con este APU base.</span>
+              <span>El APU ajustado quedara disponible para otros rubros y paquetes del mismo proyecto.</span>
             </div>
             <label className="budget-v2-variant-field">
-              <span>Nombre de variante</span>
+              <span>Nombre del APU ajustado</span>
               <input
                 type="text"
                 value={varianteNombre}
                 onChange={(event) => setVarianteNombre(event.target.value)}
-                placeholder="Ej. GARITA"
+                placeholder="Escribe el nombre manualmente"
                 autoFocus
               />
             </label>
@@ -879,12 +891,12 @@ export default function VinculacionView({
               <select value={varianteSourceId} onChange={(event) => setVarianteSourceId(event.target.value)}>
                 {varianteRow.raw?.baseApu && (
                   <option value={String(varianteRow.raw.baseApu.id)}>
-                    Base - {varianteRow.raw.baseApu.nombre}
+                    Base maestra - {varianteRow.raw.baseApu.nombre}
                   </option>
                 )}
                 {(variantsByBaseId.get(varianteRow.apuBaseId) || []).map((variante) => (
                   <option key={variante.id} value={String(variante.id)}>
-                    {variante.variante_nombre || "Variante"} - {variante.usos} usos
+                    {variante.variante_nombre || variante.nombre || "APU ajustado"} - {variante.usos} usos
                   </option>
                 ))}
               </select>
@@ -909,7 +921,7 @@ export default function VinculacionView({
                 Solo este rubro
               </ActionButton>
               <ActionButton onClick={aislarNoLiberados}>
-                Aislar no liberados
+                Crear ajustado para activos
               </ActionButton>
               <ActionButton variant="primary" onClick={abrirEditorApuGlobal}>
                 Editar compartido
@@ -921,7 +933,7 @@ export default function VinculacionView({
             <div className="budget-v2-create-apu-intro">
               <strong>{selectedRow.apuNombre || selectedRow.apu}</strong>
               <span>Este APU esta vinculado a {apuImpacto.total_rubros} rubro(s). Si editas el compartido, el cambio se vera en todos esos rubros.</span>
-              <span>Aislar no liberados crea una variante para los rubros activos y conserva intactos los paquetes liberados.</span>
+              <span>Crear ajustado para activos conserva intactos los paquetes liberados y abre una copia editable para el trabajo activo.</span>
             </div>
             {(apuImpacto.paquetes || []).length > 0 && (
               <div className="budget-v2-impact-list">
