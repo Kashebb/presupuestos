@@ -101,9 +101,11 @@ function buildRows(nodes, costsByApu, apusById, paquetes = []) {
     const baseApu = apu?.es_variante ? apusById.get(apu.apu_base_id) : apu;
     const apuAjustado = Boolean(apu?.es_variante);
     const puRef = Number(node.precio_unitario_ref);
+    const tienePuSubcontratado = node.precio_unitario_subcontratado !== null && node.precio_unitario_subcontratado !== undefined;
+    const puSubcontratado = tienePuSubcontratado ? Number(node.precio_unitario_subcontratado) : Number.NaN;
     const metrado = Number(node.metrado);
     const estado = line ? lineStatus(node, cost) : undefined;
-    const puMeta = estado === "sin_apu" ? puRef : cost?.precio_unitario;
+    const puMeta = estado === "sin_apu" && Number.isFinite(puSubcontratado) ? puSubcontratado : (estado === "sin_apu" ? puRef : cost?.precio_unitario);
     const totalRef = Number.isFinite(puRef) && Number.isFinite(metrado) ? puRef * metrado : null;
     const totalMeta = Number.isFinite(puMeta) && Number.isFinite(metrado) ? puMeta * metrado : null;
     const comparable = Number.isFinite(totalRef) && totalRef > 0 && Number.isFinite(totalMeta);
@@ -129,6 +131,7 @@ function buildRows(nodes, costsByApu, apusById, paquetes = []) {
       unidad: node.unidad || "",
       metrado: fmtNumber(metrado),
       puRef: fmtMoney(puRef),
+      puSubcontratado: estado === "sin_apu" ? fmtMoney(puMeta) : "",
       ptRef: fmtTotalMoney(totalRef),
       puMeta: fmtMoney(puMeta),
       ptMeta: fmtTotalMoney(totalMeta),
@@ -144,7 +147,7 @@ function buildRows(nodes, costsByApu, apusById, paquetes = []) {
       varianteApu: apuAjustado ? (apu.variante_nombre || apu.nombre || "APU ajustado") : (apu ? "Base maestra" : ""),
       rendimiento: apu?.rendimiento,
       desglose: fmtBreakdown(breakdownRaw),
-      raw: { node, cost, apu, baseApu, puRef, puMeta, totalRef, totalMeta, diff, breakdown: breakdownRaw },
+      raw: { node, cost, apu, baseApu, puRef, puSubcontratado, puMeta, totalRef, totalMeta, diff, breakdown: breakdownRaw },
     };
     rowsById.set(row.id, row);
     return row;

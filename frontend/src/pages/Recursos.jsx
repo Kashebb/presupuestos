@@ -16,6 +16,7 @@ import {
   fieldClass,
   labelClass,
 } from "../components/ui";
+import useDebouncedValue from "../hooks/useDebouncedValue";
 
 const API = "http://127.0.0.1:8000";
 
@@ -95,6 +96,7 @@ export default function Recursos() {
   const [edicionFila, setEdicionFila] = useState({});
   const [erroresFila, setErroresFila] = useState({});
   const [toasts, setToasts] = useState([]);
+  const busquedaDebounced = useDebouncedValue(busqueda, 300);
 
   const fetchRecursos = useCallback(async () => {
     setCargando(true);
@@ -354,14 +356,15 @@ export default function Recursos() {
   }
 
   const filtrados = useMemo(() => {
+    const termino = busquedaDebounced.toLowerCase();
     return recursos.filter((recurso) => {
       const coincideBusqueda =
-        (recurso.descripcion || "").toLowerCase().includes(busqueda.toLowerCase()) ||
-        (recurso.codigo || "").toLowerCase().includes(busqueda.toLowerCase());
+        (recurso.descripcion || "").toLowerCase().includes(termino) ||
+        (recurso.codigo || "").toLowerCase().includes(termino);
       const coincideCategoria = filtroCategoria === "todos" || recurso.categoria === filtroCategoria;
       return coincideBusqueda && coincideCategoria;
     });
-  }, [recursos, busqueda, filtroCategoria]);
+  }, [recursos, busquedaDebounced, filtroCategoria]);
 
   const grupos = useMemo(() => {
     const orden = [...CATEGORIAS, ...new Set(filtrados.map((r) => r.categoria).filter(Boolean))];

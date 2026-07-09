@@ -16,6 +16,7 @@ import {
   fieldClass,
   labelClass,
 } from "../components/ui";
+import useDebouncedValue from "../hooks/useDebouncedValue";
 
 const API = "http://127.0.0.1:8000";
 
@@ -66,6 +67,7 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
   const [filtro, setFiltro] = useState(initialFilter);
   const [categoriaFiltro, setCategoriaFiltro] = useState("todas");
   const [tipoFiltro, setTipoFiltro] = useState("todos");
+  const buscarDebounced = useDebouncedValue(buscar, 350);
 
   useEffect(() => {
     setFiltro(initialFilter || "todos");
@@ -78,21 +80,30 @@ export default function Apus({ onVerDetalle, initialFilter = "todos" }) {
 
   const cargarApus = useCallback(async () => {
     const params = new URLSearchParams({ limit: 500 });
-    if (buscar) params.append("buscar", buscar);
-    const [res, resCostos] = await Promise.all([
-      fetch(`${API}/apus/?${params}`),
-      fetch(`${API}/apus/costos/resumen?limit=500`),
-    ]);
+    if (buscarDebounced) params.append("buscar", buscarDebounced);
+    const res = await fetch(`${API}/apus/?${params}`);
     const data = await res.json();
-    const dataCostos = await resCostos.json();
-    const costosPorApu = Object.fromEntries(dataCostos.map((c) => [c.apu_id, c]));
     setApus(data);
-    setCostos(costosPorApu);
-  }, [buscar]);
+  }, [buscarDebounced]);
 
   useEffect(() => {
     cargarApus();
   }, [cargarApus]);
+
+  useEffect(() => {
+    let cancelado = false;
+    async function cargarCostos() {
+      const resCostos = await fetch(`${API}/apus/costos/resumen?limit=500`);
+      if (!resCostos.ok) return;
+      const dataCostos = await resCostos.json();
+      if (cancelado) return;
+      setCostos(Object.fromEntries(dataCostos.map((c) => [c.apu_id, c])));
+    }
+    cargarCostos();
+    return () => {
+      cancelado = true;
+    };
+  }, []);
 
   const controlApu = useCallback((apu) => costos[apu.id]?.control_costo || "ok", [costos]);
   const tipoApu = useCallback((apu) => apu.subcategoria || apu.categoria || "Sin tipo", []);

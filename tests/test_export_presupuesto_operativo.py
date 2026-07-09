@@ -161,6 +161,79 @@ class ExportPresupuestoOperativoTest(unittest.TestCase):
             exportar_presupuesto_operativo(999, self.db)
         self.assertEqual(ctx.exception.status_code, 404)
 
+    def test_exporta_subcontratado_con_precio_ref_por_defecto(self):
+        proyecto = Proyecto(nombre="Proyecto Subcontratado", codigo="SUB-01")
+        rubro = NodoPresupuesto(
+            proyecto_id=1,
+            tipo="RUBRO",
+            nivel=1,
+            item="1.01",
+            descripcion="Rubro subcontratado",
+            orden=1,
+            unidad="u",
+            metrado=4.0,
+            precio_unitario_ref=12.5,
+            activo_como_rubro=True,
+            tipo_rubro="PENDIENTE",
+            observaciones="SIN_APU",
+            estado_actualizacion="activo",
+        )
+        self.db.add(proyecto)
+        self.db.flush()
+        rubro.proyecto_id = proyecto.id
+        self.db.add(rubro)
+        self.db.commit()
+
+        response = exportar_presupuesto_operativo(proyecto.id, self.db)
+        content = asyncio.run(_read_response(response))
+
+        import openpyxl
+
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+        row = {item[3]: item for item in wb["Presupuesto operativo"].iter_rows(min_row=2, values_only=True)}["Rubro subcontratado"]
+        self.assertEqual(row[14], "Subcontratado")
+        self.assertAlmostEqual(row[10], 12.5)
+        self.assertAlmostEqual(row[11], 50.0)
+        resumen = {item[0]: item[1] for item in wb["Resumen"].iter_rows(values_only=True)}
+        self.assertAlmostEqual(resumen["Total Meta"], 50.0)
+
+    def test_exporta_subcontratado_con_precio_editado(self):
+        proyecto = Proyecto(nombre="Proyecto Subcontratado Editado", codigo="SUB-02")
+        rubro = NodoPresupuesto(
+            proyecto_id=1,
+            tipo="RUBRO",
+            nivel=1,
+            item="1.01",
+            descripcion="Rubro subcontratado editado",
+            orden=1,
+            unidad="u",
+            metrado=4.0,
+            precio_unitario_ref=12.5,
+            precio_unitario_subcontratado=20.0,
+            activo_como_rubro=True,
+            tipo_rubro="PENDIENTE",
+            observaciones="SIN_APU",
+            estado_actualizacion="activo",
+        )
+        self.db.add(proyecto)
+        self.db.flush()
+        rubro.proyecto_id = proyecto.id
+        self.db.add(rubro)
+        self.db.commit()
+
+        response = exportar_presupuesto_operativo(proyecto.id, self.db)
+        content = asyncio.run(_read_response(response))
+
+        import openpyxl
+
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+        row = {item[3]: item for item in wb["Presupuesto operativo"].iter_rows(min_row=2, values_only=True)}["Rubro subcontratado editado"]
+        self.assertEqual(row[14], "Subcontratado")
+        self.assertAlmostEqual(row[10], 20.0)
+        self.assertAlmostEqual(row[11], 80.0)
+        resumen = {item[0]: item[1] for item in wb["Resumen"].iter_rows(values_only=True)}
+        self.assertAlmostEqual(resumen["Total Meta"], 80.0)
+
     def test_revision_apu_valida_solo_el_rubro_revisado(self):
         proyecto = Proyecto(nombre="Proyecto Revision", codigo="REV-01")
         recurso = Recurso(
@@ -623,6 +696,9 @@ class ExportPresupuestoOperativoTest(unittest.TestCase):
         self.assertIn("Rubro A", descriptions)
         self.assertNotIn("Grupo B", descriptions)
         self.assertNotIn("Rubro B", descriptions)
+        resumen = {item[0]: item[1] for item in wb["Resumen"].iter_rows(values_only=True)}
+        self.assertAlmostEqual(resumen["Total ref"], 1.0)
+        self.assertAlmostEqual(resumen["Total Meta"], 2.0)
 
     def test_exporta_vista_filtrada_pendientes_con_jerarquia(self):
         proyecto = Proyecto(nombre="Proyecto Vista", codigo="PV-06")

@@ -2083,6 +2083,23 @@ textarea {
   text-align: center;
 }
 
+.budget-v2-link-meta-input {
+  width: 100%;
+  border: 1px solid #bbf7d0;
+  border-radius: var(--radius-sm);
+  background: #f8fff9;
+  color: #14532d;
+  font: inherit;
+  font-weight: 800;
+  padding: 4px 6px;
+  text-align: right;
+}
+
+.budget-v2-link-meta-input:focus {
+  outline: 2px solid #16a34a;
+  outline-offset: -1px;
+}
+
 .budget-v2-link-variant-cell {
   padding: 4px 6px !important;
 }

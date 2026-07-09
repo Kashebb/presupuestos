@@ -215,6 +215,14 @@ def _total_linea(metrado: Optional[float], precio_unitario: Optional[float]) -> 
     return float(metrado) * float(precio_unitario)
 
 
+def _precio_unitario_subcontratado(nodo: NodoPresupuesto) -> Optional[float]:
+    if nodo.precio_unitario_subcontratado is not None:
+        return float(nodo.precio_unitario_subcontratado)
+    if nodo.precio_unitario_ref is not None:
+        return float(nodo.precio_unitario_ref)
+    return None
+
+
 def _nombre_archivo_excel(proyecto: Proyecto) -> str:
     base = proyecto.codigo or proyecto.nombre or f"proyecto-{proyecto.id}"
     base = unicodedata.normalize("NFD", base)
@@ -561,6 +569,9 @@ def _crear_workbook_presupuesto_operativo(proyecto: Proyecto, nodos: list[NodoPr
             total_apu = _total_linea(nodo.metrado, pu_apu)
 
         estado = _estado_exportacion(nodo, costo_apu, db) if es_rubro else ""
+        if es_rubro and estado == "Subcontratado":
+            pu_apu = _precio_unitario_subcontratado(nodo)
+            total_apu = _total_linea(nodo.metrado, pu_apu)
         if es_rubro:
             conteos["rubros"] += 1
             conteos[estado] += 1
@@ -599,7 +610,7 @@ def _crear_workbook_presupuesto_operativo(proyecto: Proyecto, nodos: list[NodoPr
 
     headers = [
         "Nivel", "Tipo", "Item", "Descripcion", "Unidad", "Metrado", "PU ref", "Total ref",
-        "APU", "Nombre APU", "PU APU", "Total APU", "Dif $", "Dif %", "Estado", "Observaciones",
+        "APU", "Nombre APU", "PU Meta", "Total Meta", "Dif $", "Dif %", "Estado", "Observaciones",
     ]
     ws.append(headers)
 
@@ -676,10 +687,10 @@ def _crear_workbook_presupuesto_operativo(proyecto: Proyecto, nodos: list[NodoPr
     resumen.append(["Pendientes", conteos["Pendiente"]])
     resumen.append(["Subcontratados", conteos["Subcontratado"]])
     resumen.append(["Revisar", conteos["Revisar"]])
-    total_ref = sum(acum["ref"] for nodo_id, acum in acumulados.items() if por_id[nodo_id].padre_id is None)
-    total_apu = sum(acum["apu"] for nodo_id, acum in acumulados.items() if por_id[nodo_id].padre_id is None)
+    total_ref = sum(acum["ref"] for nodo_id, acum in acumulados.items() if por_id[nodo_id].padre_id not in por_id)
+    total_apu = sum(acum["apu"] for nodo_id, acum in acumulados.items() if por_id[nodo_id].padre_id not in por_id)
     resumen.append(["Total ref", total_ref])
-    resumen.append(["Total APU", total_apu])
+    resumen.append(["Total Meta", total_apu])
     resumen.append(["Diferencia", total_apu - total_ref])
 
     for cell in resumen[1]:
@@ -705,7 +716,7 @@ def _crear_workbook_presupuesto_operativo(proyecto: Proyecto, nodos: list[NodoPr
         "Equipos",
         "Transporte",
         "Herr. menor",
-        "Total APU",
+        "Total Meta",
     ]
     desglose.append(desglose_headers)
     for cell in desglose[1]:
@@ -1134,6 +1145,7 @@ class NodoOut(BaseModel):
     unidad: Optional[str]
     metrado: Optional[float]
     precio_unitario_ref: Optional[float]
+    precio_unitario_subcontratado: Optional[float] = None
     apu_id: Optional[int]
     activo_como_rubro: Optional[bool] = None
     tiene_hijos: Optional[bool] = None
@@ -1409,6 +1421,7 @@ class NodoUpdate(BaseModel):
     unidad: Optional[str] = None
     metrado: Optional[float] = None
     precio_unitario_ref: Optional[float] = None
+    precio_unitario_subcontratado: Optional[float] = None
     observaciones: Optional[str] = None
     orden: Optional[int] = None
     estado_actualizacion: Optional[str] = None
@@ -1420,6 +1433,7 @@ class NodoCreate(BaseModel):
     unidad: Optional[str] = None
     metrado: Optional[float] = None
     precio_unitario_ref: Optional[float] = None
+    precio_unitario_subcontratado: Optional[float] = None
 
 
 class NodoBulkCreate(NodoCreate):
@@ -1896,6 +1910,12 @@ def editar_nodo(nodo_id: int, data: NodoUpdate, db: Session = Depends(get_db)):
         nodo.metrado = float(data.metrado) if data.metrado is not None else None
     if "precio_unitario_ref" in campos:
         nodo.precio_unitario_ref = float(data.precio_unitario_ref) if data.precio_unitario_ref is not None else None
+    if "precio_unitario_subcontratado" in campos:
+        nodo.precio_unitario_subcontratado = (
+            float(data.precio_unitario_subcontratado)
+            if data.precio_unitario_subcontratado is not None
+            else None
+        )
     if "observaciones" in campos:
         nodo.observaciones = _texto(data.observaciones)
     if "orden" in campos:
@@ -1948,6 +1968,11 @@ def _crear_rubros_debajo(
             unidad=_texto(data.unidad),
             metrado=float(data.metrado) if data.metrado is not None else None,
             precio_unitario_ref=float(data.precio_unitario_ref) if data.precio_unitario_ref is not None else None,
+            precio_unitario_subcontratado=(
+                float(data.precio_unitario_subcontratado)
+                if data.precio_unitario_subcontratado is not None
+                else None
+            ),
             activo_como_rubro=True,
             tipo_rubro="PENDIENTE",
             observaciones=None,

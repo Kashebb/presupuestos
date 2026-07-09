@@ -6,6 +6,7 @@ import { descendantsOf, nearestContainerIdsForRows, visibleContainers } from "..
 import PanelApu from "../components/PanelApu";
 import PresupuestoTree from "../components/PresupuestoTree";
 import CollapsibleSidePanel from "../components/CollapsibleSidePanel";
+import useDebouncedValue from "../../../hooks/useDebouncedValue";
 
 function normalizarUnidad(unidad) {
   const value = String(unidad || "")
@@ -54,26 +55,20 @@ function etiquetaTipoApu(apu, selectedProjectId) {
   return esApuAjustadoDelProyecto(apu, selectedProjectId) ? "APU ajustado" : "Base maestra";
 }
 
-function apuSuggestionScore(row, apu, query) {
-  const text = apuSearchText(apu);
-  const rubroTokens = tokenizar(row?.descripcion);
-  const queryTokens = tokenizar(query);
-  const tokens = queryTokens.length ? queryTokens : rubroTokens;
-  let score = 0;
-
-  tokens.forEach((token) => {
-    if (text.includes(token)) score += queryTokens.length ? 6 : 4;
-    if (normalizarTexto(apu?.nombre).includes(token)) score += queryTokens.length ? 4 : 3;
-  });
-
-  if (normalizarUnidad(row?.unidad) && normalizarUnidad(row?.unidad) === normalizarUnidad(apu?.unidad)) score += 10;
-  if (normalizarTexto(apu?.nombre) === normalizarTexto(row?.descripcion)) score += 20;
-  return score;
-}
-
 function fmtMoney(value) {
   if (!Number.isFinite(value)) return "-";
   return `$${value.toLocaleString("es-EC", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
+}
+
+function parseNumberInput(value) {
+  const text = String(value ?? "").trim().replace(/\$/g, "").replace(/\s/g, "");
+  if (!text) return null;
+  const normalized = text.includes(",") && text.includes(".")
+    ? text.replace(/,/g, "")
+    : text.replace(",", ".");
+  const number = Number(normalized);
+  if (!Number.isFinite(number)) throw new Error(`Valor numerico invalido: ${value}`);
+  return number;
 }
 
 function validarVinculacion(row, apu) {
@@ -129,6 +124,10 @@ export default function VinculacionView({
   const [showApuPanel, setShowApuPanel] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchIndex, setSearchIndex] = useState(-1);
+  const [subcontractDrafts, setSubcontractDrafts] = useState({});
+  const [subcontractSavingId, setSubcontractSavingId] = useState("");
+  const searchQueryDebounced = useDebouncedValue(searchQuery, 250);
+  const apuSearchDebounced = useDebouncedValue(apuSearch, 300);
 
   const visibleRows = useMemo(() => {
     const scopedIds = descendantsOf(rows, selectedTreeId);
@@ -139,7 +138,7 @@ export default function VinculacionView({
   }, [rows, selectedTreeId, vincFilter]);
 
   const searchMatches = useMemo(() => {
-    const query = normalizarTexto(searchQuery.trim());
+    const query = normalizarTexto(searchQueryDebounced.trim());
     if (!query) return [];
     return visibleRows
       .map((row, rowIndex) => ({ row, rowIndex }))
@@ -152,7 +151,7 @@ export default function VinculacionView({
         row.observacion,
         row.raw?.node?.observaciones,
       ].join(" ")).includes(query));
-  }, [searchQuery, visibleRows]);
+  }, [searchQueryDebounced, visibleRows]);
   const treeMarkerIds = useMemo(
     () => nearestContainerIdsForRows(rows, searchMatches.map((match) => match.row)),
     [rows, searchMatches]
@@ -187,18 +186,32 @@ export default function VinculacionView({
     return grouped;
   }, [apus, selectedProjectId, variantUsageById]);
 
+  const apusConBusqueda = useMemo(() => (
+    apus.map((apu) => ({ apu, searchText: apuSearchText(apu), nombreNorm: normalizarTexto(apu?.nombre) }))
+  ), [apus]);
+
   const apusSugeridos = useMemo(() => {
-    const query = apuSearch.trim();
+    const query = apuSearchDebounced.trim();
     const queryTokens = tokenizar(query);
-    return apus
-      .filter((apu) => apu.estado !== "inactivo")
-      .filter((apu) => !apu.es_variante || esApuAjustadoDelProyecto(apu, selectedProjectId))
-      .filter((apu) => {
+    return apusConBusqueda
+      .filter(({ apu }) => apu.estado !== "inactivo")
+      .filter(({ apu }) => !apu.es_variante || esApuAjustadoDelProyecto(apu, selectedProjectId))
+      .filter(({ searchText }) => {
         if (!queryTokens.length) return true;
-        const text = apuSearchText(apu);
-        return queryTokens.every((token) => text.includes(token));
+        return queryTokens.every((token) => searchText.includes(token));
       })
-      .map((apu) => ({ apu, score: apuSuggestionScore(selectedRow, apu, query) }))
+      .map(({ apu, searchText, nombreNorm }) => {
+        const rowTokens = tokenizar(selectedRow?.descripcion);
+        const tokens = queryTokens.length ? queryTokens : rowTokens;
+        let score = 0;
+        tokens.forEach((token) => {
+          if (searchText.includes(token)) score += queryTokens.length ? 6 : 4;
+          if (nombreNorm.includes(token)) score += queryTokens.length ? 4 : 3;
+        });
+        if (normalizarUnidad(selectedRow?.unidad) && normalizarUnidad(selectedRow?.unidad) === normalizarUnidad(apu?.unidad)) score += 10;
+        if (normalizarTexto(apu?.nombre) === normalizarTexto(selectedRow?.descripcion)) score += 20;
+        return { apu, score };
+      })
       .filter(({ score }) => queryTokens.length || score > 0)
       .sort((a, b) => {
         const tipoA = esApuAjustadoDelProyecto(a.apu, selectedProjectId) ? 1 : 0;
@@ -206,7 +219,7 @@ export default function VinculacionView({
         return tipoB - tipoA || b.score - a.score || String(a.apu.nombre || "").localeCompare(String(b.apu.nombre || ""));
       })
       .slice(0, 80);
-  }, [apuSearch, apus, selectedProjectId, selectedRow]);
+  }, [apuSearchDebounced, apusConBusqueda, selectedProjectId, selectedRow]);
 
   const apusClasificados = useMemo(() => {
     const resultado = { compatibles: [], incompatibles: [] };
@@ -255,7 +268,7 @@ export default function VinculacionView({
 
   useEffect(() => {
     setSearchIndex(-1);
-  }, [searchQuery, selectedTreeId, vincFilter]);
+  }, [searchQueryDebounced, selectedTreeId, vincFilter]);
 
   const runAction = async (action) => {
     if (!canUseSelectedLine) return;
@@ -295,6 +308,37 @@ export default function VinculacionView({
       throw new Error(detail?.detail || "No se pudo marcar como subcontratado.");
     }
   });
+
+  const guardarPrecioSubcontratado = async (row) => {
+    if (!row?.sourceId || row.estado !== "sin_apu") return;
+    const draft = subcontractDrafts[row.id];
+    if (draft === undefined) return;
+    setSubcontractSavingId(row.id);
+    setActionError("");
+    try {
+      const precio = parseNumberInput(draft);
+      const response = await fetch(`${API}/presupuestos/nodos/${row.sourceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ precio_unitario_subcontratado: precio }),
+      });
+      if (!response.ok) {
+        const detail = await response.json().catch(() => null);
+        throw new Error(detail?.detail || "No se pudo guardar el P.U. Meta.");
+      }
+      setSubcontractDrafts((current) => {
+        const next = { ...current };
+        delete next[row.id];
+        return next;
+      });
+      setActionStatus("P.U. Meta subcontratado actualizado.");
+      onDataChange?.();
+    } catch (err) {
+      setActionError(err.message || "No se pudo guardar el P.U. Meta.");
+    } finally {
+      setSubcontractSavingId("");
+    }
+  };
 
   const crearApu = (baseApu = null) => runAction(async () => {
     const response = await fetch(`${API}/presupuestos/nodos/${selectedRow.sourceId}/crear-apu`, {
@@ -724,7 +768,32 @@ export default function VinculacionView({
                       </select>
                     )}
                   </span>
-                  <span>{isContainer ? "" : (row.puMeta || "-")}</span>
+                  <span>
+                    {!isContainer && row.estado === "sin_apu" ? (
+                      <input
+                        className="budget-v2-link-meta-input"
+                        value={subcontractDrafts[row.id] ?? String(row.raw?.node?.precio_unitario_subcontratado ?? row.raw?.puRef ?? "")}
+                        disabled={subcontractSavingId === row.id}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={(event) => setSubcontractDrafts((current) => ({ ...current, [row.id]: event.target.value }))}
+                        onBlur={() => guardarPrecioSubcontratado(row)}
+                        onKeyDown={(event) => {
+                          event.stopPropagation();
+                          if (event.key === "Enter") event.currentTarget.blur();
+                          if (event.key === "Escape") {
+                            setSubcontractDrafts((current) => {
+                              const next = { ...current };
+                              delete next[row.id];
+                              return next;
+                            });
+                            event.currentTarget.blur();
+                          }
+                        }}
+                      />
+                    ) : (
+                      isContainer ? "" : (row.puMeta || "-")
+                    )}
+                  </span>
                   <span>{row.ptMeta || "-"}</span>
                   <span>
                     {!isContainer && (

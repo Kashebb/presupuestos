@@ -52,6 +52,7 @@ class NodoPresupuesto(Base):
     unidad = Column(String(20), nullable=True)
     metrado = Column(Float, nullable=True)
     precio_unitario_ref = Column(Float, nullable=True)
+    precio_unitario_subcontratado = Column(Float, nullable=True)
     apu_id = Column(Integer, ForeignKey("apus.id", ondelete="SET NULL"), nullable=True)
     activo_como_rubro = Column(Boolean, default=True, nullable=True)
     tipo_rubro = Column(String(20), nullable=True)
