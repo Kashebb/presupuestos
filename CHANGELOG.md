@@ -136,3 +136,11 @@
 - Eliminado `frontend/src/pages/Presupuestos.jsx`, confirmado como pantalla V1 huerfana; la navegacion actual usa `frontend/src/pages/PresupuestosV2.jsx`.
 - `CONTEXTO_PROYECTO.md` actualizado para reflejar que la jerarquia dinamica esta activa desde la migracion `0008_nivel_dinamico_presupuesto` del 2026-06-20 y que `tipo` queda solo para compatibilidad de importacion.
 - Hallazgo pendiente de revision: algunas reglas complejas de estructura, como mezclar un grupo con sus propias filas hijas o superar el nivel maximo, siguen validandose al ejecutar la accion en backend. No se corrigio en esta sesion porque el alcance era explicar bloqueos existentes sin cambiar reglas de negocio.
+
+## 2026-07-10
+
+- Agregada la vista `Análisis > Uso de recursos` en Presupuestos V2.
+- La consulta consolida cantidades y costos por recurso, rubro y paquete; incluye recursos maestro, `Solo proyecto` y subcontratados con precio de referencia.
+- Incorporada tabla dinámica MVP con paquetes como columnas, detalle lateral, filtros de paquete y jerarquía de filas configurable.
+- Agregadas configuraciones guardadas por proyecto mediante la migración `0017_uso_recursos_configuraciones`.
+- Agregada exportación a Excel de la configuración activa de Uso de recursos.

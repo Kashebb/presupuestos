@@ -16,6 +16,7 @@ import { descendantsOf } from "./logic/tree";
 import AnalisisView from "./views/AnalisisView";
 import DesgloseView from "./views/DesgloseView";
 import EdicionView from "./views/EdicionView";
+import UsoRecursosView from "./views/UsoRecursosView";
 import VinculacionView from "./views/VinculacionView";
 
 const CATEGORIAS_RECURSO = ["mano_de_obra", "material", "equipo", "transporte", "otros"];
@@ -124,6 +125,7 @@ export default function PresupuestosV2Shell() {
     vinculacion: "Vinculacion activa: rubros reales con acciones APU controladas.",
     desglose: "Desglose activo: costos por rubro con materiales, mano de obra, equipos y transporte.",
     analisis: "Modo lectura: comparacion con costos APU existentes.",
+    uso_recursos: "Modo lectura: cantidades y costos de recursos por paquete.",
   };
 
   const footerMetric = {
@@ -131,6 +133,7 @@ export default function PresupuestosV2Shell() {
     vinculacion: `${footerCount} fila(s) visibles`,
     desglose: `${footerCount} fila(s) visibles`,
     analisis: `${footerCount} fila(s) analizadas`,
+    uso_recursos: `${footerCount} recurso(s) visibles`,
   };
 
   const openProject = (projectId) => {
@@ -458,7 +461,15 @@ export default function PresupuestosV2Shell() {
       actions: [
         { label: "Crear / duplicar", onClick: () => switchView("vinculacion", "apus"), hint: "Usa el panel de vinculacion para crear desde APUs parecidos." },
         { label: "Editar APU", onClick: () => switchView("vinculacion", "apus") },
-        { label: "Ver desglose", onClick: () => switchView("desglose", "apus") },
+      ],
+    },
+    {
+      id: "analisis",
+      label: "Analisis",
+      actions: [
+        { label: "Analisis", active: view === "analisis", onClick: () => switchView("analisis", "analisis") },
+        { label: "Desglose", active: view === "desglose", onClick: () => switchView("desglose", "analisis") },
+        { label: "Uso de recursos", active: view === "uso_recursos", onClick: () => switchView("uso_recursos", "analisis") },
       ],
     },
     {
@@ -684,6 +695,12 @@ export default function PresupuestosV2Shell() {
             setSelectedTreeId={setSelectedTreeId}
             selectedRowId={selectedRowId}
             setSelectedRowId={setSelectedRowId}
+            onVisibleCountChange={setFooterCount}
+          />
+        )}
+        {view === "uso_recursos" && (
+          <UsoRecursosView
+            selectedProjectId={selectedProjectId}
             onVisibleCountChange={setFooterCount}
           />
         )}

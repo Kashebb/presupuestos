@@ -35,6 +35,7 @@ from app.models.presupuesto import (
     PaquetePresupuesto,
     NodoAPURevision,
     NodoAPURevisionItem,
+    UsoRecursosConfiguracion,
 )
 from app.models.apu import APU, APUItem
 from app.models.recurso import Recurso
@@ -1536,6 +1537,25 @@ class RecursoProyectoOut(BaseModel):
     created: bool = True
 
 
+class UsoRecursosConfiguracionIn(BaseModel):
+    nombre: str
+    configuracion: dict[str, Any]
+
+
+class UsoRecursosConfiguracionOut(BaseModel):
+    id: int
+    proyecto_id: int
+    nombre: str
+    configuracion: dict[str, Any]
+    fecha_creacion: datetime
+    fecha_actualizacion: datetime
+
+
+class UsoRecursosExportIn(BaseModel):
+    row_fields: list[str] = Field(default_factory=lambda: ["rubro", "categoria", "recurso"])
+    package_ids: list[Any] = Field(default_factory=list)
+
+
 @router.get("/proyectos/", response_model=list[ProyectoOut])
 def listar_proyectos(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     if not backup.existe_backup_diario_hoy():
@@ -1662,6 +1682,323 @@ def _paquete_ancestro_nodo(db: Session, proyecto_id: int, nodo: NodoPresupuesto)
             return paquete
         cursor = padre_por_id.get(cursor)
     return None
+
+
+def _ruta_uso_recursos(nodo: NodoPresupuesto, por_id: dict[int, NodoPresupuesto]) -> dict[str, Optional[dict[str, Any]]]:
+    """Devuelve los niveles del presupuesto que puede usar la tabla dinamica."""
+    ruta = _ruta_nodo(nodo, por_id)
+
+    def detalle(tipo: str) -> Optional[dict[str, Any]]:
+        encontrado = next((item for item in reversed(ruta[:-1]) if item.tipo == tipo), None)
+        if not encontrado:
+            return None
+        return {"id": encontrado.id, "item": encontrado.item, "descripcion": encontrado.descripcion}
+
+    return {
+        "capitulo": detalle("CAPITULO"),
+        "categoria": detalle("CATEGORIA"),
+        "rubro": {"id": nodo.id, "item": nodo.item, "descripcion": nodo.descripcion},
+    }
+
+
+def _origen_recurso_uso(recurso: Recurso, proyecto_id: int) -> tuple[str, Optional[str]]:
+    if recurso.proyecto_id is None:
+        return "Maestro", None
+    if recurso.proyecto_id == proyecto_id:
+        return "Solo proyecto", None
+    return "Solo proyecto", "El recurso pertenece a otro proyecto y se esta usando fuera de su alcance."
+
+
+@router.get("/proyectos/{proyecto_id}/uso-recursos")
+def listar_uso_recursos(proyecto_id: int, db: Session = Depends(get_db)):
+    """Entrega los movimientos base para la tabla dinamica de uso de recursos.
+
+    No escribe datos ni decide la agrupacion visual. Cada registro conserva su
+    rubro, APU, paquete y recurso para que el cliente pueda pivotar los campos.
+    """
+    proyecto = db.query(Proyecto).filter(Proyecto.id == proyecto_id).first()
+    if not proyecto:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+
+    nodos = (
+        db.query(NodoPresupuesto)
+        .options(joinedload(NodoPresupuesto.apu).joinedload(APU.items).joinedload(APUItem.recurso))
+        .filter(
+            NodoPresupuesto.proyecto_id == proyecto_id,
+            or_(NodoPresupuesto.estado_actualizacion != "obsoleto", NodoPresupuesto.estado_actualizacion.is_(None)),
+        )
+        .order_by(NodoPresupuesto.orden, NodoPresupuesto.id)
+        .all()
+    )
+    por_id = {nodo.id: nodo for nodo in nodos}
+    hijos_por_padre: dict[Optional[int], list[NodoPresupuesto]] = {}
+    for nodo in nodos:
+        hijos_por_padre.setdefault(nodo.padre_id if nodo.padre_id in por_id else None, []).append(nodo)
+    paquetes = (
+        db.query(PaquetePresupuesto)
+        .filter(PaquetePresupuesto.proyecto_id == proyecto_id)
+        .order_by(PaquetePresupuesto.fecha_creacion, PaquetePresupuesto.id)
+        .all()
+    )
+    paquete_por_nodo = {paquete.nodo_id: paquete for paquete in paquetes}
+
+    def paquete_de(nodo: NodoPresupuesto) -> Optional[PaquetePresupuesto]:
+        cursor: Optional[NodoPresupuesto] = nodo
+        while cursor is not None:
+            paquete = paquete_por_nodo.get(cursor.id)
+            if paquete:
+                return paquete
+            cursor = por_id.get(cursor.padre_id)
+        return None
+
+    movimientos: list[dict[str, Any]] = []
+    advertencias: list[dict[str, Any]] = []
+    hay_sin_paquete = False
+    for nodo in nodos:
+        if not _es_rubro_operativo_desde_hijos(nodo, hijos_por_padre):
+            continue
+        paquete = paquete_de(nodo)
+        if paquete is None:
+            hay_sin_paquete = True
+        base = {
+            "paquete": (
+                {"id": paquete.id, "nombre": paquete.nombre, "estado": paquete.estado}
+                if paquete else {"id": "sin-paquete", "nombre": "Sin paquete", "estado": None}
+            ),
+            "ruta": _ruta_uso_recursos(nodo, por_id),
+            "rubro": {"id": nodo.id, "item": nodo.item, "descripcion": nodo.descripcion, "unidad": nodo.unidad},
+            "metrado": round(float(nodo.metrado or 0.0), 4),
+        }
+
+        if nodo.observaciones == "SIN_APU":
+            precio = _precio_unitario_subcontratado(nodo)
+            cantidad = round(float(nodo.metrado or 0.0), 4)
+            movimientos.append({
+                **base,
+                "tipo": "subcontratado",
+                "apu": None,
+                "categoria_recurso": "subcontratado",
+                "recurso": {
+                    "id": None,
+                    "recurso_base_id": None,
+                    "clave_consolidacion": f"subcontratado:{nodo.id}",
+                    "descripcion": nodo.descripcion,
+                    "unidad": nodo.unidad,
+                },
+                "origen": "Subcontratado",
+                "cantidad": cantidad,
+                "costo_unitario": round(float(precio or 0.0), 4),
+                "costo_total": round(cantidad * float(precio or 0.0), 4),
+            })
+            if precio is None:
+                advertencias.append({"codigo": "SUBCONTRATADO_SIN_PRECIO", "nodo_id": nodo.id, "descripcion": nodo.descripcion})
+            continue
+
+        if not nodo.apu:
+            advertencias.append({"codigo": "RUBRO_SIN_APU", "nodo_id": nodo.id, "descripcion": nodo.descripcion})
+            continue
+
+        rendimiento = float(nodo.apu.rendimiento or 0.0)
+        for item in nodo.apu.items:
+            if item.es_herramienta_menor or not item.recurso:
+                continue
+            factor = rendimiento if item.categoria in ("mano_de_obra", "equipo") else 1.0
+            cantidad = round(float(nodo.metrado or 0.0) * float(item.cantidad or 0.0) * factor, 4)
+            recurso = item.recurso
+            origen, advertencia_origen = _origen_recurso_uso(recurso, proyecto_id)
+            movimientos.append({
+                **base,
+                "tipo": "recurso",
+                "apu": {"id": nodo.apu.id, "nombre": nodo.apu.nombre, "codigo": nodo.apu.codigo},
+                "categoria_recurso": item.categoria,
+                "recurso": {
+                    "id": recurso.id,
+                    "recurso_base_id": recurso.recurso_base_id,
+                    "clave_consolidacion": recurso.recurso_base_id or recurso.id,
+                    "descripcion": recurso.descripcion,
+                    "unidad": recurso.unidad,
+                },
+                "origen": origen,
+                "cantidad": cantidad,
+                "costo_unitario": round(float(recurso.precio_unitario or 0.0), 4),
+                "costo_total": round(cantidad * float(recurso.precio_unitario or 0.0), 4),
+            })
+            if advertencia_origen:
+                advertencias.append({"codigo": "RECURSO_FUERA_DE_PROYECTO", "nodo_id": nodo.id, "recurso_id": recurso.id, "descripcion": advertencia_origen})
+
+    paquetes_salida = [{"id": paquete.id, "nombre": paquete.nombre, "estado": paquete.estado} for paquete in paquetes]
+    if hay_sin_paquete:
+        paquetes_salida.append({"id": "sin-paquete", "nombre": "Sin paquete", "estado": None})
+    return {
+        "proyecto": {"id": proyecto.id, "nombre": proyecto.nombre},
+        "campos_disponibles": ["paquete", "categoria", "capitulo", "rubro", "apu", "recurso"],
+        "paquetes": paquetes_salida,
+        "movimientos": movimientos,
+        "advertencias": advertencias,
+    }
+
+
+def _uso_recursos_configuracion_out(item: UsoRecursosConfiguracion) -> dict[str, Any]:
+    return {
+        "id": item.id,
+        "proyecto_id": item.proyecto_id,
+        "nombre": item.nombre,
+        "configuracion": item.configuracion_json or {},
+        "fecha_creacion": item.fecha_creacion,
+        "fecha_actualizacion": item.fecha_actualizacion,
+    }
+
+
+@router.get("/proyectos/{proyecto_id}/uso-recursos/configuraciones", response_model=list[UsoRecursosConfiguracionOut])
+def listar_configuraciones_uso_recursos(proyecto_id: int, db: Session = Depends(get_db)):
+    return [
+        _uso_recursos_configuracion_out(item)
+        for item in db.query(UsoRecursosConfiguracion)
+        .filter(UsoRecursosConfiguracion.proyecto_id == proyecto_id)
+        .order_by(UsoRecursosConfiguracion.nombre)
+        .all()
+    ]
+
+
+@router.post("/proyectos/{proyecto_id}/uso-recursos/configuraciones", response_model=UsoRecursosConfiguracionOut)
+def guardar_configuracion_uso_recursos(proyecto_id: int, data: UsoRecursosConfiguracionIn, db: Session = Depends(get_db)):
+    nombre = " ".join(data.nombre.strip().split())
+    if not nombre:
+        raise HTTPException(status_code=400, detail="El nombre de la configuración es obligatorio")
+    if not db.query(Proyecto.id).filter(Proyecto.id == proyecto_id).first():
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    item = db.query(UsoRecursosConfiguracion).filter(
+        UsoRecursosConfiguracion.proyecto_id == proyecto_id,
+        UsoRecursosConfiguracion.nombre == nombre,
+    ).first()
+    if item:
+        item.configuracion_json = data.configuracion
+        item.fecha_actualizacion = datetime.utcnow()
+    else:
+        item = UsoRecursosConfiguracion(proyecto_id=proyecto_id, nombre=nombre, configuracion_json=data.configuracion)
+        db.add(item)
+    db.commit()
+    db.refresh(item)
+    return _uso_recursos_configuracion_out(item)
+
+
+@router.delete("/uso-recursos/configuraciones/{configuracion_id}", status_code=204)
+def eliminar_configuracion_uso_recursos(configuracion_id: int, db: Session = Depends(get_db)):
+    item = db.query(UsoRecursosConfiguracion).filter(UsoRecursosConfiguracion.id == configuracion_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Configuración no encontrada")
+    db.delete(item)
+    db.commit()
+
+
+@router.post("/proyectos/{proyecto_id}/uso-recursos/exportar.xlsx")
+def exportar_uso_recursos(proyecto_id: int, data: UsoRecursosExportIn, db: Session = Depends(get_db)):
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    campos_permitidos = {"capitulo", "categoria", "rubro", "apu", "recurso"}
+    campos = [campo for campo in data.row_fields if campo in campos_permitidos] or ["rubro", "categoria", "recurso"]
+    uso = listar_uso_recursos(proyecto_id, db)
+    seleccion = {str(item) for item in data.package_ids}
+    paquetes = [item for item in uso["paquetes"] if not seleccion or str(item["id"]) in seleccion]
+    movimientos = [item for item in uso["movimientos"] if str(item["paquete"]["id"]) in {str(p["id"]) for p in paquetes}]
+
+    def campo_movimiento(movimiento: dict, campo: str) -> tuple[str, str]:
+        if campo == "recurso":
+            return str(movimiento["recurso"]["clave_consolidacion"]), movimiento["recurso"]["descripcion"]
+        if campo == "apu":
+            apu = movimiento.get("apu")
+            return (str(apu["id"]), apu["nombre"]) if apu else ("subcontratado", "Subcontratado")
+        if campo == "categoria":
+            return movimiento.get("categoria_recurso") or "sin-categoria", movimiento.get("categoria_recurso") or "Sin categoría"
+        valor = movimiento.get("ruta", {}).get(campo)
+        return (str(valor["id"]), valor["descripcion"]) if valor else (f"sin-{campo}", "Sin asignar")
+
+    raiz: dict[str, Any] = {"children": {}, "movimientos": []}
+    for movimiento in movimientos:
+        nodo = raiz
+        nodo["movimientos"].append(movimiento)
+        for campo in campos:
+            clave, etiqueta = campo_movimiento(movimiento, campo)
+            nodo = nodo["children"].setdefault(f"{campo}:{clave}", {"label": etiqueta, "children": {}, "movimientos": []})
+            nodo["movimientos"].append(movimiento)
+
+    def resumen(items: list[dict]) -> dict[str, dict[str, Any]]:
+        salida: dict[str, dict[str, Any]] = {}
+        for item in items:
+            clave = str(item["paquete"]["id"])
+            dato = salida.setdefault(clave, {"origenes": set(), "cantidad": 0.0, "total": 0.0})
+            dato["origenes"].add(item["origen"])
+            dato["cantidad"] += float(item["cantidad"] or 0)
+            dato["total"] += float(item["costo_total"] or 0)
+        for dato in salida.values():
+            dato["origen"] = next(iter(dato["origenes"])) if len(dato["origenes"]) == 1 else "Inconsistente"
+            dato["unitario"] = dato["total"] / dato["cantidad"] if dato["cantidad"] else 0.0
+        return salida
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Uso de recursos"
+    header_fill = PatternFill("solid", fgColor="E8F2F2")
+    subheader_fill = PatternFill("solid", fgColor="F3F7F8")
+    ws.cell(1, 1, "Recurso / agrupación")
+    ws.cell(1, 2, "Unidad")
+    ws.merge_cells(start_row=1, start_column=1, end_row=2, end_column=1)
+    ws.merge_cells(start_row=1, start_column=2, end_row=2, end_column=2)
+    columna = 3
+    for paquete in paquetes:
+        ws.cell(1, columna, paquete["nombre"])
+        ws.merge_cells(start_row=1, start_column=columna, end_row=1, end_column=columna + 3)
+        for offset, nombre in enumerate(["Origen", "Cant.", "Costo U.", "Costo T."]):
+            ws.cell(2, columna + offset, nombre)
+        columna += 4
+    ws.cell(1, columna, "Cant. total")
+    ws.cell(1, columna + 1, "Costo total")
+    ws.merge_cells(start_row=1, start_column=columna, end_row=2, end_column=columna)
+    ws.merge_cells(start_row=1, start_column=columna + 1, end_row=2, end_column=columna + 1)
+    for fila in ws.iter_rows(min_row=1, max_row=2, min_col=1, max_col=columna + 1):
+        for celda in fila:
+            celda.fill = header_fill if celda.row == 1 else subheader_fill
+            celda.font = Font(bold=True)
+            celda.alignment = Alignment(horizontal="center", vertical="center")
+
+    fila_actual = 3
+    def escribir(nodo: dict, nivel: int = 0) -> None:
+        nonlocal fila_actual
+        for hijo in sorted(nodo["children"].values(), key=lambda item: item["label"]):
+            datos = resumen(hijo["movimientos"])
+            ws.cell(fila_actual, 1, hijo["label"])
+            ws.cell(fila_actual, 1).alignment = Alignment(indent=min(nivel, 12))
+            es_recurso = nivel == len(campos) - 1
+            if es_recurso and hijo["movimientos"]:
+                ws.cell(fila_actual, 2, hijo["movimientos"][0]["recurso"]["unidad"])
+            col = 3
+            for paquete in paquetes:
+                dato = datos.get(str(paquete["id"]))
+                ws.cell(fila_actual, col, dato["origen"] if dato else "")
+                ws.cell(fila_actual, col + 1, dato["cantidad"] if dato else None)
+                ws.cell(fila_actual, col + 2, dato["unitario"] if dato else None)
+                ws.cell(fila_actual, col + 3, dato["total"] if dato else None)
+                col += 4
+            cantidad_total = sum(float(item["cantidad"] or 0) for item in hijo["movimientos"])
+            costo_total = sum(float(item["costo_total"] or 0) for item in hijo["movimientos"])
+            ws.cell(fila_actual, col, cantidad_total if es_recurso else None)
+            ws.cell(fila_actual, col + 1, costo_total)
+            if not es_recurso:
+                for celda in ws[fila_actual]: celda.font = Font(bold=True)
+            fila_actual += 1
+            escribir(hijo, nivel + 1)
+    escribir(raiz)
+    for c in range(3, columna + 2):
+        for cell in ws.iter_cols(min_col=c, max_col=c, min_row=3, max_row=ws.max_row):
+            for value in cell: value.number_format = '#,##0.0000' if (c - 3) % 4 == 1 or c == columna else '$#,##0.00'
+        ws.column_dimensions[get_column_letter(c)].width = 14
+    ws.column_dimensions['A'].width = 38
+    ws.column_dimensions['B'].width = 10
+    ws.freeze_panes = "C3"
+    output = io.BytesIO(); wb.save(output); output.seek(0)
+    return StreamingResponse(output, media_type=EXCEL_MEDIA_TYPE, headers={"Content-Disposition": 'attachment; filename="uso_recursos.xlsx"'})
 
 
 @router.get("/proyectos/{proyecto_id}/paquetes", response_model=list[PaqueteOut])

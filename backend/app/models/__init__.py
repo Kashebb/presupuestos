@@ -7,4 +7,5 @@ from app.models.presupuesto import (
     ActualizacionPresupuestoLote,
     NodoAPURevision,
     NodoAPURevisionItem,
+    UsoRecursosConfiguracion,
 )

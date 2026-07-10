@@ -3,7 +3,7 @@ Modelos: Proyecto y NodoPresupuesto
 Módulo: Presupuestos - Sesión 12
 """
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Text, Boolean, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Text, Boolean, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.models.base import Base
 
@@ -130,6 +130,22 @@ class PaquetePresupuesto(Base):
         foreign_keys=[proyecto_id],
     )
     nodo = relationship("NodoPresupuesto", foreign_keys=[nodo_id], lazy="select")
+
+
+class UsoRecursosConfiguracion(Base):
+    __tablename__ = "uso_recursos_configuraciones"
+    __table_args__ = (
+        UniqueConstraint("proyecto_id", "nombre", name="uq_uso_recursos_configuracion_proyecto_nombre"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    proyecto_id = Column(Integer, ForeignKey("proyectos.id", ondelete="CASCADE"), nullable=False, index=True)
+    nombre = Column(String(160), nullable=False)
+    configuracion_json = Column(JSON, nullable=False, default=dict)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow, nullable=False)
+    fecha_actualizacion = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    proyecto = relationship("Proyecto", foreign_keys=[proyecto_id], lazy="select")
 
 
 class NodoAPURevision(Base):

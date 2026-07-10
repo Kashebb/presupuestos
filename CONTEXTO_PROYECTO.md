@@ -100,6 +100,8 @@ El desarrollo debe avanzar asi:
 
 ## En el horizonte
 
+- Uso de recursos: el MVP está operativo en `Presupuestos V2 > Análisis`. Pendiente para una fase posterior: expandir/contraer grupos, búsqueda, orden por costo total, eliminación de configuraciones guardadas y filtros de advertencias.
+
 - Evaluar una alternativa de agrupar/desagrupar mediante seleccion multiple de filas + boton `Agrupar`, en lugar de (o ademas de) la sangria tipo Tab/Shift+Tab actual. El backend ya tiene una funcion relacionada (`agrupar_abajo`) que podria reutilizarse parcialmente. Evaluar en una sesion futura dedicada a UX, sin mezclarlo con correcciones de bugs.
 
 ## Flujo de Trabajo por Sesion
