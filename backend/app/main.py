@@ -6,6 +6,7 @@ from app.models import presupuesto
 from app.api import recursos, apus
 from app.api import dashboard
 from app.api.presupuestos import router as presupuestos_router
+from app.api.subcontratos import router as subcontratos_router
 
 Base.metadata.create_all(bind=engine)
 
@@ -25,6 +26,7 @@ app.add_middleware(
 app.include_router(recursos.router)
 app.include_router(apus.router)
 app.include_router(presupuestos_router)
+app.include_router(subcontratos_router)
 app.include_router(dashboard.router)
 
 @app.get("/")

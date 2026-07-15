@@ -17,6 +17,7 @@ from app.schemas.apu import (
     APUPlantillaUpdate,
     APUPlantillaUsoOut,
 )
+from app.services.apu_costos import calcular_costo_apu_compat, redondear_4
 
 router = APIRouter(prefix="/apus", tags=["apus"])
 
@@ -65,8 +66,7 @@ def siguiente_codigo_apu(db: Session):
     return f"{prefijo}{str(numero + 1).zfill(ancho)}"
 
 
-def _r4(value):
-    return round(float(value or 0.0), 4)
+_r4 = redondear_4
 
 
 def _normalizar_apu_data(data: dict) -> dict:
@@ -83,38 +83,7 @@ def _normalizar_item_data(data: dict) -> dict:
     return data
 
 
-def calcular_costo_apu(apu: APU):
-    subtotales = {"equipo": 0.0, "mano_de_obra": 0.0, "material": 0.0, "transporte": 0.0}
-    subtotal_mo = 0.0
-    rendimiento = _r4(apu.rendimiento)
-
-    for item in apu.items:
-        if item.es_herramienta_menor:
-            continue
-        if not item.recurso:
-            continue
-
-        precio = _r4(item.recurso.precio_unitario)
-        cantidad = _r4(item.cantidad)
-        cat = item.categoria
-        costo = _r4(cantidad * precio)
-
-        if cat in ("equipo", "mano_de_obra"):
-            costo = _r4(costo * rendimiento)
-
-        subtotales[cat] = _r4(subtotales.get(cat, 0.0) + costo)
-        if cat == "mano_de_obra":
-            subtotal_mo = _r4(subtotal_mo + costo)
-
-    hm = _r4(subtotal_mo * 0.05)
-    subtotales["equipo"] = _r4(subtotales["equipo"] + hm)
-    precio_unitario = _r4(sum(subtotales.values()))
-
-    return {
-        "precio_unitario": precio_unitario,
-        "subtotales": {k: _r4(v) for k, v in subtotales.items()},
-        "herramienta_menor": _r4(hm),
-    }
+calcular_costo_apu = calcular_costo_apu_compat
 
 @router.get("/", response_model=List[APUOut])
 def listar_apus(

@@ -958,6 +958,9 @@ textarea {
 }
 
 .budget-v2-footer {
+  position: relative;
+  z-index: 5;
+  flex: 0 0 auto;
   justify-content: space-between;
   border-top: 0;
   border-radius: 0 0 var(--radius-md) var(--radius-md);
@@ -3826,6 +3829,104 @@ textarea {
 .budget-v2-resource-leaf:hover td { background: #eef8f6; }
 .budget-v2-resource-frozen-table tfoot th, .budget-v2-resource-frozen-table tfoot td, .budget-v2-resource-metrics-table tfoot th, .budget-v2-resource-metrics-table tfoot td { background: #edf6f5; font-weight: 800; }
 .budget-v2-resource-warning { margin: 0; border-left: 3px solid #d97706; background: #fffbeb; padding: 8px 10px; color: #92400e; font-size: 12px; }
+
+/* Subcontratos comparte el lenguaje compacto del workspace Presupuestos V2. */
+.budget-v2-subcontracts {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+  padding-top: 8px;
+}
+
+.budget-v2-subcontracts > .page-header {
+  margin: 0;
+  border: 1px solid #d8e2e8;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px 12px;
+  box-shadow: none;
+}
+.budget-v2-subcontracts > .page-header h1 { color: #173042; font-size: 18px; }
+.budget-v2-subcontracts > .page-header p { margin-top: 2px; font-size: 12px; }
+.budget-v2-subcontracts .panel { border-color: #d8e2e8; border-radius: 8px; box-shadow: none; }
+.budget-v2-subcontracts-list,
+.budget-v2-subcontract-detail,
+.budget-v2-subcontracts-distribution { display: flex; min-height: 0; flex-direction: column; gap: 8px; }
+.budget-v2-subcontracts-list,
+.budget-v2-subcontract-detail { flex: 1; overflow-y: auto; padding-right: 2px; }
+.budget-v2-subcontracts-distribution { flex: 1; overflow: hidden; }
+.budget-v2-subcontracts-distribution-grid { flex: 1; min-height: 0; overflow: hidden; }
+.budget-v2-subcontracts-distribution-grid > .budget-v2-tree-panel { height: 100%; border: 1px solid var(--color-border); border-radius: 8px 0 0 8px; }
+
+.budget-v2-subcontracts .metric-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.budget-v2-subcontracts .metric-card { min-height: 58px; border-radius: 7px; padding: 8px 10px; box-shadow: none; }
+.budget-v2-subcontracts .metric-label { font-size: 10px; }
+.budget-v2-subcontracts .metric-value { margin-top: 2px; font-size: 17px; line-height: 1.1; }
+.budget-v2-subcontracts .metric-detail { margin-top: 2px; font-size: 10px; }
+
+.budget-v2-subcontracts-filter-panel { padding: 8px 10px; }
+.budget-v2-subcontracts-filters { display: grid; grid-template-columns: minmax(260px, 1fr) 180px 180px; gap: 8px; }
+.budget-v2-subcontracts .form-label { margin-bottom: 3px; color: #53616b; font-size: 10px; font-weight: 800; }
+.budget-v2-subcontracts .form-field { min-height: 30px; border-color: #bccbd6; border-radius: 6px; padding: 5px 8px; font-size: 12px; }
+.budget-v2-subcontracts .data-table-shell { border-color: #d8e2e8; border-radius: 8px; box-shadow: none; }
+.budget-v2-subcontracts .data-table { font-size: 11px; }
+.budget-v2-subcontracts .data-table thead { background: #e8f2f2; }
+.budget-v2-subcontracts .data-table th { color: #173042; font-size: 10px; padding: 7px 8px; }
+.budget-v2-subcontracts .data-table td { padding: 7px 8px; }
+.budget-v2-subcontracts .data-table tbody tr:hover td { background: #eef8f6; }
+.budget-v2-subcontracts .text-blue-700 { color: #0f766e; }
+
+.budget-v2-subcontract-detail-toolbar,
+.budget-v2-subcontract-identity-head,
+.budget-v2-subcontract-section-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.budget-v2-subcontract-detail-toolbar { border: 1px solid #d8e2e8; border-radius: 8px; background: #f8fafc; padding: 7px 9px; }
+.budget-v2-subcontract-detail-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+.budget-v2-subcontract-identity { border-left: 4px solid #0f766e !important; padding: 11px 12px; }
+.budget-v2-subcontract-identity h2 { margin-top: 1px; color: #173042; font-size: 18px; }
+.budget-v2-subcontract-identity dl { margin-top: 9px; gap: 8px; font-size: 11px; }
+.budget-v2-subcontract-section,
+.budget-v2-subcontract-detail > .panel { padding: 10px; }
+.budget-v2-subcontract-detail > .panel h3 { color: #173042; font-size: 13px; }
+
+.budget-v2-subcontracts > .space-y-3 > div:first-child { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid #d8e2e8; border-radius: 8px; background: #fff; padding: 9px 11px; }
+.budget-v2-subcontracts > .space-y-3 > div:first-child h2 { color: #173042; font-size: 17px; }
+.budget-v2-subcontracts > .space-y-3 > div:first-child p { font-size: 11px; }
+.budget-v2-subcontracts > .space-y-3 > div.grid { display: grid; grid-template-columns: 220px minmax(520px, 1fr) 290px; gap: 8px; min-height: 0; }
+.budget-v2-subcontracts > .space-y-3 > div.grid > .panel { max-height: calc(100vh - 250px); padding: 9px; overflow: auto; background: #f8fafc; }
+.budget-v2-subcontracts > .space-y-3 > div.grid > .panel button { border-radius: 4px; font-size: 11px; }
+.budget-v2-subcontracts > .space-y-3 > div.grid > .panel button:hover { background: #eef8f6; }
+.budget-v2-subcontracts > .space-y-3 .bg-blue-100 { background: #dff3ef; color: #0f5f58; }
+.budget-v2-subcontracts > .space-y-3 > div.grid > div.space-y-3 { display: flex; min-width: 0; flex-direction: column; gap: 8px; }
+.budget-v2-subcontracts > .space-y-3 > div.grid > div.space-y-3 > .panel { padding: 8px; }
+.budget-v2-subcontracts > .space-y-3 > div.grid > div.space-y-3 > .panel:first-child > div { display: grid; grid-template-columns: minmax(240px, 2fr) repeat(2, minmax(150px, 1fr)); gap: 6px; }
+.budget-v2-subcontracts > .space-y-3 > div.grid > div.space-y-3 > .panel:first-child > div > * { min-width: 0; width: 100%; }
+.budget-v2-subcontracts > .space-y-3 > div.grid > div.space-y-3 > .panel:nth-child(2) { min-height: 0; padding: 0; overflow: hidden; }
+.budget-v2-subcontracts > .space-y-3 > div.grid > div.space-y-3 > .panel:nth-child(2) > div:first-child { margin: 0; border-bottom: 1px solid #d8e2e8; background: #f8fafc; padding: 7px 8px; }
+.budget-v2-subcontracts > .space-y-3 .max-h-\[58vh\] { max-height: calc(100vh - 365px); }
+.budget-v2-subcontracts > .space-y-3 table thead,
+.budget-v2-subcontracts > .space-y-3 table thead th { background: #e8f2f2; }
+.budget-v2-subcontracts > .space-y-3 > div.grid > div:last-child > .panel { padding: 10px; background: #f8fafc; }
+
+.budget-v2-subcontracts-config-panel { padding: 10px; }
+.budget-v2-subcontracts-preset-option { display: flex; cursor: pointer; align-items: flex-start; gap: 7px; border: 1px solid #d8e2e8; border-radius: 6px; background: #fff; padding: 7px 8px; }
+.budget-v2-subcontracts-preset-option:hover { border-color: #8dbdb5; background: #f3faf8; }
+.budget-v2-subcontracts-preset-option.is-selected { border-color: #0f766e; background: #e5f4f1; box-shadow: inset 3px 0 #0f766e; }
+
+@media (max-width: 1180px) {
+  .budget-v2-subcontracts > .space-y-3 > div.grid { grid-template-columns: 200px minmax(0, 1fr); }
+  .budget-v2-subcontracts > .space-y-3 > div.grid > div:last-child { grid-column: 1 / -1; }
+  .budget-v2-subcontracts > .space-y-3 > div.grid > div.space-y-3 > .panel:first-child > div { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 820px) {
+  .budget-v2-subcontracts .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .budget-v2-subcontracts-filters,
+  .budget-v2-subcontracts > .space-y-3 > div.grid { grid-template-columns: 1fr; }
+  .budget-v2-subcontracts > .space-y-3 > div.grid > div:last-child { grid-column: auto; }
+}
 
 @media (max-width: 760px) {
   .top-nav {

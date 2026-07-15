@@ -41,6 +41,7 @@ from app.models.apu import APU, APUItem
 from app.models.recurso import Recurso
 from app.api.apus import calcular_costo_apu, siguiente_codigo_apu
 from app.schemas.recurso import RecursoOut
+from app.services.apu_costos import calcular_cantidad_fisica_item
 
 router = APIRouter(prefix="/presupuestos", tags=["Presupuestos"])
 
@@ -1798,12 +1799,11 @@ def listar_uso_recursos(proyecto_id: int, db: Session = Depends(get_db)):
             advertencias.append({"codigo": "RUBRO_SIN_APU", "nodo_id": nodo.id, "descripcion": nodo.descripcion})
             continue
 
-        rendimiento = float(nodo.apu.rendimiento or 0.0)
         for item in nodo.apu.items:
             if item.es_herramienta_menor or not item.recurso:
                 continue
-            factor = rendimiento if item.categoria in ("mano_de_obra", "equipo") else 1.0
-            cantidad = round(float(nodo.metrado or 0.0) * float(item.cantidad or 0.0) * factor, 4)
+            cantidades = calcular_cantidad_fisica_item(item, nodo.apu.rendimiento, nodo.metrado)
+            cantidad = cantidades["cantidad_total"]
             recurso = item.recurso
             origen, advertencia_origen = _origen_recurso_uso(recurso, proyecto_id)
             movimientos.append({

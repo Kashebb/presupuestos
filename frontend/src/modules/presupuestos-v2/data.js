@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-export const API = "http://127.0.0.1:8000";
+export const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 export const statusMeta = {
   vinculado: { label: "Vinculado", className: "budget-v2-status-linked" },

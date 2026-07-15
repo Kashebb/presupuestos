@@ -9,3 +9,9 @@ from app.models.presupuesto import (
     NodoAPURevisionItem,
     UsoRecursosConfiguracion,
 )
+from .subcontrato import (
+    Subcontrato,
+    SubcontratoCodigoSecuencia,
+    SubcontratoRubro,
+    SubcontratoRubroRecursoSnapshot,
+)

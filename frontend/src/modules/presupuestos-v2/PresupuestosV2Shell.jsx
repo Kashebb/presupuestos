@@ -17,6 +17,7 @@ import AnalisisView from "./views/AnalisisView";
 import DesgloseView from "./views/DesgloseView";
 import EdicionView from "./views/EdicionView";
 import UsoRecursosView from "./views/UsoRecursosView";
+import SubcontratosView from "./views/SubcontratosView";
 import VinculacionView from "./views/VinculacionView";
 
 const CATEGORIAS_RECURSO = ["mano_de_obra", "material", "equipo", "transporte", "otros"];
@@ -126,6 +127,7 @@ export default function PresupuestosV2Shell() {
     desglose: "Desglose activo: costos por rubro con materiales, mano de obra, equipos y transporte.",
     analisis: "Modo lectura: comparacion con costos APU existentes.",
     uso_recursos: "Modo lectura: cantidades y costos de recursos por paquete.",
+    subcontratos: "Subcontratos: cabeceras, estados, importes históricos y ciclo de vida.",
   };
 
   const footerMetric = {
@@ -134,6 +136,7 @@ export default function PresupuestosV2Shell() {
     desglose: `${footerCount} fila(s) visibles`,
     analisis: `${footerCount} fila(s) analizadas`,
     uso_recursos: `${footerCount} recurso(s) visibles`,
+    subcontratos: `${footerCount} subcontrato(s) o rubro(s) visibles`,
   };
 
   const openProject = (projectId) => {
@@ -473,6 +476,13 @@ export default function PresupuestosV2Shell() {
       ],
     },
     {
+      id: "subcontratos",
+      label: "Subcontratos",
+      actions: [
+        { label: "Ver subcontratos", active: view === "subcontratos", onClick: () => switchView("subcontratos", "subcontratos"), hint: "Gestiona subcontratos del proyecto abierto." },
+      ],
+    },
+    {
       id: "recursos",
       label: "Recursos",
       actions: [
@@ -536,6 +546,10 @@ export default function PresupuestosV2Shell() {
     }
     if (groupId === "vinculacion") {
       switchView("vinculacion", "vinculacion");
+      return;
+    }
+    if (groupId === "subcontratos") {
+      switchView("subcontratos", "subcontratos");
       return;
     }
     setRibbonGroup(groupId);
@@ -701,6 +715,19 @@ export default function PresupuestosV2Shell() {
         {view === "uso_recursos" && (
           <UsoRecursosView
             selectedProjectId={selectedProjectId}
+            onVisibleCountChange={setFooterCount}
+          />
+        )}
+        {view === "subcontratos" && (
+          <SubcontratosView
+            selectedProjectId={selectedProjectId}
+            projectName={selectedProject ? `${selectedProject.nombre} · ${selectedProject.codigo || "sin código"}` : ""}
+            budgetRows={visibleRows}
+            onIrVinculacion={(nodoId) => {
+              const row = visibleRows.find((item) => String(item.sourceId) === String(nodoId));
+              if (row) setSelectedRowId(row.id);
+              switchView("vinculacion", "vinculacion");
+            }}
             onVisibleCountChange={setFooterCount}
           />
         )}
